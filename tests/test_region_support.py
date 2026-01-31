@@ -1,9 +1,11 @@
 """Test region detection and configuration."""
 import pytest
+from aiohttp import ClientSession
 from volkswagencarnet.vw_const import (
     get_region_from_country,
     get_region_config,
 )
+from volkswagencarnet.vw_connection import Connection
 
 
 class TestRegionMapping:
@@ -35,3 +37,41 @@ class TestRegionMapping:
         assert "base_api_candidates" in config
         assert len(config["base_api_candidates"]) > 0
         assert config["base_api"] is None  # Not yet discovered
+
+
+class TestConnectionRegionDetection:
+    """Test Connection class region detection."""
+
+    @pytest.mark.asyncio
+    async def test_connection_defaults_to_emea(self):
+        """No country parameter should default to EMEA."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password")
+            assert conn._session_region == "EMEA"
+            assert conn._session_country == "DE"
+            assert conn._base_api == "https://emea.bff.cariad.digital"
+
+    @pytest.mark.asyncio
+    async def test_connection_with_de_country(self):
+        """DE country should map to EMEA."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="DE")
+            assert conn._session_region == "EMEA"
+            assert conn._base_api == "https://emea.bff.cariad.digital"
+
+    @pytest.mark.asyncio
+    async def test_connection_with_us_country(self):
+        """US country should map to NA."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+            assert conn._session_region == "NA"
+            assert conn._session_country == "US"
+            # base_api should be None (not yet discovered)
+            assert conn._base_api is None
+
+    @pytest.mark.asyncio
+    async def test_connection_with_ca_country(self):
+        """CA country should map to NA."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="CA")
+            assert conn._session_region == "NA"

@@ -28,6 +28,8 @@ from .vw_const import (
     HEADERS_AUTH,
     HEADERS_SESSION,
     USER_AGENT,
+    get_region_from_country,
+    get_region_config,
 )
 
 from .vw_exceptions import (
@@ -76,6 +78,13 @@ class Connection:
         self._session_auth_password = password
         self._session_tokens = {}
         self._session_country = country.upper()
+
+        # Determine region from country
+        self._session_region = get_region_from_country(self._session_country)
+        self._session_region_config = get_region_config(self._session_region)
+
+        # Set region-specific base API (will be discovered for NA)
+        self._base_api = self._session_region_config.get("base_api")
 
         self._vehicles = []
 
