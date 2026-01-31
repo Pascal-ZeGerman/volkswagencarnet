@@ -33,6 +33,84 @@ HEADERS_AUTH = {
     "x-android-package-name": ANDROID_PACKAGE_NAME,
 }
 
+# Region configuration
+REGION_CONFIGS = {
+    "EMEA": {
+        "base_api": "https://emea.bff.cariad.digital",
+        "homeregion": "https://msg.volkswagen.de",
+    },
+    "NA": {  # North America
+        "base_api": None,  # Discovered during login
+        "homeregion": None,  # Discovered during login
+        "base_api_candidates": [
+            "https://na.bff.cariad.digital",
+            "https://us.bff.cariad.digital",
+            "https://northamerica.bff.cariad.digital",
+            "https://usac.bff.cariad.digital",
+            "https://americas.bff.cariad.digital",
+        ],
+        "homeregion_candidates": [
+            "https://msg.vw.com",
+            "https://msg.volkswagen.com",
+            "https://msg.vw.us",
+        ],
+    },
+}
+
+# Country to region mapping
+COUNTRY_TO_REGION = {
+    # North America
+    "US": "NA",
+    "CA": "NA",
+    # EMEA
+    "DE": "EMEA",
+    "FR": "EMEA",
+    "UK": "EMEA",
+    "GB": "EMEA",
+    "IT": "EMEA",
+    "ES": "EMEA",
+    "NL": "EMEA",
+    "BE": "EMEA",
+    "AT": "EMEA",
+    "CH": "EMEA",
+    "SE": "EMEA",
+    "NO": "EMEA",
+    "DK": "EMEA",
+    "FI": "EMEA",
+    "PL": "EMEA",
+    "CZ": "EMEA",
+    "PT": "EMEA",
+    "IE": "EMEA",
+    "LU": "EMEA",
+}
+
+DEFAULT_REGION = "EMEA"
+
+
+def get_region_from_country(country: str) -> str:
+    """Get region identifier from country code.
+
+    Args:
+        country: Two-letter country code (e.g., 'US', 'DE')
+
+    Returns:
+        Region identifier ('EMEA', 'NA', etc.)
+    """
+    return COUNTRY_TO_REGION.get(country.upper(), DEFAULT_REGION)
+
+
+def get_region_config(region: str) -> dict:
+    """Get configuration for a specific region.
+
+    Args:
+        region: Region identifier ('EMEA', 'NA', etc.)
+
+    Returns:
+        Dictionary with region configuration
+    """
+    return REGION_CONFIGS.get(region, REGION_CONFIGS[DEFAULT_REGION])
+
+
 TEMP_CELSIUS: str = "°C"
 
 
