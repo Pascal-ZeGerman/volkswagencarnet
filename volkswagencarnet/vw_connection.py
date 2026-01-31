@@ -179,7 +179,7 @@ class Connection:
         """Get OpenID config."""
         _LOGGER.debug("Requesting openid config")
         req = await self._session.get(
-            url=f"{BASE_API}/login/v1/idk/openid-configuration"
+            url=f"{self._base_api}/login/v1/idk/openid-configuration"
         )
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
@@ -508,7 +508,7 @@ class Connection:
             if self._session_headers.get("identity", {}).get("refresh_token"):
                 _LOGGER.info("Revoking Identity Refresh Token")
                 params = {"token": self._session_tokens["identity"]["refresh_token"]}
-                await self.post(f"{BASE_API}/login/v1/idk/revoke", data=params)
+                await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
 
     # HTTP methods to API
     async def _request(self, method, url, return_raw=False, **kwargs):
@@ -688,7 +688,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/pendingrequests"
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/pendingrequests"
             )
 
             if response:
@@ -707,7 +707,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/capabilities", ""
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/capabilities", ""
             )
             if response.get("capabilities", False):
                 data = response
@@ -731,7 +731,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/selectivestatus?jobs={','.join(services)}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/selectivestatus?jobs={','.join(services)}",
                 "",
             )
 
@@ -755,7 +755,7 @@ class Connection:
         if not await self.validate_tokens():
             return False
         try:
-            response = await self.get(f"{BASE_API}/vehicle/v2/vehicles", "")
+            response = await self.get(f"{self._base_api}/vehicle/v2/vehicles", "")
 
             for vehicle in response.get("data"):
                 if vehicle.get("vin") == vin:
@@ -773,7 +773,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/parkingposition", ""
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/parkingposition", ""
             )
 
             if "data" in response:
@@ -803,7 +803,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/trips/{vin}/shortterm/last", ""
+                f"{self._base_api}/vehicle/v1/trips/{vin}/shortterm/last", ""
             )
             if "data" in response:
                 return {"trip_last": response["data"]}
@@ -825,7 +825,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/trips/{vin}/cyclic/last", ""
+                f"{self._base_api}/vehicle/v1/trips/{vin}/cyclic/last", ""
             )
             if "data" in response:
                 return {"trip_refuel": response["data"]}
@@ -847,7 +847,7 @@ class Connection:
             return False
         try:
             response = await self.get(
-                f"{BASE_API}/vehicle/v1/trips/{vin}/longterm/last", ""
+                f"{self._base_api}/vehicle/v1/trips/{vin}/longterm/last", ""
             )
             if "data" in response:
                 return {"trip_longterm": response["data"]}
@@ -869,7 +869,7 @@ class Connection:
             return False
         try:
             return await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/vehiclewakeuptrigger",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/vehiclewakeuptrigger",
                 json={},
                 return_raw=True,
             )
@@ -922,7 +922,7 @@ class Connection:
 
     async def check_spin_state(self):
         """Determine SPIN state to prevent lockout due to wrong SPIN."""
-        result = await self.get(f"{BASE_API}/vehicle/v1/spin/state")
+        result = await self.get(f"{self._base_api}/vehicle/v1/spin/state")
         remainingTries = result.get("remainingTries", None)
         if remainingTries is None:
             raise SPINError("Couldn't determine S-PIN state")
@@ -941,7 +941,7 @@ class Connection:
         action = "start" if action else "stop"
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/climatisation/{action}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/climatisation/{action}",
                 json=data,
                 return_raw=True,
             )
@@ -953,7 +953,7 @@ class Connection:
         """Execute climatisation settings."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/climatisation/settings",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/climatisation/settings",
                 json=data,
                 return_raw=True,
             )
@@ -966,7 +966,7 @@ class Connection:
         action = "start" if action else "stop"
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/auxiliaryheating/{action}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/auxiliaryheating/{action}",
                 json=data,
                 return_raw=True,
             )
@@ -979,7 +979,7 @@ class Connection:
         action = "start" if action else "stop"
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/windowheating/{action}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/windowheating/{action}",
                 json={},
                 return_raw=True,
             )
@@ -992,7 +992,7 @@ class Connection:
         action = "start" if action else "stop"
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/charging/{action}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/charging/{action}",
                 json={},
                 return_raw=True,
             )
@@ -1004,7 +1004,7 @@ class Connection:
         """Execute charging actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/charging/settings",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/charging/settings",
                 json=data,
                 return_raw=True,
             )
@@ -1016,7 +1016,7 @@ class Connection:
         """Execute battery care mode actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/charging/care/settings",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/charging/care/settings",
                 json=data,
                 return_raw=True,
             )
@@ -1030,7 +1030,7 @@ class Connection:
         """Execute readiness battery support actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/readiness/batterysupport",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/readiness/batterysupport",
                 json=data,
                 return_raw=True,
             )
@@ -1044,7 +1044,7 @@ class Connection:
         """Execute departure timers actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/departure/profiles",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/departure/profiles",
                 json=data,
                 return_raw=True,
             )
@@ -1058,7 +1058,7 @@ class Connection:
         """Execute climatisation timers actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/climatisation/timers",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/climatisation/timers",
                 json=data,
                 return_raw=True,
             )
@@ -1072,7 +1072,7 @@ class Connection:
         """Execute auxiliary heating timers actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/auxiliaryheating/timers",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/auxiliaryheating/timers",
                 json=data,
                 return_raw=True,
             )
@@ -1086,7 +1086,7 @@ class Connection:
         """Execute departure timers actions."""
         try:
             response_raw = await self.put(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/departure/timers",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/departure/timers",
                 json=data,
                 return_raw=True,
             )
@@ -1100,7 +1100,7 @@ class Connection:
         action = "lock" if lock else "unlock"
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/access/{action}",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/access/{action}",
                 json={"spin": spin},
                 return_raw=True,
             )
@@ -1113,7 +1113,7 @@ class Connection:
         await self.check_spin_state()
         try:
             response_raw = await self.post(
-                f"{BASE_API}/vehicle/v1/vehicles/{vin}/honkandflash",
+                f"{self._base_api}/vehicle/v1/vehicles/{vin}/honkandflash",
                 json={
                     "userPosition": {
                         "longitude": position["lng"],
@@ -1185,7 +1185,7 @@ class Connection:
                 "client_id": CLIENT_ID,
             }
             response = await self._session.post(
-                url=f"{BASE_API}/login/v1/idk/token",
+                url=f"{self._base_api}/login/v1/idk/token",
                 headers=tHeaders,
                 data=body,
             )
