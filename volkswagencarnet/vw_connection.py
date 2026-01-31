@@ -136,6 +136,12 @@ class Connection:
         async with self._login_lock:
             _LOGGER.debug("Initiating new login")
 
+            # Discover endpoints if needed
+            if self._session_region == "NA" and not self._base_api:
+                if not await self._discover_endpoints():
+                    _LOGGER.error("Endpoint discovery failed for NA region")
+                    return False
+
             for i in range(tries):
                 self._session_logged_in = await self._login()
                 if self._session_logged_in:
@@ -153,7 +159,7 @@ class Connection:
             # Get list of vehicles from account
             _LOGGER.debug("Fetching vehicles associated with account")
             self._session_headers.pop("Content-Type", None)
-            loaded_vehicles = await self.get(url=f"{BASE_API}/vehicle/v2/vehicles")
+            loaded_vehicles = await self.get(url=f"{self._base_api}/vehicle/v2/vehicles")
             # Add Vehicle class object for all VIN-numbers from account
             if loaded_vehicles.get("data") is not None:
                 _LOGGER.debug("Found vehicle(s) associated with account")
