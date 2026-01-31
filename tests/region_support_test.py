@@ -1,5 +1,6 @@
 """Test region detection and configuration."""
 import pytest
+from unittest.mock import AsyncMock, Mock, patch
 from aiohttp import ClientSession
 from volkswagencarnet.vw_const import (
     get_region_from_country,
@@ -75,3 +76,59 @@ class TestConnectionRegionDetection:
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="CA")
             assert conn._session_region == "NA"
+            assert conn._session_country == "CA"
+
+
+class TestEndpointDiscovery:
+    """Test endpoint discovery for NA region."""
+
+    @pytest.mark.asyncio
+    async def test_discovery_not_needed_for_emea(self):
+        """EMEA region should skip discovery."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="DE")
+            result = await conn._discover_endpoints()
+            assert result is True  # Should return immediately
+
+    @pytest.mark.asyncio
+    async def test_discovery_finds_working_endpoint(self):
+        """Should find first working endpoint from candidates."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+
+            # Mock successful response for second candidate
+            mock_response = Mock()
+            mock_response.status = 200
+
+            # Create async context manager mock
+            async_cm = AsyncMock()
+            async_cm.__aenter__.return_value = mock_response
+            async_cm.__aexit__.return_value = None
+
+            with patch.object(conn._session, 'get') as mock_get:
+                # First candidate fails, second succeeds
+                mock_get.side_effect = [
+                    Exception("Connection refused"),  # First fails
+                    async_cm,  # Second succeeds
+                ]
+
+                result = await conn._discover_endpoints()
+
+                assert result is True
+                # Should have found second candidate
+                assert conn._base_api == "https://us.bff.cariad.digital"
+
+    @pytest.mark.asyncio
+    async def test_discovery_fails_all_candidates(self):
+        """Should return False when all candidates fail."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+
+            with patch.object(conn._session, 'get') as mock_get:
+                # All candidates fail
+                mock_get.side_effect = [Exception("Connection refused")] * 5
+
+                result = await conn._discover_endpoints()
+
+                assert result is False
+                assert conn._base_api is None
