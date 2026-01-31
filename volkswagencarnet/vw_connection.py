@@ -95,6 +95,41 @@ class Connection:
     def _clear_cookies(self):
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
 
+    async def _discover_endpoints(self) -> bool:
+        """Discover working endpoints for regions without confirmed URLs.
+
+        Returns:
+            True if discovery successful, False otherwise
+        """
+        if self._session_region != "NA":
+            return True  # Only needed for NA region
+
+        _LOGGER.info("Attempting endpoint discovery for North America region")
+
+        base_api_candidates = self._session_region_config.get("base_api_candidates", [])
+
+        for candidate in base_api_candidates:
+            try:
+                _LOGGER.debug("Testing base API endpoint: %s", candidate)
+                async with self._session.get(
+                    url=f"{candidate}/login/v1/idk/openid-configuration",
+                    timeout=ClientTimeout(total=5),
+                ) as req:
+                    if req.status == 200:
+                        _LOGGER.info("Found working base API endpoint: %s", candidate)
+                        self._base_api = candidate
+                        return True
+            except Exception as e:
+                _LOGGER.debug("Endpoint %s failed: %s", candidate, str(e))
+                continue
+
+        _LOGGER.error(
+            "Could not discover working endpoints for NA region. "
+            "Please check network traffic or report at: "
+            "https://github.com/robinostlund/volkswagencarnet/issues"
+        )
+        return False
+
     # API Login
     async def doLogin(self, tries: int = 1):
         """Login method, clean login."""
