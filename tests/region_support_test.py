@@ -132,3 +132,52 @@ class TestEndpointDiscovery:
 
                 assert result is False
                 assert conn._base_api is None
+
+
+class TestLoginWithDiscovery:
+    """Test login process with endpoint discovery."""
+
+    @pytest.mark.asyncio
+    async def test_login_fails_when_discovery_fails(self):
+        """Login should fail if NA endpoint discovery fails."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+
+            with patch.object(conn, '_discover_endpoints', new_callable=AsyncMock) as mock_discover:
+                mock_discover.return_value = False
+
+                result = await conn.doLogin()
+
+                assert result is False
+                mock_discover.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_login_continues_after_successful_discovery(self):
+        """Login should proceed after successful NA endpoint discovery."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+
+            with patch.object(conn, '_discover_endpoints', new_callable=AsyncMock) as mock_discover:
+                with patch.object(conn, '_login', new_callable=AsyncMock) as mock_login:
+                    with patch.object(conn, 'update', new_callable=AsyncMock) as mock_update:
+                        # Simulate successful discovery setting the base_api
+                        async def discovery_side_effect():
+                            conn._base_api = "https://na.bff.cariad.digital"
+                            return True
+
+                        mock_discover.side_effect = discovery_side_effect
+                        mock_login.return_value = True
+
+                        # Mock vehicle list response
+                        with patch.object(conn, 'get', new_callable=AsyncMock) as mock_get:
+                            mock_get.return_value = {"data": []}
+
+                            result = await conn.doLogin()
+
+                            mock_discover.assert_called_once()
+                            mock_login.assert_called_once()
+
+                            # Verify the discovered endpoint is used in the API call
+                            mock_get.assert_called_once_with(
+                                url="https://na.bff.cariad.digital/vehicle/v2/vehicles"
+                            )
