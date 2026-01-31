@@ -181,3 +181,59 @@ class TestLoginWithDiscovery:
                             mock_get.assert_called_once_with(
                                 url="https://na.bff.cariad.digital/vehicle/v2/vehicles"
                             )
+
+
+class TestVehicleRegionConfig:
+    """Test Vehicle class uses region config."""
+
+    @pytest.mark.asyncio
+    async def test_vehicle_uses_emea_homeregion(self):
+        """Vehicle should use EMEA homeregion from connection."""
+        from volkswagencarnet.vw_vehicle import Vehicle
+
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="DE")
+            vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+
+            assert vehicle._homeregion == "https://msg.volkswagen.de"
+
+    @pytest.mark.asyncio
+    async def test_vehicle_uses_na_homeregion_when_discovered(self):
+        """Vehicle should use NA homeregion from connection config."""
+        from volkswagencarnet.vw_vehicle import Vehicle
+
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="CA")
+
+            # Simulate discovered NA homeregion (using different value to test it's actually read)
+            original_homeregion = conn._session_region_config.get("homeregion")
+            conn._session_region_config["homeregion"] = "https://msg.vw.us"
+
+            try:
+                vehicle = Vehicle(conn, "1VWSA7A3XLC123456")
+
+                assert vehicle._homeregion == "https://msg.vw.us"
+            finally:
+                # Restore original value to avoid affecting other tests
+                conn._session_region_config["homeregion"] = original_homeregion
+
+    @pytest.mark.asyncio
+    async def test_vehicle_falls_back_to_default_homeregion(self):
+        """Vehicle should fall back to DE if homeregion is None."""
+        from volkswagencarnet.vw_vehicle import Vehicle
+
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="MX")
+
+            # Ensure homeregion is None
+            original_homeregion = conn._session_region_config.get("homeregion")
+            conn._session_region_config["homeregion"] = None
+
+            try:
+                vehicle = Vehicle(conn, "1VWSA7A3XLC123456")
+
+                # Should fall back to default
+                assert vehicle._homeregion == "https://msg.volkswagen.de"
+            finally:
+                # Restore original value
+                conn._session_region_config["homeregion"] = original_homeregion

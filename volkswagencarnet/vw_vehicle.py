@@ -44,7 +44,12 @@ class Vehicle:
         """Initialize the Vehicle with default values."""
         self._connection = conn
         self._url = url
-        self._homeregion = "https://msg.volkswagen.de"
+        # Get homeregion from connection's region config
+        if conn is not None and hasattr(conn, '_session_region_config'):
+            region_config = conn._session_region_config
+            self._homeregion = region_config.get("homeregion") or "https://msg.volkswagen.de"
+        else:
+            self._homeregion = "https://msg.volkswagen.de"
         self._discovered = False
         self._states = {}
         self._requests: dict[str, object] = {
