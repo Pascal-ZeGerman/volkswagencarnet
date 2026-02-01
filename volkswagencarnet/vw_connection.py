@@ -198,16 +198,25 @@ class Connection:
         _LOGGER.debug('Request headers: "%s"', self._session_auth_headers)
 
         try:
+            # Build OAuth parameters with user's country code
+            oauth_params = {
+                "redirect_uri": APP_URI,
+                "response_type": CLIENT_TOKEN_TYPES,
+                "client_id": CLIENT_ID,
+                "scope": CLIENT_SCOPE,
+            }
+
+            # Add country/locale parameters for region-specific authentication
+            # The US API requires these to identify the "legal entity"
+            if self._session_country:
+                oauth_params["ui_locales"] = f"{self._session_country.lower()}-{self._session_country}"
+                oauth_params["country"] = self._session_country
+
             req = await self._session.get(
                 url=authorization_endpoint,
                 headers=self._session_auth_headers,
                 allow_redirects=False,
-                params={
-                    "redirect_uri": APP_URI,
-                    "response_type": CLIENT_TOKEN_TYPES,
-                    "client_id": CLIENT_ID,
-                    "scope": CLIENT_SCOPE,
-                },
+                params=oauth_params,
             )
 
             # Check if the response contains a redirect location
