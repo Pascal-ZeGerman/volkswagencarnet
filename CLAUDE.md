@@ -143,6 +143,14 @@ The library uses OAuth2 with authorization code flow:
 6. Exchange authorization code for access/refresh tokens
 7. Tokens are validated and refreshed automatically before expiry
 
+**Regional OAuth Differences:**
+- **EMEA (EU)**: Standard OAuth2 authorization code flow
+- **North America (US/CA)**: OAuth2 + PKCE (Proof Key for Code Exchange, RFC 7636)
+  - Generates `code_verifier` (random 43-char string)
+  - Generates `code_challenge` (SHA256 hash of verifier, base64url encoded)
+  - Includes `code_challenge` and `code_challenge_method=S256` in authorization request
+  - Sends `code_verifier` in token exchange to prove request origin
+
 ### API Structure
 
 - **EMEA**: `https://emea.bff.cariad.digital`
@@ -155,6 +163,13 @@ The library uses OAuth2 with authorization code flow:
 - Services are enabled/disabled based on vehicle hardware and subscription
 
 **Region Detection**: The library automatically detects the region from the `country` parameter. US and Canadian users should pass `country='US'` or `country='CA'` to enable North America region support.
+
+**Region-Specific Configuration** (`vw_const.py`):
+- Each region has its own `client_id` for OAuth authentication
+- EMEA Client ID: `a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com`
+- NA Client ID: `2dae49f6-830b-4180-9af9-59dd0d060916@apps_vw-dilab_com` (from 2021 iOS app)
+- NA endpoint discovery tries 6 candidates in priority order (legacy first, then modern CARIAD endpoints)
+- `"legal entity is missing or invalid"` error = missing PKCE or wrong/outdated client_id
 
 ### Service Discovery
 
@@ -187,6 +202,9 @@ pytest tests/vw_vehicle_test.py -v
 # Test connection/authentication
 pytest tests/vw_connection_test.py -v
 
+# Test region support (US/NA functionality)
+pytest tests/region_support_test.py -v
+
 # Test utilities
 pytest tests/vw_utilities_test.py -v
 ```
@@ -210,6 +228,13 @@ The project uses pre-commit hooks that run automatically before commits:
 Uses `setuptools_scm` for automatic versioning from git tags. Version written to `volkswagencarnet/version.py`.
 
 ## Important Notes
+
+### Updating US Credentials
+If US authentication fails with current credentials:
+- OAuth credentials may be outdated (last confirmed: 2021)
+- Use network traffic analysis to capture current credentials from official VW Car-Net app
+- See `docs/US_NETWORK_TRAFFIC_ANALYSIS.md` for detailed capture guide using mitmproxy/Charles Proxy
+- Extract current `client_id`, endpoints, and OAuth parameters from captured traffic
 
 ### Rate Limiting
 The VW API implements rate limiting (HTTP 429). The library:
