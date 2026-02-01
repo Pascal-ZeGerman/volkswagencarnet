@@ -5,7 +5,8 @@ BRAND = "VW"
 COUNTRY = "DE"
 
 # Data used in communication
-CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"
+CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
+CLIENT_ID_US = "2dae49f6-830b-4180-9af9-59dd0d060916@apps_vw-dilab_com"  # North America
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
 CLIENT_TOKEN_TYPES = "code"
 
@@ -38,11 +39,14 @@ REGION_CONFIGS = {
     "EMEA": {
         "base_api": "https://emea.bff.cariad.digital",
         "homeregion": "https://msg.volkswagen.de",
+        "client_id": CLIENT_ID,
     },
     "NA": {  # North America
         "base_api": None,  # Discovered during login
         "homeregion": None,  # Discovered during login
+        "client_id": CLIENT_ID_US,
         "base_api_candidates": [
+            "https://b-h-s.spr.us00.p.con-veh.net",  # Legacy endpoint (confirmed working 2021)
             "https://na.bff.cariad.digital",
             "https://us.bff.cariad.digital",
             "https://northamerica.bff.cariad.digital",

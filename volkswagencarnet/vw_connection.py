@@ -86,6 +86,9 @@ class Connection:
         # Set region-specific base API (will be discovered for NA)
         self._base_api = self._session_region_config.get("base_api")
 
+        # Set region-specific client ID for OAuth
+        self._client_id = self._session_region_config.get("client_id", CLIENT_ID)
+
         self._vehicles = []
 
         self._jarCookie = None
@@ -202,7 +205,7 @@ class Connection:
             oauth_params = {
                 "redirect_uri": APP_URI,
                 "response_type": CLIENT_TOKEN_TYPES,
-                "client_id": CLIENT_ID,
+                "client_id": self._client_id,  # Use region-specific client ID
                 "scope": CLIENT_SCOPE,
             }
 
@@ -415,7 +418,7 @@ class Connection:
             AuthenticationError: If token exchange fails
         """
         token_body = {
-            "client_id": CLIENT_ID,
+            "client_id": self._client_id,  # Use region-specific client ID
             "grant_type": "authorization_code",
             "code": auth_code,
             "redirect_uri": APP_URI,
@@ -1191,7 +1194,7 @@ class Connection:
             body = {
                 "grant_type": "refresh_token",
                 "refresh_token": self._session_tokens["identity"]["refresh_token"],
-                "client_id": CLIENT_ID,
+                "client_id": self._client_id,  # Use region-specific client ID
             }
             response = await self._session.post(
                 url=f"{self._base_api}/login/v1/idk/token",
