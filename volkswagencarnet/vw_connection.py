@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import UTC, datetime, timedelta
 import hashlib
 import logging
 from random import randint, random
+import secrets
 from urllib.parse import parse_qs, urljoin, urlparse
 from typing import Dict, Optional
 
@@ -97,6 +99,33 @@ class Connection:
 
     def _clear_cookies(self):
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
+
+    def _generate_pkce_verifier(self) -> str:
+        """Generate PKCE code_verifier.
+
+        Returns:
+            Base64URL-encoded random string (43-128 characters)
+        """
+        # Generate 32 random bytes, base64url encode (43 chars)
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
+        # Remove padding
+        return code_verifier.rstrip('=')
+
+    def _generate_pkce_challenge(self, code_verifier: str) -> str:
+        """Generate PKCE code_challenge from code_verifier.
+
+        Args:
+            code_verifier: The code verifier string
+
+        Returns:
+            Base64URL-encoded SHA256 hash of the verifier
+        """
+        # SHA256 hash
+        digest = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        # Base64URL encode
+        code_challenge = base64.urlsafe_b64encode(digest).decode('utf-8')
+        # Remove padding
+        return code_challenge.rstrip('=')
 
     async def _discover_endpoints(self) -> bool:
         """Discover working endpoints for regions without confirmed URLs.
@@ -214,6 +243,12 @@ class Connection:
             if self._session_country:
                 oauth_params["ui_locales"] = f"{self._session_country.lower()}-{self._session_country}"
                 oauth_params["country"] = self._session_country
+
+            # Add PKCE parameters if generated (required for NA region)
+            if hasattr(self, '_pkce_challenge') and self._pkce_challenge:
+                oauth_params["code_challenge"] = self._pkce_challenge
+                oauth_params["code_challenge_method"] = "S256"
+                _LOGGER.debug("Added PKCE challenge to authorization request")
 
             req = await self._session.get(
                 url=authorization_endpoint,
@@ -424,6 +459,11 @@ class Connection:
             "redirect_uri": APP_URI,
         }
 
+        # Add PKCE code_verifier if available (required for NA region)
+        if hasattr(self, '_pkce_verifier') and self._pkce_verifier:
+            token_body["code_verifier"] = self._pkce_verifier
+            _LOGGER.debug("Added PKCE verifier to token exchange")
+
         # Token endpoint
         token_response = await self.post_form(
             self._session, token_endpoint, self._session_auth_headers, token_body
@@ -442,6 +482,15 @@ class Connection:
             self._clear_cookies()
             self._session_headers = HEADERS_SESSION.copy()
             self._session_auth_headers = HEADERS_AUTH.copy()
+
+            # Generate PKCE parameters for NA region (US requires PKCE)
+            if self._session_region == "NA":
+                self._pkce_verifier = self._generate_pkce_verifier()
+                self._pkce_challenge = self._generate_pkce_challenge(self._pkce_verifier)
+                _LOGGER.debug("Generated PKCE challenge for NA region")
+            else:
+                self._pkce_verifier = None
+                self._pkce_challenge = None
 
             # Get OpenID configuration for token endpoint
             openid_config = await self.get_openid_config()
