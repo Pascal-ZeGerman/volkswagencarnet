@@ -15,8 +15,21 @@ For North America, the library will automatically discover the correct API endpo
 
 ## Development Commands
 
+### Python Environment
+```bash
+# This project uses venv due to externally-managed Python environment
+source venv/bin/activate  # Activate venv
+# Or use ./venv/bin/python directly for one-off commands
+```
+
 ### Environment Setup
 ```bash
+# Create venv if it doesn't exist
+python3 -m venv venv
+
+# Activate venv (or use ./venv/bin/python directly)
+source venv/bin/activate
+
 # Install dependencies
 pip install -r requirements.txt
 pip install -r requirements-test.txt
@@ -27,6 +40,9 @@ pre-commit install
 
 ### Testing
 ```bash
+# Activate venv first
+source venv/bin/activate
+
 # Run all tests
 pytest
 
@@ -145,11 +161,11 @@ The library uses OAuth2 with authorization code flow:
 
 **Regional OAuth Differences:**
 - **EMEA (EU)**: Standard OAuth2 authorization code flow
-- **North America (US/CA)**: OAuth2 + PKCE (Proof Key for Code Exchange, RFC 7636)
-  - Generates `code_verifier` (random 43-char string)
-  - Generates `code_challenge` (SHA256 hash of verifier, base64url encoded)
-  - Includes `code_challenge` and `code_challenge_method=S256` in authorization request
-  - Sends `code_verifier` in token exchange to prove request origin
+- **North America (US/CA)**: Standard OAuth2 authorization code flow (2026)
+  - PKCE is supported but NOT used by official app
+  - Identity provider: `identity.na.vwgroup.io` (separate from base API)
+  - Redirect URI: HTTPS callback to base API endpoint
+  - Minimal scope: `openid email`
 
 ### API Structure
 
@@ -167,9 +183,10 @@ The library uses OAuth2 with authorization code flow:
 **Region-Specific Configuration** (`vw_const.py`):
 - Each region has its own `client_id` for OAuth authentication
 - EMEA Client ID: `a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com`
-- NA Client ID: `2dae49f6-830b-4180-9af9-59dd0d060916@apps_vw-dilab_com` (from 2021 iOS app)
-- NA endpoint discovery tries 6 candidates in priority order (legacy first, then modern CARIAD endpoints)
-- `"legal entity is missing or invalid"` error = missing PKCE or wrong/outdated client_id
+- NA Client ID: `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com` (2026 credentials)
+- NA base API: `https://b-h-s.spr.us00.p.con-veh.net` (confirmed working 2026)
+- NA identity provider: `https://identity.na.vwgroup.io` (OAuth/OIDC endpoint)
+- `"legal entity is missing or invalid"` error = wrong client_id or outdated credentials
 
 ### Service Discovery
 
@@ -232,6 +249,12 @@ Uses `setuptools_scm` for automatic versioning from git tags. Version written to
 ### Updating US Credentials
 If US authentication fails with current credentials:
 - OAuth credentials may be outdated (last confirmed: 2021)
+- Traffic capture from 2026 revealed:
+  - Client ID: `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com`
+  - PKCE is optional/unused despite server support
+  - Redirect URI uses HTTPS callback, not custom scheme
+  - Scope simplified to `openid email`
+  - Identity endpoint separate from base API (`identity.na.vwgroup.io`)
 - Use network traffic analysis to capture current credentials from official VW Car-Net app
 - See `docs/US_NETWORK_TRAFFIC_ANALYSIS.md` for detailed capture guide using mitmproxy/Charles Proxy
 - Extract current `client_id`, endpoints, and OAuth parameters from captured traffic
