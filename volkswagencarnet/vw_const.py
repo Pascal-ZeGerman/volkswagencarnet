@@ -6,7 +6,7 @@ COUNTRY = "DE"
 
 # Data used in communication
 CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
-CLIENT_ID_US = "2dae49f6-830b-4180-9af9-59dd0d060916@apps_vw-dilab_com"  # North America
+CLIENT_ID_US = "b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com"  # North America (2026)
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
 CLIENT_TOKEN_TYPES = "code"
 
@@ -42,11 +42,15 @@ REGION_CONFIGS = {
         "client_id": CLIENT_ID,
     },
     "NA": {  # North America
-        "base_api": None,  # Discovered during login
+        "base_api": "https://b-h-s.spr.us00.p.con-veh.net",  # Confirmed working 2026
         "homeregion": None,  # Discovered during login
         "client_id": CLIENT_ID_US,
+        "identity_endpoint": "https://identity.na.vwgroup.io",  # OAuth/OIDC provider (2026)
+        "scope": "openid email",  # Minimal scope used by app (2026)
+        "redirect_uri": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/oauth/callback",  # HTTPS callback (2026)
+        "use_pkce": False,  # App does NOT use PKCE despite server support (2026)
         "base_api_candidates": [
-            "https://b-h-s.spr.us00.p.con-veh.net",  # Legacy endpoint (confirmed working 2021)
+            "https://b-h-s.spr.us00.p.con-veh.net",  # Legacy endpoint (confirmed 2026)
             "https://na.bff.cariad.digital",
             "https://us.bff.cariad.digital",
             "https://northamerica.bff.cariad.digital",
