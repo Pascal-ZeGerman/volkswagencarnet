@@ -209,10 +209,16 @@ class Connection:
 
     async def get_openid_config(self) -> Dict[str, str]:
         """Get OpenID config."""
-        _LOGGER.debug("Requesting openid config")
-        req = await self._session.get(
-            url=f"{self._base_api}/login/v1/idk/openid-configuration"
-        )
+        # Use identity_endpoint for NA region, otherwise use base_api
+        identity_endpoint = self._session_region_config.get("identity_endpoint")
+        if identity_endpoint:
+            config_url = f"{identity_endpoint}/.well-known/openid-configuration"
+            _LOGGER.debug("Requesting openid config from identity endpoint: %s", config_url)
+        else:
+            config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
+            _LOGGER.debug("Requesting openid config from base API: %s", config_url)
+
+        req = await self._session.get(url=config_url)
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
             raise AuthenticationError(
@@ -230,19 +236,28 @@ class Connection:
         _LOGGER.debug('Request headers: "%s"', self._session_auth_headers)
 
         try:
-            # Build OAuth parameters with user's country code
+            # Build OAuth parameters with region-specific settings
             oauth_params = {
-                "redirect_uri": APP_URI,
+                "redirect_uri": self._session_region_config.get("redirect_uri", APP_URI),  # Use region-specific redirect URI
                 "response_type": CLIENT_TOKEN_TYPES,
                 "client_id": self._client_id,  # Use region-specific client ID
-                "scope": CLIENT_SCOPE,
+                "scope": self._session_region_config.get("scope", CLIENT_SCOPE),  # Use region-specific scope
             }
 
             # Add country/locale parameters for region-specific authentication
             # The US API requires these to identify the "legal entity"
             if self._session_country:
-                oauth_params["ui_locales"] = f"{self._session_country.lower()}-{self._session_country}"
-                oauth_params["country"] = self._session_country
+                # ui_locales uses language-region format (e.g., "en-US" not "us-US")
+                country_to_locale = {
+                    "US": "en-US",
+                    "CA": "en-CA",
+                    "GB": "en-GB",
+                }
+                oauth_params["ui_locales"] = country_to_locale.get(
+                    self._session_country,
+                    f"{self._session_country.lower()}-{self._session_country}"
+                )
+                oauth_params["prompt"] = "login"  # Force login prompt (observed in 2026 traffic)
 
             # Add PKCE parameters if generated (required for NA region)
             if hasattr(self, '_pkce_challenge') and self._pkce_challenge:
@@ -456,7 +471,7 @@ class Connection:
             "client_id": self._client_id,  # Use region-specific client ID
             "grant_type": "authorization_code",
             "code": auth_code,
-            "redirect_uri": APP_URI,
+            "redirect_uri": self._session_region_config.get("redirect_uri", APP_URI),  # Use region-specific redirect URI
         }
 
         # Add PKCE code_verifier if available (required for NA region)
@@ -483,14 +498,16 @@ class Connection:
             self._session_headers = HEADERS_SESSION.copy()
             self._session_auth_headers = HEADERS_AUTH.copy()
 
-            # Generate PKCE parameters for NA region (US requires PKCE)
-            if self._session_region == "NA":
+            # Generate PKCE parameters only if region config specifies it
+            use_pkce = self._session_region_config.get("use_pkce", False)
+            if use_pkce:
                 self._pkce_verifier = self._generate_pkce_verifier()
                 self._pkce_challenge = self._generate_pkce_challenge(self._pkce_verifier)
-                _LOGGER.debug("Generated PKCE challenge for NA region")
+                _LOGGER.debug("Generated PKCE challenge for region %s", self._session_region)
             else:
                 self._pkce_verifier = None
                 self._pkce_challenge = None
+                _LOGGER.debug("PKCE disabled for region %s", self._session_region)
 
             # Get OpenID configuration for token endpoint
             openid_config = await self.get_openid_config()
