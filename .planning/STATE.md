@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 ## Current Position
 
-Phase: 4 of 7 (Token Lifecycle Management) - IN PROGRESS
-Plan: 1 of 1 in current phase (04-01 complete)
-Status: Phase 4 Plan 1 complete, ready for Phase 5
-Last activity: 2026-02-18 -- Phase 4 Plan 1 completed (NA token lifecycle management, 3 tasks)
+Phase: 4 of 7 (Token Lifecycle Management) - COMPLETE
+Plan: 2 of 2 in current phase (04-01, 04-02 complete)
+Status: Phase 4 complete, ready for Phase 5
+Last activity: 2026-02-18 -- Phase 4 Plan 2 completed (NA token lifecycle tests, 18 tests)
 
-Progress: [███████░░░] 70%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -30,7 +30,7 @@ Progress: [███████░░░] 70%
 | 01-na-foundation | 1 | 5 min | 5 min |
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 | 03-three-token-architecture | 3 | 8 min | 2.7 min |
-| 04-token-lifecycle-management | 1 | 2 min | 2 min |
+| 04-token-lifecycle-management | 2 | 7 min | 3.5 min |
 
 **Recent Trend:**
 - Last 5 plans: 6 min, 5 min, 2 min, 1 min, 2 min
@@ -68,6 +68,9 @@ Recent decisions affecting current work:
 - [Phase 04-01]: Brand/MBB token refresh failures non-critical -- degrade to idk_only rather than failing validation
 - [Phase 04-01]: IDK refresh failure is critical -- returns False from _validate_na_tokens() triggering full re-login
 - [Phase 04-01]: _classify_endpoint raises ValueError for unknown NA URLs -- programmer error should fail loudly
+- [Phase 04-02]: Pre-populate _session_tokens['identity'] before calling _refresh_idk_token() in tests -- mirror update requires existing dict entry
+- [Phase 04-02]: Use MagicMock (not AsyncMock) for session.request patching -- async with requires synchronous callable returning context manager
+- [Phase 04-02]: AsyncMock must be passed directly to patch.object (not as return_value= kwarg) to preserve await compatibility for session.post
 
 ### Pending Todos
 
@@ -82,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 04-token-lifecycle-management/04-01-PLAN.md
+Stopped at: Completed 04-token-lifecycle-management/04-02-PLAN.md
 Resume file: .planning/phases/05-vehicle-data-na/ (next phase)
