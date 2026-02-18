@@ -77,11 +77,11 @@ Plans:
   2. Each token type can be refreshed independently without requiring full re-login (IDK via refresh_token + X-QMAuth, Brand via fresh IDK access_token re-exchange, MBB via refresh_token + X-Client-ID)
   3. Refreshing the IDK token automatically triggers Brand token refresh when the Brand token depends on the now-stale IDK access_token
   4. Library tracks expiry timestamps per token type and proactively refreshes before expiry
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Token-per-endpoint selection logic
-- [ ] 04-02: Hierarchical token refresh
+- [ ] 04-01-PLAN.md — Infrastructure plumbing + token refresh methods (_classify_endpoint, _refresh_idk_token, _refresh_brand_token, _refresh_mbb_from_refresh_token, _validate_na_tokens, validate_tokens NA branch, _request 401 retry)
+- [ ] 04-02-PLAN.md — NATokenLifecycleTest class (18 tests covering all MGMT requirements)
 
 ### Phase 5: Reliability & Discovery
 **Goal**: Library handles production edge cases gracefully: discovers configuration dynamically, routes to correct home region per vehicle, and retries on transient failures
