@@ -55,6 +55,7 @@ CLIENT_TOKEN_TYPES = "code"
 USER_AGENT = "Volkswagen/3.51.1-android/14"
 APP_URI = "weconnect://authenticated"
 ANDROID_PACKAGE_NAME = "com.volkswagen.weconnect"
+MBB_BRAND_CONFIG = "myvw"  # VW brand identifier for Brand/MBB token exchanges
 
 # Used when fetching data
 HEADERS_SESSION = {
