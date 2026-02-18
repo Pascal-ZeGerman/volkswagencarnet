@@ -1,4 +1,5 @@
 """Test region detection and configuration."""
+
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from aiohttp import ClientSession
@@ -37,7 +38,7 @@ class TestRegionMapping:
         config = get_region_config("NA")
         assert "base_api_candidates" in config
         assert len(config["base_api_candidates"]) > 0
-        assert config["base_api"] is None  # Not yet discovered
+        assert config["base_api"] == "https://b-h-s.spr.us00.p.con-veh.net"
 
 
 class TestConnectionRegionDetection:
@@ -67,8 +68,7 @@ class TestConnectionRegionDetection:
             conn = Connection(session, "test@example.com", "password", country="US")
             assert conn._session_region == "NA"
             assert conn._session_country == "US"
-            # base_api should be None (not yet discovered)
-            assert conn._base_api is None
+            assert conn._base_api == "https://b-h-s.spr.us00.p.con-veh.net"
 
     @pytest.mark.asyncio
     async def test_connection_with_ca_country(self):
@@ -95,6 +95,8 @@ class TestEndpointDiscovery:
         """Should find first working endpoint from candidates."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
+            # Pre-clear base_api to simulate a scenario requiring discovery
+            conn._base_api = None
 
             # Mock successful response for second candidate
             mock_response = Mock()
@@ -105,28 +107,30 @@ class TestEndpointDiscovery:
             async_cm.__aenter__.return_value = mock_response
             async_cm.__aexit__.return_value = None
 
-            with patch.object(conn._session, 'get') as mock_get:
+            with patch.object(conn._session, "get") as mock_get:
                 # First candidate fails, second succeeds
                 mock_get.side_effect = [
                     Exception("Connection refused"),  # First fails
-                    async_cm,  # Second succeeds
+                    async_cm,  # Second succeeds (https://na.bff.cariad.digital)
                 ]
 
                 result = await conn._discover_endpoints()
 
                 assert result is True
                 # Should have found second candidate
-                assert conn._base_api == "https://us.bff.cariad.digital"
+                assert conn._base_api == "https://na.bff.cariad.digital"
 
     @pytest.mark.asyncio
     async def test_discovery_fails_all_candidates(self):
         """Should return False when all candidates fail."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
+            # Pre-clear base_api to simulate a scenario requiring discovery
+            conn._base_api = None
 
-            with patch.object(conn._session, 'get') as mock_get:
-                # All candidates fail
-                mock_get.side_effect = [Exception("Connection refused")] * 5
+            with patch.object(conn._session, "get") as mock_get:
+                # All 6 candidates fail
+                mock_get.side_effect = [Exception("Connection refused")] * 6
 
                 result = await conn._discover_endpoints()
 
@@ -142,8 +146,12 @@ class TestLoginWithDiscovery:
         """Login should fail if NA endpoint discovery fails."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
+            # Pre-clear base_api so that doLogin triggers discovery
+            conn._base_api = None
 
-            with patch.object(conn, '_discover_endpoints', new_callable=AsyncMock) as mock_discover:
+            with patch.object(
+                conn, "_discover_endpoints", new_callable=AsyncMock
+            ) as mock_discover:
                 mock_discover.return_value = False
 
                 result = await conn.doLogin()
@@ -156,10 +164,16 @@ class TestLoginWithDiscovery:
         """Login should proceed after successful NA endpoint discovery."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
+            # Pre-clear base_api so that doLogin triggers discovery
+            conn._base_api = None
 
-            with patch.object(conn, '_discover_endpoints', new_callable=AsyncMock) as mock_discover:
-                with patch.object(conn, '_login', new_callable=AsyncMock) as mock_login:
-                    with patch.object(conn, 'update', new_callable=AsyncMock) as mock_update:
+            with patch.object(
+                conn, "_discover_endpoints", new_callable=AsyncMock
+            ) as mock_discover:
+                with patch.object(conn, "_login", new_callable=AsyncMock) as mock_login:
+                    with patch.object(
+                        conn, "update", new_callable=AsyncMock
+                    ) as mock_update:
                         # Simulate successful discovery setting the base_api
                         async def discovery_side_effect():
                             conn._base_api = "https://na.bff.cariad.digital"
@@ -169,7 +183,9 @@ class TestLoginWithDiscovery:
                         mock_login.return_value = True
 
                         # Mock vehicle list response
-                        with patch.object(conn, 'get', new_callable=AsyncMock) as mock_get:
+                        with patch.object(
+                            conn, "get", new_callable=AsyncMock
+                        ) as mock_get:
                             mock_get.return_value = {"data": []}
 
                             result = await conn.doLogin()
