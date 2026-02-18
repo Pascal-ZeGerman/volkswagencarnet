@@ -25,12 +25,12 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 
 ### Token Management (F5-F6: Selection and Refresh)
 
-- [ ] **MGMT-01**: Library selects correct token type per API endpoint (IDK for Cariad BFF, MBB for legacy, Brand for GraphQL)
-- [ ] **MGMT-02**: Library can refresh IDK token independently using IDK refresh_token and X-QMAuth header
-- [ ] **MGMT-03**: Library can refresh Brand token independently by re-exchanging current IDK access_token
-- [ ] **MGMT-04**: Library can refresh MBB token independently using MBB refresh_token and X-Client-ID header
-- [ ] **MGMT-05**: Library respects token hierarchy when refreshing (IDK refresh triggers Brand refresh if needed)
-- [ ] **MGMT-06**: Library tracks token expiry per token type and refreshes proactively
+- [x] **MGMT-01**: Library selects correct token type per API endpoint (IDK for Cariad BFF, MBB for legacy, Brand for GraphQL)
+- [x] **MGMT-02**: Library can refresh IDK token independently using IDK refresh_token and X-QMAuth header
+- [x] **MGMT-03**: Library can refresh Brand token independently by re-exchanging current IDK access_token
+- [x] **MGMT-04**: Library can refresh MBB token independently using MBB refresh_token and X-Client-ID header
+- [x] **MGMT-05**: Library respects token hierarchy when refreshing (IDK refresh triggers Brand refresh if needed)
+- [x] **MGMT-06**: Library tracks token expiry per token type and refreshes proactively
 
 ### Integration & Reliability (F7-F10: Important Features)
 
@@ -106,12 +106,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOKEN-03 | Phase 3: Three-Token Architecture | Complete |
 | TOKEN-04 | Phase 3: Three-Token Architecture | Complete |
 | TOKEN-05 | Phase 3: Three-Token Architecture | Complete |
-| MGMT-01 | Phase 4: Token Lifecycle Management | Pending |
-| MGMT-02 | Phase 4: Token Lifecycle Management | Pending |
-| MGMT-03 | Phase 4: Token Lifecycle Management | Pending |
-| MGMT-04 | Phase 4: Token Lifecycle Management | Pending |
-| MGMT-05 | Phase 4: Token Lifecycle Management | Pending |
-| MGMT-06 | Phase 4: Token Lifecycle Management | Pending |
+| MGMT-01 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-02 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-03 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-04 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-05 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-06 | Phase 4: Token Lifecycle Management | Complete |
 | INT-01 | Phase 5: Reliability & Discovery | Pending |
 | INT-02 | Phase 2: NA OAuth Login Flow | Complete |
 | INT-03 | Phase 2: NA OAuth Login Flow | Complete |
