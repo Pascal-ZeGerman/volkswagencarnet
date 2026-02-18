@@ -774,6 +774,177 @@ class Connection:
         _LOGGER.info("NA: MBB token refreshed")
         return data
 
+    async def _refresh_idk_token(self) -> None:
+        """Refresh the IDK access_token using the stored IDK refresh_token.
+
+        Requires X-QMAuth header (same as initial IDK token exchange).
+        Updates self._na_tokens['idk'], self._session_tokens['identity'],
+        and self._session_headers['Authorization'].
+        After successful IDK refresh, immediately cascades to _refresh_brand_token()
+        because Brand token is derived from the IDK access_token.
+
+        Retries up to 3 times with 2-second delay between attempts.
+
+        Raises:
+            AuthenticationError: If all retry attempts fail.
+        """
+        idk_entry = self._na_tokens.get("idk", {})
+        refresh_token = idk_entry.get("refresh_token")
+        if not refresh_token:
+            raise AuthenticationError("Cannot refresh IDK token: no refresh_token stored")
+        if not self._na_token_endpoint:
+            raise AuthenticationError("Cannot refresh IDK token: _na_token_endpoint not set (login not completed?)")
+
+        refresh_body = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": self._client_id,
+        }
+        refresh_headers = {
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+            "x-android-package-name": ANDROID_PACKAGE_NAME,
+            "X-QMAuth": self._calculate_xqmauth(),  # Fresh value each attempt
+        }
+
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await self._session.post(
+                    url=self._na_token_endpoint,
+                    headers={**refresh_headers, "X-QMAuth": self._calculate_xqmauth()},
+                    data=refresh_body,
+                )
+                if response.status == 200:
+                    tokens = await response.json()
+                    now = time.time()
+                    # Update NA token registry
+                    self._na_tokens["idk"].update({
+                        "access_token": tokens["access_token"],
+                        "refresh_token": tokens.get("refresh_token", refresh_token),
+                        "id_token": tokens.get("id_token", idk_entry.get("id_token")),
+                        "expires_at": now + tokens.get("expires_in", 3600),
+                        "issued_at": now,
+                    })
+                    # Mirror to session_tokens for EMEA-compatible validate_tokens()
+                    self._session_tokens["identity"].update(self._na_tokens["idk"])
+                    self._session_headers["Authorization"] = (
+                        "Bearer " + tokens["access_token"]
+                    )
+                    _LOGGER.info("NA: IDK token refreshed successfully")
+                    # Cascade: Brand token derived from IDK access_token; always refresh it
+                    if "brand" in self._na_tokens:
+                        await self._refresh_brand_token()
+                    return
+                text = await response.text()
+                _LOGGER.warning(
+                    "IDK refresh attempt %s/%s failed with HTTP %s: %s",
+                    attempt, max_attempts, response.status, text,
+                )
+            except Exception as exc:
+                _LOGGER.warning("IDK refresh attempt %s/%s error: %s", attempt, max_attempts, exc)
+
+            if attempt < max_attempts:
+                await asyncio.sleep(2)
+
+        raise AuthenticationError(
+            f"IDK token refresh failed after {max_attempts} attempts"
+        )
+
+    async def _refresh_brand_token(self) -> None:
+        """Refresh the Brand token by re-exchanging the current IDK access_token.
+
+        Brand is derived from IDK, so this re-calls _exchange_brand_token().
+        On exchange failure, raises AuthenticationError.
+
+        Raises:
+            AuthenticationError: If brand token re-derivation fails.
+        """
+        idk_access_token = self._na_tokens.get("idk", {}).get("access_token")
+        if not idk_access_token:
+            raise AuthenticationError("Cannot refresh Brand token: no IDK access_token available")
+
+        try:
+            brand_tokens = await self._exchange_brand_token(idk_access_token)
+            now = time.time()
+            self._na_tokens["brand"] = {
+                "access_token": brand_tokens.get("access_token"),
+                "refresh_token": brand_tokens.get("refresh_token"),
+                "expires_at": now + brand_tokens.get("expires_in", 3600),
+                "issued_at": now,
+                "scopes": brand_tokens.get("scope", ""),
+            }
+            _LOGGER.info("NA: Brand token refreshed via IDK re-exchange")
+        except AuthenticationError:
+            _LOGGER.error("NA: Brand token re-derivation failed")
+            raise
+
+    async def _refresh_mbb_from_refresh_token(self) -> None:
+        """Refresh the MBB token using the stored MBB refresh_token.
+
+        On failure, falls back to re-exchange from current IDK id_token
+        (_exchange_mbb_token + _refresh_mbb_token) before raising.
+
+        Requires self._xclient_id to be set.
+
+        Raises:
+            AuthenticationError: If both MBB refresh and re-exchange fallback fail.
+        """
+        if not self._xclient_id:
+            raise AuthenticationError("Cannot refresh MBB token: no xclientId stored")
+
+        mbb_entry = self._na_tokens.get("mbb", {})
+        refresh_token = mbb_entry.get("refresh_token")
+
+        # Primary: refresh via stored refresh_token
+        if refresh_token:
+            try:
+                mbb_tokens = await self._refresh_mbb_token(
+                    refresh_token=refresh_token,
+                    xclient_id=self._xclient_id,
+                )
+                now = time.time()
+                self._na_tokens["mbb"].update({
+                    "access_token": mbb_tokens.get("access_token"),
+                    "refresh_token": mbb_tokens.get("refresh_token", refresh_token),
+                    "expires_at": now + mbb_tokens.get("expires_in", 3600),
+                    "issued_at": now,
+                })
+                _LOGGER.info("NA: MBB token refreshed via refresh_token")
+                return
+            except AuthenticationError as exc:
+                _LOGGER.warning("NA: MBB refresh_token grant failed, trying re-exchange: %s", exc)
+
+        # Fallback: re-exchange from IDK id_token
+        idk_id_token = self._na_tokens.get("idk", {}).get("id_token")
+        if not idk_id_token:
+            raise AuthenticationError(
+                "MBB refresh failed and IDK id_token unavailable for re-exchange fallback"
+            )
+        try:
+            mbb_initial = await self._exchange_mbb_token(
+                idk_id_token=idk_id_token,
+                xclient_id=self._xclient_id,
+            )
+            mbb_working = await self._refresh_mbb_token(
+                refresh_token=mbb_initial["refresh_token"],
+                xclient_id=self._xclient_id,
+            )
+            now = time.time()
+            self._na_tokens["mbb"] = {
+                "access_token": mbb_working.get("access_token"),
+                "refresh_token": mbb_working.get("refresh_token"),
+                "expires_at": now + mbb_working.get("expires_in", 3600),
+                "issued_at": now,
+                "scopes": mbb_working.get("scope", "sc2:fal"),
+            }
+            _LOGGER.info("NA: MBB token re-exchanged from IDK id_token (fallback)")
+        except AuthenticationError:
+            _LOGGER.error("NA: MBB re-exchange fallback also failed")
+            raise
+
     async def _login_na(self) -> bool:
         """NA-specific login flow using identity.na.vwgroup.io.
 
