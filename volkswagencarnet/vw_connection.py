@@ -7,9 +7,11 @@ import asyncio
 import base64
 from datetime import UTC, datetime, timedelta
 import hashlib
+import hmac
 import logging
 from random import randint, random
 import secrets
+import time
 from urllib.parse import parse_qs, urljoin, urlparse
 from typing import Dict, Optional
 
@@ -30,6 +32,8 @@ from .vw_const import (
     HEADERS_AUTH,
     HEADERS_SESSION,
     USER_AGENT,
+    XQMAUTH_PREFIX,
+    XQMAUTH_SECRET,
     get_region_from_country,
     get_region_config,
 )
@@ -126,6 +130,30 @@ class Connection:
         code_challenge = base64.urlsafe_b64encode(digest).decode('utf-8')
         # Remove padding
         return code_challenge.rstrip('=')
+
+    @staticmethod
+    def _calculate_xqmauth(timestamp: float | None = None) -> str:
+        """Calculate X-QMAuth header value using HMAC-SHA256.
+
+        The X-QMAuth header is required for IDK token exchange and refresh
+        on VW Group platforms. It uses a time-based HMAC with a shared secret.
+
+        Args:
+            timestamp: Unix epoch timestamp in seconds. Defaults to current time.
+                       Accepts float for deterministic testing with frozen time.
+
+        Returns:
+            X-QMAuth header string in format 'v1:01da27b0:<hmac-hex-digest>'
+        """
+        if timestamp is None:
+            timestamp = time.time()
+        gmtime_100sec = int(timestamp / 100)
+        xqmauth_val = hmac.new(
+            XQMAUTH_SECRET,
+            str(gmtime_100sec).encode("ascii"),
+            digestmod="sha256",
+        ).hexdigest()
+        return XQMAUTH_PREFIX + xqmauth_val
 
     async def _discover_endpoints(self) -> bool:
         """Discover working endpoints for regions without confirmed URLs.
