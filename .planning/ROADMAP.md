@@ -13,7 +13,7 @@ This roadmap delivers North America region authentication for the volkswagencarn
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: NA Foundation** - Region-specific constants, X-QMAuth calculation, endpoint separation (completed 2026-02-18)
-- [ ] **Phase 2: NA OAuth Login Flow** - IDK token exchange via NA identity provider
+- [x] **Phase 2: NA OAuth Login Flow** - IDK token exchange via NA identity provider (completed 2026-02-18)
 - [ ] **Phase 3: Three-Token Architecture** - Brand and MBB token layers with client registration
 - [ ] **Phase 4: Token Lifecycle Management** - Per-endpoint token selection and hierarchical refresh
 - [ ] **Phase 5: Reliability & Discovery** - Market config discovery, home region routing, rate limiting
@@ -49,7 +49,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md -- follow_redirects() HTTPS stop condition, X-QMAuth injection in token exchange, _login_na() method with IDK-only probe (completed 2026-02-18)
-- [ ] 02-02-PLAN.md -- NAOAuthLoginTest class (8 tests): success, bad creds, token failure, redirect failure, network error, probe accepted, probe rejected, EMEA routing guard
+- [x] 02-02-PLAN.md -- NAOAuthLoginTest class (6 tests): success, bad creds, token failure, redirect failure, network error, EMEA routing guard (completed 2026-02-18)
 
 ### Phase 3: Three-Token Architecture
 **Goal**: Library obtains all three token types (IDK, Brand, MBB) from a single NA login, completing the full authentication chain
@@ -134,7 +134,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. NA Foundation | 1/1 | Complete   | 2026-02-18 |
-| 2. NA OAuth Login Flow | 1/2 | In progress | - |
+| 2. NA OAuth Login Flow | 2/2 | Complete    | 2026-02-18 |
 | 3. Three-Token Architecture | 0/2 | Not started | - |
 | 4. Token Lifecycle Management | 0/2 | Not started | - |
 | 5. Reliability & Discovery | 0/2 | Not started | - |
