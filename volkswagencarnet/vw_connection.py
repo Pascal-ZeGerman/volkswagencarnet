@@ -31,6 +31,7 @@ from .vw_const import (
     COUNTRY,
     HEADERS_AUTH,
     HEADERS_SESSION,
+    MBB_BRAND_CONFIG,
     USER_AGENT,
     XQMAUTH_PREFIX,
     XQMAUTH_SECRET,
@@ -72,6 +73,8 @@ class Connection:
         password,
         country=COUNTRY,
         interval=timedelta(minutes=5),
+        xclient_id: str | None = None,
+        on_xclient_id=None,
     ) -> None:
         """Initialize."""
         self._session = session
@@ -100,6 +103,12 @@ class Connection:
         self._jarCookie = None
 
         self._service_status = {}
+
+        # NA three-token registry (empty for EMEA, populated during NA login)
+        self._na_tokens: dict = {}   # keys: "idk", "brand", "mbb"
+        self._xclient_id: str | None = xclient_id  # caller-injected or registered during login
+        self._xclient_id_callback = on_xclient_id  # called only when NEW xclientId generated
+        self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
 
     def _clear_cookies(self):
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
@@ -403,12 +412,13 @@ class Connection:
     ) -> str:
         """Handle redirects."""
         ref = urljoin(pw_url, redirect_location)
-        max_depth = 10
+        MAX_REDIRECT_DEPTH = 10
+        max_depth = MAX_REDIRECT_DEPTH
         stop_uri = self._session_region_config.get("redirect_uri", APP_URI)
         while not ref.startswith(stop_uri):
             if max_depth == 0:
                 raise RedirectError(
-                    f"Too many redirects during login flow (max depth: {max_depth}). "
+                    f"Too many redirects during login flow (max depth: {MAX_REDIRECT_DEPTH}). "
                     "This might indicate an authentication loop."
                 )
             response = await session.get(
@@ -532,6 +542,53 @@ class Connection:
         )
 
         return json_loads(token_response)
+
+    async def _register_mbb_client(self) -> str:
+        """Register as MBB OAuth client and return xclientId.
+
+        POSTs to MBB registration endpoint using the VW Car-Net app identity.
+        Returns the assigned xclientId (client_id) string.
+
+        Raises:
+            AuthenticationError: If registration fails or response is malformed.
+        """
+        mbb_base = self._session_region_config.get("mbb_oauth_base_url")
+        if not mbb_base:
+            raise AuthenticationError("NA region config missing mbb_oauth_base_url")
+
+        register_url = f"{mbb_base}/mobile/register/v1"
+        register_body = {
+            "client_name": "Android Phone",
+            "platform": "google",
+            "client_brand": "Volkswagen",
+            "appName": "myVW",
+            "appVersion": "3.51.1",
+            "appId": ANDROID_PACKAGE_NAME,
+        }
+        reg_headers = {**self._session_auth_headers, "Content-Type": "application/json"}
+
+        _LOGGER.debug("Registering as MBB OAuth client at %s", register_url)
+        response = await self._session.post(
+            url=register_url,
+            headers=reg_headers,
+            json=register_body,
+        )
+
+        if response.status != 200:
+            text = await response.text()
+            raise AuthenticationError(
+                f"MBB client registration failed with HTTP {response.status}: {text}"
+            )
+
+        data = await response.json()
+        xclient_id = data.get("client_id")
+        if not xclient_id:
+            raise AuthenticationError(
+                f"MBB client registration response missing 'client_id': {data}"
+            )
+
+        _LOGGER.info("NA: MBB client registered, xclientId obtained")
+        return xclient_id
 
     async def _login_na(self) -> bool:
         """NA-specific login flow using identity.na.vwgroup.io.
@@ -705,10 +762,10 @@ class Connection:
         self._session_headers.pop("Authorization", None)
 
         if self._session_logged_in:
-            if self._session_headers.get("identity", {}).get("identity_token"):
+            if self._session_tokens.get("identity", {}).get("id_token"):
                 _LOGGER.info("Revoking Identity Access Token")
 
-            if self._session_headers.get("identity", {}).get("refresh_token"):
+            if self._session_tokens.get("identity", {}).get("refresh_token"):
                 _LOGGER.info("Revoking Identity Refresh Token")
                 params = {"token": self._session_tokens["identity"]["refresh_token"]}
                 await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
@@ -1467,6 +1524,17 @@ class Connection:
         Not actually checking anything.
         """
         return self._session_logged_in
+
+    @property
+    def na_auth_level(self) -> str | None:
+        """Return the NA authentication level.
+
+        Returns:
+            "full" if all three tokens (IDK, Brand, MBB) were obtained.
+            "idk_only" if only the IDK token was obtained (Brand/MBB failed).
+            None for EMEA connections or before login.
+        """
+        return self._na_auth_level
 
     def vehicle(self, vin):
         """Return vehicle object for given vin."""
