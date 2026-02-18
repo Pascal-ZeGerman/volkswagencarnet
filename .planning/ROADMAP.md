@@ -48,7 +48,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- follow_redirects() HTTPS stop condition, X-QMAuth injection in token exchange, _login_na() method with IDK-only probe
+- [x] 02-01-PLAN.md -- follow_redirects() HTTPS stop condition, X-QMAuth injection in token exchange, _login_na() method with IDK-only probe (completed 2026-02-18)
 - [ ] 02-02-PLAN.md -- NAOAuthLoginTest class (8 tests): success, bad creds, token failure, redirect failure, network error, probe accepted, probe rejected, EMEA routing guard
 
 ### Phase 3: Three-Token Architecture
@@ -134,7 +134,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. NA Foundation | 1/1 | Complete   | 2026-02-18 |
-| 2. NA OAuth Login Flow | 0/2 | Not started | - |
+| 2. NA OAuth Login Flow | 1/2 | In progress | - |
 | 3. Three-Token Architecture | 0/2 | Not started | - |
 | 4. Token Lifecycle Management | 0/2 | Not started | - |
 | 5. Reliability & Discovery | 0/2 | Not started | - |
