@@ -1185,7 +1185,7 @@ class Connection:
                 await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
 
     # HTTP methods to API
-    async def _request(self, method, url, return_raw=False, **kwargs):
+    async def _request(self, method, url, return_raw=False, _retry_401: bool = False, **kwargs):
         """Perform a query to the VW-Group API."""
         _LOGGER.debug('HTTP %s "%s"', method, url)
         if kwargs.get("json", None):
@@ -1200,6 +1200,24 @@ class Connection:
                 raise_for_status=False,
                 **kwargs,
             ) as response:
+                # NA inline 401 retry: refresh the appropriate token and retry once
+                if response.status == 401 and self._session_region == "NA" and not _retry_401:
+                    _LOGGER.debug("NA: Got 401 on %s, attempting inline token refresh and retry", url)
+                    try:
+                        token_type = self._classify_endpoint(url)
+                        if token_type == "idk":
+                            await self._refresh_idk_token()
+                        elif token_type == "brand":
+                            await self._refresh_brand_token()
+                        elif token_type == "mbb":
+                            await self._refresh_mbb_from_refresh_token()
+                    except (AuthenticationError, ValueError) as refresh_exc:
+                        _LOGGER.warning("NA: Inline token refresh failed for 401: %s", refresh_exc)
+                        # Fall through to raise_for_status which will surface the 401
+                    else:
+                        # Retry the original request once with the new token
+                        return await self._request(method, url, return_raw=return_raw, _retry_401=True, **kwargs)
+
                 response.raise_for_status()
 
                 # Update cookie jar
@@ -1803,8 +1821,88 @@ class Connection:
             raise APIError(f"Unknown error during setHonkAndFlash: {str(e)}") from e
 
     # Token handling #
+    def _is_token_expiring(self, entry: dict, now: float, window_seconds: float = 900) -> bool:
+        """Return True if token entry expires within window_seconds from now.
+
+        Uses expires_at if present. Falls back to issued_at + assumed lifetime
+        (3600s for access tokens) if expires_at is missing.
+
+        Args:
+            entry: Token dict with optional 'expires_at' and 'issued_at' keys.
+            now: Current Unix timestamp.
+            window_seconds: Seconds before expiry to consider token "expiring". Default: 900 (15 min).
+
+        Returns:
+            True if token will expire within window_seconds, False otherwise.
+        """
+        expires_at = entry.get("expires_at")
+        if expires_at is None:
+            issued_at = entry.get("issued_at", now)
+            expires_at = issued_at + 3600  # assumed 1h lifetime if unknown
+        return (expires_at - now) <= window_seconds
+
+    async def _validate_na_tokens(self) -> bool:
+        """Proactively refresh NA tokens expiring within 15 minutes.
+
+        Checks IDK, Brand, and MBB token expiry. IDK refresh cascades to Brand
+        refresh automatically (Brand is derived from IDK access_token).
+        MBB is refreshed independently.
+
+        For idk_only auth level: only IDK is checked and refreshed.
+
+        Returns:
+            True if all available tokens are valid after any needed refresh.
+            False if a critical refresh fails (IDK failure is critical).
+        """
+        if not self._na_tokens:
+            _LOGGER.warning("NA: _validate_na_tokens called but _na_tokens is empty")
+            return False
+
+        now = time.time()
+        window = 900  # 15-minute proactive refresh window
+
+        # IDK token — critical; failure means session cannot continue
+        idk_entry = self._na_tokens.get("idk", {})
+        if self._is_token_expiring(idk_entry, now, window):
+            _LOGGER.debug("NA: IDK token expiring within %s seconds, refreshing", window)
+            try:
+                await self._refresh_idk_token()
+                # Note: _refresh_idk_token() cascades Brand refresh automatically
+            except AuthenticationError as exc:
+                _LOGGER.error("NA: IDK token refresh failed: %s", exc)
+                return False
+
+        elif "brand" in self._na_tokens and self._na_auth_level == "full":
+            # IDK not expiring — check Brand independently (IDK refresh cascade didn't run)
+            brand_entry = self._na_tokens.get("brand", {})
+            if self._is_token_expiring(brand_entry, now, window):
+                _LOGGER.debug("NA: Brand token expiring within %s seconds, refreshing", window)
+                try:
+                    await self._refresh_brand_token()
+                except AuthenticationError as exc:
+                    _LOGGER.warning("NA: Brand token refresh failed (non-critical): %s", exc)
+                    # Brand failure is non-critical — degrade to idk_only
+                    self._na_auth_level = "idk_only"
+
+        # MBB token — independent of IDK refresh path
+        if self._na_auth_level == "full" and "mbb" in self._na_tokens:
+            mbb_entry = self._na_tokens.get("mbb", {})
+            if self._is_token_expiring(mbb_entry, now, window):
+                _LOGGER.debug("NA: MBB token expiring within %s seconds, refreshing", window)
+                try:
+                    await self._refresh_mbb_from_refresh_token()
+                except AuthenticationError as exc:
+                    _LOGGER.warning("NA: MBB token refresh failed (non-critical): %s", exc)
+                    # MBB failure is non-critical for IDK-accessible endpoints
+
+        return True
+
     async def validate_tokens(self) -> bool:
         """Validate expiry of tokens."""
+        # NA region: use dedicated token lifecycle validation
+        if self._session_region == "NA":
+            return await self._validate_na_tokens()
+
         try:
             idtoken = self._session_tokens["identity"]["id_token"]
             atoken = self._session_tokens["identity"]["access_token"]
