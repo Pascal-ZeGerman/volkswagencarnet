@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 3 - Three-Token Architecture (in progress)
+**Current focus:** Phase 4 - Token Refresh (next phase)
 
 ## Current Position
 
-Phase: 3 of 7 (Three-Token Architecture)
-Plan: 2 of 3 in current phase (03-02 complete)
-Status: Phase 3 in progress, Plan 2 complete
-Last activity: 2026-02-18 -- Phase 3 Plan 2 completed (Brand/MBB token exchange methods, full three-token _login_na() chain)
+Phase: 3 of 7 (Three-Token Architecture) - COMPLETE
+Plan: 3 of 3 in current phase (03-03 complete)
+Status: Phase 3 complete, ready for Phase 4
+Last activity: 2026-02-18 -- Phase 3 Plan 3 completed (NAThreeTokenTest class, 8 tests, 61 total)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 5 min
-- Total execution time: 0.40 hours
+- Total plans completed: 6
+- Average duration: 4 min
+- Total execution time: 0.43 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [█████░░░░░] 50%
 |-------|-------|-------|----------|
 | 01-na-foundation | 1 | 5 min | 5 min |
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
-| 03-three-token-architecture | 2 | 7 min | 3.5 min |
+| 03-three-token-architecture | 3 | 8 min | 2.7 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 8 min, 6 min, 5 min, 2 min
-- Trend: stable
+- Last 5 plans: 8 min, 6 min, 5 min, 2 min, 1 min
+- Trend: accelerating
 
 *Updated after each plan completion*
 
@@ -61,6 +61,8 @@ Recent decisions affecting current work:
 - [Phase 03-two]: Brand token exchange uses JSON body (not form-encoded); MBB uses form-encoded body with key 'token'
 - [Phase 03-two]: _refresh_mbb_token defined as separate method for Phase 4 independent token refresh reuse
 - [Phase 03-two]: MBB working token is the immediately refreshed token (initial grant rotated on first use)
+- [Phase 03-three]: _make_na_conn(**kwargs) helper pattern supports optional constructor params without per-test boilerplate
+- [Phase 03-three]: Store AsyncMock as variable before patch.object when call_count/call_args inspection needed post-call
 
 ### Pending Todos
 
@@ -69,11 +71,11 @@ None yet.
 ### Blockers/Concerns
 
 - ~~X-QMAuth secret from Audi analysis may differ for VW NA~~ RESOLVED: test vector confirmed working
-- Brand token path unknown (/login/v1/volkswagen/token vs /login/v1/vw/token) -- test against live API in Phase 3
+- ~~Brand token path unknown~~ DEFERRED: Both /login/v1/volkswagen/token and /login/v1/vw/token fallback implemented, live validation in Phase 4+
 - IDK-only flow might suffice for Cariad BFF endpoints, potentially allowing Phase 3 scope reduction
 
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 03-three-token-architecture/03-02-PLAN.md
-Resume file: .planning/phases/03-three-token-architecture/03-03-PLAN.md (next plan)
+Stopped at: Completed 03-three-token-architecture/03-03-PLAN.md (Phase 3 complete)
+Resume file: .planning/phases/04-token-refresh/ (next phase)
