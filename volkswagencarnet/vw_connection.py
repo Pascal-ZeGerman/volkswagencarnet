@@ -590,6 +590,150 @@ class Connection:
         _LOGGER.info("NA: MBB client registered, xclientId obtained")
         return xclient_id
 
+    async def _exchange_brand_token(self, idk_access_token: str) -> dict:
+        """Exchange IDK access_token for Brand token.
+
+        Tries /login/v1/volkswagen/token first, falls back to /login/v1/vw/token on 404.
+        Uses JSON body (not form-encoded) per 2026 traffic analysis.
+
+        Args:
+            idk_access_token: The IDK access token from the authorization code exchange.
+
+        Returns:
+            Dict containing brand access_token and refresh_token.
+
+        Raises:
+            AuthenticationError: If brand token exchange fails on both paths.
+        """
+        brand_body = {
+            "token": idk_access_token,
+            "grant_type": "id_token",
+            "stage": "live",
+            "config": MBB_BRAND_CONFIG,
+        }
+        brand_headers = {**self._session_auth_headers, "Content-Type": "application/json"}
+
+        primary_path = "/login/v1/volkswagen/token"
+        fallback_path = "/login/v1/vw/token"
+
+        for path in (primary_path, fallback_path):
+            url = f"{self._base_api}{path}"
+            _LOGGER.debug("Attempting Brand token exchange at %s", url)
+            response = await self._session.post(
+                url=url,
+                headers=brand_headers,
+                json=brand_body,
+            )
+            if response.status == 404 and path == primary_path:
+                _LOGGER.debug("Brand token primary path 404, trying fallback: %s", fallback_path)
+                continue
+            if response.status == 200:
+                data = await response.json()
+                _LOGGER.info("NA: Brand token obtained")
+                return data
+            text = await response.text()
+            raise AuthenticationError(
+                f"Brand token exchange failed at {path} with HTTP {response.status}: {text}"
+            )
+
+        # Should not reach here — loop always returns or raises
+        raise AuthenticationError("Brand token exchange failed on all paths")
+
+    async def _exchange_mbb_token(self, idk_id_token: str, xclient_id: str) -> dict:
+        """Exchange IDK id_token for initial MBB token (form-encoded).
+
+        NOTE: Uses id_token (not access_token) per MBB OAuth spec.
+        NOTE: Body key is 'token' (non-standard) not 'id_token'.
+        NOTE: Body is form-encoded (not JSON) — unlike Brand token exchange.
+
+        Args:
+            idk_id_token: The IDK id_token from the authorization code exchange.
+            xclient_id: The registered MBB client ID (X-Client-ID header).
+
+        Returns:
+            Dict containing mbb access_token and refresh_token.
+
+        Raises:
+            AuthenticationError: If MBB initial token exchange fails.
+        """
+        mbb_base = self._session_region_config.get("mbb_oauth_base_url")
+        mbb_url = f"{mbb_base}/mobile/oauth2/v1/token"
+        mbb_body = {
+            "grant_type": "id_token",
+            "token": idk_id_token,  # Uses id_token value, key is "token"
+            "scope": "sc2:fal",
+        }
+        mbb_headers = {
+            **self._session_auth_headers,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Client-ID": xclient_id,
+        }
+
+        _LOGGER.debug("Requesting initial MBB token at %s", mbb_url)
+        response = await self._session.post(
+            url=mbb_url,
+            headers=mbb_headers,
+            data=mbb_body,
+        )
+
+        if response.status != 200:
+            text = await response.text()
+            raise AuthenticationError(
+                f"MBB initial token exchange failed with HTTP {response.status}: {text}"
+            )
+
+        data = await response.json()
+        _LOGGER.info("NA: MBB initial token obtained")
+        return data
+
+    async def _refresh_mbb_token(self, refresh_token: str, xclient_id: str) -> dict:
+        """Refresh an MBB token using the refresh_token grant.
+
+        Separate method (not embedded in login) so Phase 4 token lifecycle
+        management can call it independently without re-login.
+
+        NOTE: Body key for refresh_token value is 'token' (non-standard VW convention).
+
+        Args:
+            refresh_token: The MBB refresh_token from a previous MBB grant.
+            xclient_id: The registered MBB client ID (X-Client-ID header).
+
+        Returns:
+            Dict containing refreshed access_token and refresh_token.
+
+        Raises:
+            AuthenticationError: If MBB token refresh fails.
+        """
+        mbb_base = self._session_region_config.get("mbb_oauth_base_url")
+        mbb_url = f"{mbb_base}/mobile/oauth2/v1/token"
+        refresh_body = {
+            "grant_type": "refresh_token",
+            "token": refresh_token,  # Key is "token" not "refresh_token" per VW spec
+            "scope": "sc2:fal",
+        }
+        mbb_headers = {
+            **self._session_auth_headers,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Client-ID": xclient_id,
+        }
+
+        _LOGGER.debug("Refreshing MBB token at %s", mbb_url)
+        response = await self._session.post(
+            url=mbb_url,
+            headers=mbb_headers,
+            data=refresh_body,
+        )
+
+        if response.status != 200:
+            text = await response.text()
+            raise AuthenticationError(
+                f"MBB token refresh failed with HTTP {response.status}: {text}"
+            )
+
+        data = await response.json()
+        _LOGGER.info("NA: MBB token refreshed")
+        return data
+
     async def _login_na(self) -> bool:
         """NA-specific login flow using identity.na.vwgroup.io.
 
