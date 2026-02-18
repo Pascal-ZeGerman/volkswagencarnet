@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 2 - NA OAuth Login Flow
+**Current focus:** Phase 2 - NA OAuth Login Flow (COMPLETE)
 
 ## Current Position
 
 Phase: 2 of 7 (NA OAuth Login Flow)
-Plan: 1 of 2 in current phase (02-01 complete)
-Status: Phase 2 Plan 1 complete, ready for Phase 2 Plan 2
-Last activity: 2026-02-18 -- Phase 2 Plan 1 completed (NA OAuth branching: _login_na(), follow_redirects stop_uri, X-QMAuth injection)
+Plan: 2 of 2 in current phase (02-02 complete -- phase complete)
+Status: Phase 2 complete, ready for Phase 3
+Last activity: 2026-02-18 -- Phase 2 Plan 2 completed (NAOAuthLoginTest: 6 tests, 53 total passing)
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 7 min
-- Total execution time: 0.22 hours
+- Total plans completed: 3
+- Average duration: 6 min
+- Total execution time: 0.32 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-na-foundation | 1 | 5 min | 5 min |
-| 02-na-oauth-login-flow | 1 | 8 min | 8 min |
+| 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 8 min
+- Last 5 plans: 5 min, 8 min, 6 min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -53,6 +53,8 @@ Recent decisions affecting current work:
 - [Phase 02-na-oauth-login-flow plan 01]: X-QMAuth header NOT removed after post_form -- retained for Phase 4 token refresh
 - [Phase 02-na-oauth-login-flow plan 01]: No live IDK-only probe in _login_na() -- hypothesis validated via Phase 3 test fixtures
 - [Phase 02-na-oauth-login-flow plan 01]: PKCE explicitly None in _login_na() per 2026 traffic analysis (app does not use PKCE)
+- [Phase 02-na-oauth-login-flow plan 02]: Failure-path tests call conn._login_na() directly; only test_na_login_success calls conn._login() to validate dispatch chain
+- [Phase 02-na-oauth-login-flow plan 02]: Mock at Connection instance level with patch.object(conn, ...) not at module level
 
 ### Pending Todos
 
@@ -67,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 02-na-oauth-login-flow/02-01-PLAN.md
-Resume file: .planning/phases/02-na-oauth-login-flow/02-02-PLAN.md
+Stopped at: Completed 02-na-oauth-login-flow/02-02-PLAN.md
+Resume file: .planning/phases/03-na-vehicle-data/ (next phase)
