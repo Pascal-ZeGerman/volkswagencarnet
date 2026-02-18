@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 3 of 7 (Three-Token Architecture)
-Plan: 1 of 3 in current phase (03-01 complete)
-Status: Phase 3 in progress, Plan 1 complete
-Last activity: 2026-02-18 -- Phase 3 Plan 1 completed (NA token registry infrastructure, MBB client registration)
+Plan: 2 of 3 in current phase (03-02 complete)
+Status: Phase 3 in progress, Plan 2 complete
+Last activity: 2026-02-18 -- Phase 3 Plan 2 completed (Brand/MBB token exchange methods, full three-token _login_na() chain)
 
-Progress: [████░░░░░░] 40%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 6 min
-- Total execution time: 0.37 hours
+- Total plans completed: 5
+- Average duration: 5 min
+- Total execution time: 0.40 hours
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: [████░░░░░░] 40%
 |-------|-------|-------|----------|
 | 01-na-foundation | 1 | 5 min | 5 min |
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
-| 03-three-token-architecture | 1 | 5 min | 5 min |
+| 03-three-token-architecture | 2 | 7 min | 3.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 8 min, 6 min, 5 min
+- Last 5 plans: 5 min, 8 min, 6 min, 5 min, 2 min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -58,6 +58,9 @@ Recent decisions affecting current work:
 - [Phase 02-na-oauth-login-flow plan 02]: Mock at Connection instance level with patch.object(conn, ...) not at module level
 - [Phase 03-three-token-architecture plan 01]: _register_mbb_client() returns xclientId string but does NOT assign self._xclient_id -- caller (_login_na) owns assignment to allow conditional callback invocation
 - [Phase 03-three-token-architecture plan 01]: on_xclient_id callback fires only for NEW registrations, not when xclient_id is caller-injected -- prevents unnecessary persistence writes
+- [Phase 03-two]: Brand token exchange uses JSON body (not form-encoded); MBB uses form-encoded body with key 'token'
+- [Phase 03-two]: _refresh_mbb_token defined as separate method for Phase 4 independent token refresh reuse
+- [Phase 03-two]: MBB working token is the immediately refreshed token (initial grant rotated on first use)
 
 ### Pending Todos
 
@@ -72,5 +75,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 03-three-token-architecture/03-01-PLAN.md
-Resume file: .planning/phases/03-three-token-architecture/03-02-PLAN.md (next plan)
+Stopped at: Completed 03-three-token-architecture/03-02-PLAN.md
+Resume file: .planning/phases/03-three-token-architecture/03-03-PLAN.md (next plan)
