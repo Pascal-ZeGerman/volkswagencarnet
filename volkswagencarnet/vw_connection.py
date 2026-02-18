@@ -404,7 +404,8 @@ class Connection:
         """Handle redirects."""
         ref = urljoin(pw_url, redirect_location)
         max_depth = 10
-        while not ref.startswith(APP_URI):
+        stop_uri = self._session_region_config.get("redirect_uri", APP_URI)
+        while not ref.startswith(stop_uri):
             if max_depth == 0:
                 raise RedirectError(
                     f"Too many redirects during login flow (max depth: {max_depth}). "
