@@ -63,8 +63,6 @@ JWT_ALGORITHMS = ["RS256"]
 class Connection:
     """Connection to VW-Group Connect services."""
 
-    _login_lock = asyncio.Lock()
-
     # Init connection class
     def __init__(
         self,
@@ -109,6 +107,10 @@ class Connection:
         self._xclient_id: str | None = xclient_id  # caller-injected or registered during login
         self._xclient_id_callback = on_xclient_id  # called only when NEW xclientId generated
         self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
+        # Shared lock for login and token refresh (prevents concurrent login+refresh race)
+        self._login_lock = asyncio.Lock()
+        # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
+        self._na_token_endpoint: str | None = None
 
     def _clear_cookies(self):
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
@@ -165,6 +167,44 @@ class Connection:
             digestmod="sha256",
         ).hexdigest()
         return XQMAUTH_PREFIX + xqmauth_val
+
+    def _classify_endpoint(self, url: str) -> str:
+        """Classify an API URL to determine which NA token type to use.
+
+        Token routing rules (per 2026 traffic analysis):
+        - IDK token: Cariad BFF URLs (self._base_api prefix)
+        - MBB token: MBB OAuth service (mbboauth-1d.prd.ece.vwg-connect.com)
+        - Brand token: Brand token paths (/login/v1/volkswagen/token or /login/v1/vw/token)
+
+        For EMEA connections, always returns 'idk' (single-token model).
+
+        Args:
+            url: The full URL being requested.
+
+        Returns:
+            One of: 'idk', 'mbb', 'brand'
+
+        Raises:
+            ValueError: If url does not match any known NA endpoint pattern.
+                        This is a programmer error — fail loudly.
+        """
+        if self._session_region != "NA":
+            return "idk"  # EMEA always uses the single IDK/access_token
+
+        mbb_host = "mbboauth-1d.prd.ece.vwg-connect.com"
+        brand_paths = ("/login/v1/volkswagen/token", "/login/v1/vw/token")
+
+        if mbb_host in url:
+            return "mbb"
+        if any(path in url for path in brand_paths):
+            return "brand"
+        if self._base_api and url.startswith(self._base_api):
+            return "idk"
+
+        raise ValueError(
+            f"Cannot classify NA endpoint — unknown URL pattern: {url!r}. "
+            "Add URL to _classify_endpoint() or check base_api configuration."
+        )
 
     async def _discover_endpoints(self) -> bool:
         """Discover working endpoints for regions without confirmed URLs.
@@ -760,6 +800,7 @@ class Connection:
             # Get OpenID config (routes to identity.na.vwgroup.io for NA)
             openid_config = await self.get_openid_config()
             token_endpoint = openid_config["token_endpoint"]
+            self._na_token_endpoint = token_endpoint  # persist for Phase 4 IDK refresh
 
             # Get authorization code via standard OAuth form flow
             auth_code = await self._get_authorization_code(openid_config)
