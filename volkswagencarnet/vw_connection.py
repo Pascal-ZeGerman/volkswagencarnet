@@ -776,13 +776,71 @@ class Connection:
                 )
                 return False
 
-            # Store IDK token; Phase 3 adds "brand" and "mbb" alongside this
+            # Store IDK token to session_tokens for validate_tokens() compatibility (COMPAT-04)
             self._session_tokens["identity"] = tokens
             self._session_headers["Authorization"] = (
                 "Bearer " + self._session_tokens["identity"]["access_token"]
             )
 
             _LOGGER.info("NA: IDK token obtained and stored")
+
+            # Populate NA token registry with IDK tokens
+            self._na_tokens["idk"] = {
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens.get("refresh_token"),
+                "id_token": tokens["id_token"],
+                "expires_at": tokens.get("expires_in", 3600) + time.time(),
+                "scopes": tokens.get("scope", ""),
+            }
+
+            try:
+                # --- Brand token exchange ---
+                brand_tokens = await self._exchange_brand_token(tokens["access_token"])
+                self._na_tokens["brand"] = {
+                    "access_token": brand_tokens.get("access_token"),
+                    "refresh_token": brand_tokens.get("refresh_token"),
+                    "expires_at": brand_tokens.get("expires_in", 3600) + time.time(),
+                    "scopes": brand_tokens.get("scope", ""),
+                }
+                _LOGGER.info("NA: Brand token stored")
+
+                # --- MBB client registration (skip if caller injected xclientId) ---
+                if self._xclient_id is None:
+                    self._xclient_id = await self._register_mbb_client()
+                    # Fire callback only for newly registered xclientId
+                    if self._xclient_id_callback is not None:
+                        self._xclient_id_callback(self._xclient_id)
+                else:
+                    _LOGGER.debug("NA: Using caller-provided xclientId, skipping registration")
+
+                # --- MBB initial token grant ---
+                mbb_initial = await self._exchange_mbb_token(
+                    idk_id_token=tokens["id_token"],
+                    xclient_id=self._xclient_id,
+                )
+
+                # --- Immediate MBB refresh (working token is the refreshed one) ---
+                mbb_working = await self._refresh_mbb_token(
+                    refresh_token=mbb_initial["refresh_token"],
+                    xclient_id=self._xclient_id,
+                )
+                self._na_tokens["mbb"] = {
+                    "access_token": mbb_working.get("access_token"),
+                    "refresh_token": mbb_working.get("refresh_token"),
+                    "expires_at": mbb_working.get("expires_in", 3600) + time.time(),
+                    "scopes": mbb_working.get("scope", "sc2:fal"),
+                }
+                _LOGGER.info("NA: MBB token obtained and immediately refreshed")
+
+                self._na_auth_level = "full"
+                _LOGGER.info("NA: Full three-token authentication complete")
+
+            except (AuthenticationError, RequestError) as brand_mbb_error:
+                _LOGGER.warning(
+                    "NA: Brand/MBB token acquisition failed, continuing with IDK-only: %s",
+                    brand_mbb_error,
+                )
+                self._na_auth_level = "idk_only"
 
             self._session_logged_in = True
             return True
