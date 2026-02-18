@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 4 - Token Refresh (next phase)
+**Current focus:** Phase 4 - Token Lifecycle Management (in progress)
 
 ## Current Position
 
-Phase: 3 of 7 (Three-Token Architecture) - COMPLETE
-Plan: 3 of 3 in current phase (03-03 complete)
-Status: Phase 3 complete, ready for Phase 4
-Last activity: 2026-02-18 -- Phase 3 Plan 3 completed (NAThreeTokenTest class, 8 tests, 61 total)
+Phase: 4 of 7 (Token Lifecycle Management) - IN PROGRESS
+Plan: 1 of 1 in current phase (04-01 complete)
+Status: Phase 4 Plan 1 complete, ready for Phase 5
+Last activity: 2026-02-18 -- Phase 4 Plan 1 completed (NA token lifecycle management, 3 tasks)
 
-Progress: [██████░░░░] 60%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 4 min
+- Total plans completed: 7
+- Average duration: 3.3 min
 - Total execution time: 0.43 hours
 
 **By Phase:**
@@ -30,10 +30,11 @@ Progress: [██████░░░░] 60%
 | 01-na-foundation | 1 | 5 min | 5 min |
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 | 03-three-token-architecture | 3 | 8 min | 2.7 min |
+| 04-token-lifecycle-management | 1 | 2 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 8 min, 6 min, 5 min, 2 min, 1 min
-- Trend: accelerating
+- Last 5 plans: 6 min, 5 min, 2 min, 1 min, 2 min
+- Trend: fast
 
 *Updated after each plan completion*
 
@@ -63,6 +64,10 @@ Recent decisions affecting current work:
 - [Phase 03-two]: MBB working token is the immediately refreshed token (initial grant rotated on first use)
 - [Phase 03-three]: _make_na_conn(**kwargs) helper pattern supports optional constructor params without per-test boilerplate
 - [Phase 03-three]: Store AsyncMock as variable before patch.object when call_count/call_args inspection needed post-call
+- [Phase 04-01]: _retry_401 as explicit method parameter (not kwargs key) avoids leaking unknown kwargs to aiohttp session.request()
+- [Phase 04-01]: Brand/MBB token refresh failures non-critical -- degrade to idk_only rather than failing validation
+- [Phase 04-01]: IDK refresh failure is critical -- returns False from _validate_na_tokens() triggering full re-login
+- [Phase 04-01]: _classify_endpoint raises ValueError for unknown NA URLs -- programmer error should fail loudly
 
 ### Pending Todos
 
@@ -71,11 +76,11 @@ None yet.
 ### Blockers/Concerns
 
 - ~~X-QMAuth secret from Audi analysis may differ for VW NA~~ RESOLVED: test vector confirmed working
-- ~~Brand token path unknown~~ DEFERRED: Both /login/v1/volkswagen/token and /login/v1/vw/token fallback implemented, live validation in Phase 4+
+- ~~Brand token path unknown~~ DEFERRED: Both /login/v1/volkswagen/token and /login/v1/vw/token fallback implemented, live validation in Phase 5+
 - IDK-only flow might suffice for Cariad BFF endpoints, potentially allowing Phase 3 scope reduction
 
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 03-three-token-architecture/03-03-PLAN.md (Phase 3 complete)
-Resume file: .planning/phases/04-token-refresh/ (next phase)
+Stopped at: Completed 04-token-lifecycle-management/04-01-PLAN.md
+Resume file: .planning/phases/05-vehicle-data-na/ (next phase)
