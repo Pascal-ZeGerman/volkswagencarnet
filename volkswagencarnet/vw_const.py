@@ -8,6 +8,14 @@ COUNTRY = "DE"
 CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
 CLIENT_ID_US = "b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com"  # North America (2026)
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
+
+# X-QMAuth HMAC-SHA256 shared secret (VW Group apps)
+# Original obfuscated notation from decompiled app: [26, 256-74, 256-103, 37, ...]
+XQMAUTH_SECRET = bytes([
+    26, 182, 153, 37, 172, 23, 154, 170, 78, 131, 171, 230, 113, 169, 71, 109,
+    23, 100, 24, 184, 91, 215, 6, 241, 67, 108, 161, 91, 230, 71, 152, 156
+])
+XQMAUTH_PREFIX = "v1:01da27b0:"
 CLIENT_TOKEN_TYPES = "code"
 
 USER_AGENT = "Volkswagen/3.51.1-android/14"
@@ -49,6 +57,8 @@ REGION_CONFIGS = {
         "scope": "openid email",  # Minimal scope used by app (2026)
         "redirect_uri": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/oauth/callback",  # HTTPS callback (2026)
         "use_pkce": False,  # App does NOT use PKCE despite server support (2026)
+        "mbb_oauth_base_url": "https://mbboauth-1d.prd.ece.vwg-connect.com/mbbcoauth",
+        "brand_token_path": "/login/v1/volkswagen/token",
         "base_api_candidates": [
             "https://b-h-s.spr.us00.p.con-veh.net",  # Legacy endpoint (confirmed 2026)
             "https://na.bff.cariad.digital",
