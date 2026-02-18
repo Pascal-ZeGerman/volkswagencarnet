@@ -11,7 +11,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 
 - [ ] **AUTH-01**: Library can calculate X-QMAuth header using time-based HMAC-SHA256
 - [x] **AUTH-02**: Library can exchange authorization code for IDK token with X-QMAuth header
-- [ ] **AUTH-03**: Library can register as MBB OAuth client and receive xclientId
+- [x] **AUTH-03**: Library can register as MBB OAuth client and receive xclientId
 - [ ] **AUTH-04**: Library stores NA region-specific constants (client_id, endpoints, scope, redirect_uri)
 - [ ] **AUTH-05**: Library can distinguish between identity endpoint and base API endpoint for NA
 
@@ -20,7 +20,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 - [ ] **TOKEN-01**: Library can exchange IDK access_token for Brand token at `/login/v1/volkswagen/token`
 - [ ] **TOKEN-02**: Library can exchange IDK id_token for initial MBB token via MBB OAuth endpoint
 - [ ] **TOKEN-03**: Library immediately refreshes MBB token after initial grant (uses second token, not first)
-- [ ] **TOKEN-04**: Library stores all three token types separately (IDK, Brand, MBB) with metadata
+- [x] **TOKEN-04**: Library stores all three token types separately (IDK, Brand, MBB) with metadata
 - [ ] **TOKEN-05**: Library includes X-Client-ID header in all MBB OAuth requests
 
 ### Token Management (F5-F6: Selection and Refresh)
@@ -45,7 +45,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 - [ ] **COMPAT-01**: EMEA authentication flow remains unchanged (no breaking changes to existing API)
 - [ ] **COMPAT-02**: Existing EMEA users can upgrade library without code changes
 - [x] **COMPAT-03**: Region detection automatically routes to correct flow (EMEA vs NA) based on country parameter
-- [ ] **COMPAT-04**: Token storage structure supports both single-token (EMEA) and three-token (NA) models
+- [x] **COMPAT-04**: Token storage structure supports both single-token (EMEA) and three-token (NA) models
 - [ ] **COMPAT-05**: All existing vehicle data APIs work with NA authentication
 
 ### Testing & Validation
@@ -98,13 +98,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | AUTH-01 | Phase 1: NA Foundation | Pending |
 | AUTH-02 | Phase 2: NA OAuth Login Flow | Complete |
-| AUTH-03 | Phase 3: Three-Token Architecture | Pending |
+| AUTH-03 | Phase 3: Three-Token Architecture | Complete |
 | AUTH-04 | Phase 1: NA Foundation | Pending |
 | AUTH-05 | Phase 1: NA Foundation | Pending |
 | TOKEN-01 | Phase 3: Three-Token Architecture | Pending |
 | TOKEN-02 | Phase 3: Three-Token Architecture | Pending |
 | TOKEN-03 | Phase 3: Three-Token Architecture | Pending |
-| TOKEN-04 | Phase 3: Three-Token Architecture | Pending |
+| TOKEN-04 | Phase 3: Three-Token Architecture | Complete |
 | TOKEN-05 | Phase 3: Three-Token Architecture | Pending |
 | MGMT-01 | Phase 4: Token Lifecycle Management | Pending |
 | MGMT-02 | Phase 4: Token Lifecycle Management | Pending |
@@ -120,7 +120,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMPAT-01 | Phase 6: Backward Compatibility | Pending |
 | COMPAT-02 | Phase 6: Backward Compatibility | Pending |
 | COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
-| COMPAT-04 | Phase 3: Three-Token Architecture | Pending |
+| COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
 | COMPAT-05 | Phase 6: Backward Compatibility | Pending |
 | TEST-01 | Phase 7: End-to-End Validation | Pending |
 | TEST-02 | Phase 7: End-to-End Validation | Pending |

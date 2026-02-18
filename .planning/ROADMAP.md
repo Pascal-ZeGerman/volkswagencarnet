@@ -64,7 +64,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- MBB_BRAND_CONFIG constant, Connection.__init__ NA token registry, _register_mbb_client(), na_auth_level property
+- [x] 03-01-PLAN.md -- MBB_BRAND_CONFIG constant, Connection.__init__ NA token registry, _register_mbb_client(), na_auth_level property (completed 2026-02-18)
 - [ ] 03-02-PLAN.md -- _exchange_brand_token() with /volkswagen→/vw fallback, _exchange_mbb_token(), _refresh_mbb_token(), extended _login_na() full chain with IDK-only fallback
 - [ ] 03-03-PLAN.md -- NAThreeTokenTest class (8 tests): full success, brand fallback, mbb failures, refresh timing, xclientId injection, callback behavior
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 1. NA Foundation | 1/1 | Complete   | 2026-02-18 |
 | 2. NA OAuth Login Flow | 2/2 | Complete    | 2026-02-18 |
-| 3. Three-Token Architecture | 0/3 | Not started | - |
+| 3. Three-Token Architecture | 1/3 | In progress | - |
 | 4. Token Lifecycle Management | 0/2 | Not started | - |
 | 5. Reliability & Discovery | 0/2 | Not started | - |
 | 6. Backward Compatibility | 0/1 | Not started | - |

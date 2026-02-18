@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 2 - NA OAuth Login Flow (COMPLETE)
+**Current focus:** Phase 3 - Three-Token Architecture (in progress)
 
 ## Current Position
 
-Phase: 2 of 7 (NA OAuth Login Flow)
-Plan: 2 of 2 in current phase (02-02 complete -- phase complete)
-Status: Phase 2 complete, ready for Phase 3
-Last activity: 2026-02-18 -- Phase 2 Plan 2 completed (NAOAuthLoginTest: 6 tests, 53 total passing)
+Phase: 3 of 7 (Three-Token Architecture)
+Plan: 1 of 3 in current phase (03-01 complete)
+Status: Phase 3 in progress, Plan 1 complete
+Last activity: 2026-02-18 -- Phase 3 Plan 1 completed (NA token registry infrastructure, MBB client registration)
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 6 min
-- Total execution time: 0.32 hours
+- Total execution time: 0.37 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [███░░░░░░░] 30%
 |-------|-------|-------|----------|
 | 01-na-foundation | 1 | 5 min | 5 min |
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
+| 03-three-token-architecture | 1 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 8 min, 6 min
+- Last 5 plans: 5 min, 8 min, 6 min, 5 min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -55,6 +56,8 @@ Recent decisions affecting current work:
 - [Phase 02-na-oauth-login-flow plan 01]: PKCE explicitly None in _login_na() per 2026 traffic analysis (app does not use PKCE)
 - [Phase 02-na-oauth-login-flow plan 02]: Failure-path tests call conn._login_na() directly; only test_na_login_success calls conn._login() to validate dispatch chain
 - [Phase 02-na-oauth-login-flow plan 02]: Mock at Connection instance level with patch.object(conn, ...) not at module level
+- [Phase 03-three-token-architecture plan 01]: _register_mbb_client() returns xclientId string but does NOT assign self._xclient_id -- caller (_login_na) owns assignment to allow conditional callback invocation
+- [Phase 03-three-token-architecture plan 01]: on_xclient_id callback fires only for NEW registrations, not when xclient_id is caller-injected -- prevents unnecessary persistence writes
 
 ### Pending Todos
 
@@ -69,5 +72,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 02-na-oauth-login-flow/02-02-PLAN.md
-Resume file: .planning/phases/03-na-vehicle-data/ (next phase)
+Stopped at: Completed 03-three-token-architecture/03-01-PLAN.md
+Resume file: .planning/phases/03-three-token-architecture/03-02-PLAN.md (next plan)
