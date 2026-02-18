@@ -111,9 +111,11 @@ class Connection:
             Base64URL-encoded random string (43-128 characters)
         """
         # Generate 32 random bytes, base64url encode (43 chars)
-        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(
+            "utf-8"
+        )
         # Remove padding
-        return code_verifier.rstrip('=')
+        return code_verifier.rstrip("=")
 
     def _generate_pkce_challenge(self, code_verifier: str) -> str:
         """Generate PKCE code_challenge from code_verifier.
@@ -125,11 +127,11 @@ class Connection:
             Base64URL-encoded SHA256 hash of the verifier
         """
         # SHA256 hash
-        digest = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
         # Base64URL encode
-        code_challenge = base64.urlsafe_b64encode(digest).decode('utf-8')
+        code_challenge = base64.urlsafe_b64encode(digest).decode("utf-8")
         # Remove padding
-        return code_challenge.rstrip('=')
+        return code_challenge.rstrip("=")
 
     @staticmethod
     def _calculate_xqmauth(timestamp: float | None = None) -> str:
@@ -219,7 +221,9 @@ class Connection:
             # Get list of vehicles from account
             _LOGGER.debug("Fetching vehicles associated with account")
             self._session_headers.pop("Content-Type", None)
-            loaded_vehicles = await self.get(url=f"{self._base_api}/vehicle/v2/vehicles")
+            loaded_vehicles = await self.get(
+                url=f"{self._base_api}/vehicle/v2/vehicles"
+            )
             # Add Vehicle class object for all VIN-numbers from account
             if loaded_vehicles.get("data") is not None:
                 _LOGGER.debug("Found vehicle(s) associated with account")
@@ -241,7 +245,9 @@ class Connection:
         identity_endpoint = self._session_region_config.get("identity_endpoint")
         if identity_endpoint:
             config_url = f"{identity_endpoint}/.well-known/openid-configuration"
-            _LOGGER.debug("Requesting openid config from identity endpoint: %s", config_url)
+            _LOGGER.debug(
+                "Requesting openid config from identity endpoint: %s", config_url
+            )
         else:
             config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
             _LOGGER.debug("Requesting openid config from base API: %s", config_url)
@@ -266,10 +272,14 @@ class Connection:
         try:
             # Build OAuth parameters with region-specific settings
             oauth_params = {
-                "redirect_uri": self._session_region_config.get("redirect_uri", APP_URI),  # Use region-specific redirect URI
+                "redirect_uri": self._session_region_config.get(
+                    "redirect_uri", APP_URI
+                ),  # Use region-specific redirect URI
                 "response_type": CLIENT_TOKEN_TYPES,
                 "client_id": self._client_id,  # Use region-specific client ID
-                "scope": self._session_region_config.get("scope", CLIENT_SCOPE),  # Use region-specific scope
+                "scope": self._session_region_config.get(
+                    "scope", CLIENT_SCOPE
+                ),  # Use region-specific scope
             }
 
             # Add country/locale parameters for region-specific authentication
@@ -283,12 +293,14 @@ class Connection:
                 }
                 oauth_params["ui_locales"] = country_to_locale.get(
                     self._session_country,
-                    f"{self._session_country.lower()}-{self._session_country}"
+                    f"{self._session_country.lower()}-{self._session_country}",
                 )
-                oauth_params["prompt"] = "login"  # Force login prompt (observed in 2026 traffic)
+                oauth_params["prompt"] = (
+                    "login"  # Force login prompt (observed in 2026 traffic)
+                )
 
             # Add PKCE parameters if generated (required for NA region)
-            if hasattr(self, '_pkce_challenge') and self._pkce_challenge:
+            if hasattr(self, "_pkce_challenge") and self._pkce_challenge:
                 oauth_params["code_challenge"] = self._pkce_challenge
                 oauth_params["code_challenge_method"] = "S256"
                 _LOGGER.debug("Added PKCE challenge to authorization request")
@@ -499,11 +511,13 @@ class Connection:
             "client_id": self._client_id,  # Use region-specific client ID
             "grant_type": "authorization_code",
             "code": auth_code,
-            "redirect_uri": self._session_region_config.get("redirect_uri", APP_URI),  # Use region-specific redirect URI
+            "redirect_uri": self._session_region_config.get(
+                "redirect_uri", APP_URI
+            ),  # Use region-specific redirect URI
         }
 
         # Add PKCE code_verifier if available (required for NA region)
-        if hasattr(self, '_pkce_verifier') and self._pkce_verifier:
+        if hasattr(self, "_pkce_verifier") and self._pkce_verifier:
             token_body["code_verifier"] = self._pkce_verifier
             _LOGGER.debug("Added PKCE verifier to token exchange")
 
@@ -530,8 +544,12 @@ class Connection:
             use_pkce = self._session_region_config.get("use_pkce", False)
             if use_pkce:
                 self._pkce_verifier = self._generate_pkce_verifier()
-                self._pkce_challenge = self._generate_pkce_challenge(self._pkce_verifier)
-                _LOGGER.debug("Generated PKCE challenge for region %s", self._session_region)
+                self._pkce_challenge = self._generate_pkce_challenge(
+                    self._pkce_verifier
+                )
+                _LOGGER.debug(
+                    "Generated PKCE challenge for region %s", self._session_region
+                )
             else:
                 self._pkce_verifier = None
                 self._pkce_challenge = None

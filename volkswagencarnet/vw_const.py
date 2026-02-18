@@ -6,15 +6,49 @@ COUNTRY = "DE"
 
 # Data used in communication
 CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
-CLIENT_ID_US = "b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com"  # North America (2026)
+CLIENT_ID_US = (
+    "b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com"  # North America (2026)
+)
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
 
 # X-QMAuth HMAC-SHA256 shared secret (VW Group apps)
 # Original obfuscated notation from decompiled app: [26, 256-74, 256-103, 37, ...]
-XQMAUTH_SECRET = bytes([
-    26, 182, 153, 37, 172, 23, 154, 170, 78, 131, 171, 230, 113, 169, 71, 109,
-    23, 100, 24, 184, 91, 215, 6, 241, 67, 108, 161, 91, 230, 71, 152, 156
-])
+XQMAUTH_SECRET = bytes(
+    [
+        26,
+        182,
+        153,
+        37,
+        172,
+        23,
+        154,
+        170,
+        78,
+        131,
+        171,
+        230,
+        113,
+        169,
+        71,
+        109,
+        23,
+        100,
+        24,
+        184,
+        91,
+        215,
+        6,
+        241,
+        67,
+        108,
+        161,
+        91,
+        230,
+        71,
+        152,
+        156,
+    ]
+)
 XQMAUTH_PREFIX = "v1:01da27b0:"
 CLIENT_TOKEN_TYPES = "code"
 
