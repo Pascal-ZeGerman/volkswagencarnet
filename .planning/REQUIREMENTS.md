@@ -17,11 +17,11 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 
 ### Token Exchange (F1-F2-F4: Three-Token Architecture)
 
-- [ ] **TOKEN-01**: Library can exchange IDK access_token for Brand token at `/login/v1/volkswagen/token`
-- [ ] **TOKEN-02**: Library can exchange IDK id_token for initial MBB token via MBB OAuth endpoint
-- [ ] **TOKEN-03**: Library immediately refreshes MBB token after initial grant (uses second token, not first)
+- [x] **TOKEN-01**: Library can exchange IDK access_token for Brand token at `/login/v1/volkswagen/token`
+- [x] **TOKEN-02**: Library can exchange IDK id_token for initial MBB token via MBB OAuth endpoint
+- [x] **TOKEN-03**: Library immediately refreshes MBB token after initial grant (uses second token, not first)
 - [x] **TOKEN-04**: Library stores all three token types separately (IDK, Brand, MBB) with metadata
-- [ ] **TOKEN-05**: Library includes X-Client-ID header in all MBB OAuth requests
+- [x] **TOKEN-05**: Library includes X-Client-ID header in all MBB OAuth requests
 
 ### Token Management (F5-F6: Selection and Refresh)
 
@@ -101,11 +101,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 3: Three-Token Architecture | Complete |
 | AUTH-04 | Phase 1: NA Foundation | Pending |
 | AUTH-05 | Phase 1: NA Foundation | Pending |
-| TOKEN-01 | Phase 3: Three-Token Architecture | Pending |
-| TOKEN-02 | Phase 3: Three-Token Architecture | Pending |
-| TOKEN-03 | Phase 3: Three-Token Architecture | Pending |
+| TOKEN-01 | Phase 3: Three-Token Architecture | Complete |
+| TOKEN-02 | Phase 3: Three-Token Architecture | Complete |
+| TOKEN-03 | Phase 3: Three-Token Architecture | Complete |
 | TOKEN-04 | Phase 3: Three-Token Architecture | Complete |
-| TOKEN-05 | Phase 3: Three-Token Architecture | Pending |
+| TOKEN-05 | Phase 3: Three-Token Architecture | Complete |
 | MGMT-01 | Phase 4: Token Lifecycle Management | Pending |
 | MGMT-02 | Phase 4: Token Lifecycle Management | Pending |
 | MGMT-03 | Phase 4: Token Lifecycle Management | Pending |
