@@ -522,6 +522,10 @@ class Connection:
             token_body["code_verifier"] = self._pkce_verifier
             _LOGGER.debug("Added PKCE verifier to token exchange")
 
+        # Add X-QMAuth header for NA token exchange (required by identity.na.vwgroup.io)
+        if self._session_region == "NA":
+            self._session_auth_headers["X-QMAuth"] = self._calculate_xqmauth()
+
         # Token endpoint
         token_response = await self.post_form(
             self._session, token_endpoint, self._session_auth_headers, token_body
@@ -529,12 +533,86 @@ class Connection:
 
         return json_loads(token_response)
 
+    async def _login_na(self) -> bool:
+        """NA-specific login flow using identity.na.vwgroup.io.
+
+        Obtains IDK access_token and refresh_token via OAuth authorization
+        code flow with X-QMAuth header on token exchange.
+
+        NOTE: IDK-only BFF access hypothesis (whether the IDK token alone is
+        sufficient for /vehicle/v1/vehicles without a Brand token) is validated
+        in Phase 3 via test fixture scenarios, not via a live probe here.
+
+        Returns:
+            True if login successful, False otherwise
+        """
+        try:
+            # Clear cookies and reset headers (same as _login())
+            self._clear_cookies()
+            self._session_headers = HEADERS_SESSION.copy()
+            self._session_auth_headers = HEADERS_AUTH.copy()
+
+            # NA does not use PKCE (app does not send code_challenge)
+            self._pkce_verifier = None
+            self._pkce_challenge = None
+
+            # Get OpenID config (routes to identity.na.vwgroup.io for NA)
+            openid_config = await self.get_openid_config()
+            token_endpoint = openid_config["token_endpoint"]
+
+            # Get authorization code via standard OAuth form flow
+            auth_code = await self._get_authorization_code(openid_config)
+
+            # Exchange code for tokens (X-QMAuth header injected inside for NA)
+            tokens = await self._exchange_code_for_tokens(auth_code, token_endpoint)
+
+            # Validate token structure
+            required_keys = ["access_token", "id_token", "token_type"]
+            if not all(key in tokens for key in required_keys):
+                _LOGGER.error(
+                    "NA token exchange returned invalid response. Missing keys. Got: %s",
+                    list(tokens.keys()),
+                )
+                return False
+
+            # Store IDK token; Phase 3 adds "brand" and "mbb" alongside this
+            self._session_tokens["identity"] = tokens
+            self._session_headers["Authorization"] = (
+                "Bearer " + self._session_tokens["identity"]["access_token"]
+            )
+
+            _LOGGER.info("NA: IDK token obtained and stored")
+
+            self._session_logged_in = True
+            return True
+
+        except (AuthenticationError, RequestError, RedirectError) as error:
+            _LOGGER.error("NA authentication error during login: %s", error)
+            self._session_logged_in = False
+            return False
+        except client_exceptions.ClientError as error:
+            _LOGGER.error("NA network error during login: %s", error)
+            self._session_logged_in = False
+            return False
+        except KeyError as error:
+            _LOGGER.error("NA missing required data during login: %s", error)
+            self._session_logged_in = False
+            return False
+        except Exception as error:
+            _LOGGER.error("NA unexpected error during login: %s", error)
+            self._session_logged_in = False
+            return False
+
     async def _login(self) -> bool:
         """Login function.
 
         Returns:
             True if login successful, False otherwise
         """
+        # Route NA users to region-specific login flow
+        if self._session_region == "NA":
+            return await self._login_na()
+
         try:
             # Clear cookies and reset headers
             self._clear_cookies()
