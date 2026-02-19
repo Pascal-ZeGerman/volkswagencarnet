@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 4 - Token Lifecycle Management (in progress)
+**Current focus:** Phase 5 - Reliability Discovery (in progress)
 
 ## Current Position
 
-Phase: 4 of 7 (Token Lifecycle Management) - COMPLETE
-Plan: 2 of 2 in current phase (04-01, 04-02 complete)
-Status: Phase 4 complete, ready for Phase 5
-Last activity: 2026-02-18 -- Phase 4 Plan 2 completed (NA token lifecycle tests, 18 tests)
+Phase: 5 of 7 (Reliability Discovery) - IN PROGRESS
+Plan: 1 of 3 in current phase (05-01 complete)
+Status: Phase 5 Plan 1 complete
+Last activity: 2026-02-19 -- Phase 5 Plan 1 completed (VW_DOMAIN_ALLOWLIST, _discover_market_config(), centralized retry)
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 3.3 min
-- Total execution time: 0.43 hours
+- Total plans completed: 8
+- Average duration: 3.4 min
+- Total execution time: 0.46 hours
 
 **By Phase:**
 
@@ -31,9 +31,10 @@ Progress: [████████░░] 75%
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 | 03-three-token-architecture | 3 | 8 min | 2.7 min |
 | 04-token-lifecycle-management | 2 | 7 min | 3.5 min |
+| 05-reliability-discovery | 1 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 6 min, 5 min, 2 min, 1 min, 2 min
+- Last 5 plans: 5 min, 5 min, 2 min, 1 min, 2 min
 - Trend: fast
 
 *Updated after each plan completion*
@@ -71,6 +72,10 @@ Recent decisions affecting current work:
 - [Phase 04-02]: Pre-populate _session_tokens['identity'] before calling _refresh_idk_token() in tests -- mirror update requires existing dict entry
 - [Phase 04-02]: Use MagicMock (not AsyncMock) for session.request patching -- async with requires synchronous callable returning context manager
 - [Phase 04-02]: AsyncMock must be passed directly to patch.object (not as return_value= kwarg) to preserve await compatibility for session.post
+- [Phase 05-01]: Discovery failure does NOT block NA login — self._base_api has pre-confirmed hardcoded value as fallback
+- [Phase 05-01]: get() returns {state: Throttled} (not {status_code: 429}) after retry exhaustion in _request()
+- [Phase 05-01]: _discover_endpoints() kept as thin alias to _discover_market_config() for backward compatibility
+- [Phase 05-01]: Transient network errors (ClientConnectionError, ServerTimeoutError) retry with same MAX_RETRIES_ON_RATE_LIMIT limit as 429
 
 ### Pending Todos
 
@@ -84,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-18
-Stopped at: Completed 04-token-lifecycle-management/04-02-PLAN.md
-Resume file: .planning/phases/05-vehicle-data-na/ (next phase)
+Last session: 2026-02-19
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-reliability-discovery/05-CONTEXT.md
