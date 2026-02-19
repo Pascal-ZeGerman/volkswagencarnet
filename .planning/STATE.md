@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 5 - Reliability Discovery (in progress)
+**Current focus:** Phase 5 - Reliability Discovery (complete) / Phase 6 next
 
 ## Current Position
 
-Phase: 5 of 7 (Reliability Discovery) - IN PROGRESS
-Plan: 2 of 3 in current phase (05-02 complete)
-Status: Phase 5 Plan 2 complete
-Last activity: 2026-02-19 -- Phase 5 Plan 2 completed (_ensure_home_region(), home_region_url property, lazy NA home region discovery)
+Phase: 5 of 7 (Reliability Discovery) - COMPLETE
+Plan: 3 of 3 in current phase (05-03 complete)
+Status: Phase 5 complete — all 3 plans done
+Last activity: 2026-02-19 -- Phase 5 Plan 3 completed (reliability_test.py: MarketConfigDiscoveryTest, HomeRegionDiscoveryTest, RetryBackoffTest)
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -31,7 +31,7 @@ Progress: [████████░░] 83%
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 | 03-three-token-architecture | 3 | 8 min | 2.7 min |
 | 04-token-lifecycle-management | 2 | 7 min | 3.5 min |
-| 05-reliability-discovery | 2 | 6 min | 3 min |
+| 05-reliability-discovery | 3 | 8 min | 2.7 min |
 
 **Recent Trend:**
 - Last 5 plans: 5 min, 2 min, 1 min, 2 min, 1 min
@@ -80,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 05-02]: EMEA returns immediately without network calls — home region is statically configured, no probe needed
 - [Phase 05-02]: Domain allowlist validation before probing each candidate — guards against config injection or malformed entries
 - [Phase 05-02]: HTTP 200/400/401/403/404 all count as "reachable" — auth errors prove routing works; 5xx or connection errors mean unreachable
+- [Phase 05-03]: All three test classes in single reliability_test.py — unified scope for tightly related Phase 5 capabilities
+- [Phase 05-03]: raises_disconnect as plain (non-async) function for ServerDisconnectedError tests — session.request() called synchronously before context manager
+- [Phase 05-03]: assertLogs() context manager for WARNING verification — more robust than patching logger or inspecting mock calls
 
 ### Pending Todos
 
@@ -94,5 +97,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 05-02-PLAN.md
-Resume file: .planning/phases/05-reliability-discovery/05-CONTEXT.md
+Stopped at: Completed 05-03-PLAN.md (Phase 5 complete)
+Resume file: .planning/phases/06-emea-compat/ (next phase)
