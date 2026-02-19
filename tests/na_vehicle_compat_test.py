@@ -186,3 +186,64 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
 
         assert vehicle.is_electric_range_supported is False
         assert isinstance(vehicle.is_electric_range_supported, bool)
+
+
+class NAGolfGteHybridCompatTest(IsolatedAsyncioTestCase):
+    """Verify Golf GTE hybrid Vehicle properties under NA auth context.
+
+    The Golf GTE is a plug-in hybrid with both fuel and charging services.
+    This test confirms that both fuel and electric properties coexist correctly
+    under an NA auth context — neither service type is suppressed.
+
+    Actual values discovered from fixture (golf_gte_hybrid/selectivestatus_by_app.json):
+      fuel_level = 37, is_fuel_level_supported = True
+      battery_level = 65, is_battery_level_supported = True
+      charging_state = 'Not ready', is_charging_supported = True
+      climatisation_state = 'off', door_locked = False, car_type = 'Hybrid'
+    """
+
+    async def test_golf_gte_hybrid_has_both_fuel_and_charging_services_via_na_conn(self):
+        """Hybrid vehicle reports both fuel and charging services as supported under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        # Golf GTE has charging — both services coexist
+        assert vehicle.is_charging_supported is True
+        assert isinstance(vehicle.is_charging_supported, bool)
+
+        # Golf GTE has fuel — both services coexist
+        assert vehicle.is_fuel_level_supported is True
+        assert isinstance(vehicle.is_fuel_level_supported, bool)
+
+        # Golf GTE has a traction battery (PHEV)
+        assert vehicle.is_battery_level_supported is True
+        assert isinstance(vehicle.is_battery_level_supported, bool)
+
+    async def test_golf_gte_hybrid_charging_state_via_na_conn(self):
+        """Hybrid charging state and battery level parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        # charging.chargingStatus.value.chargingState: 'Not ready'
+        assert vehicle.charging_state == "Not ready"
+        assert isinstance(vehicle.charging_state, str)
+
+        # charging.batteryStatus.value.currentSOC_pct: 65
+        assert vehicle.battery_level == 65
+        assert isinstance(vehicle.battery_level, int)
+        assert 0 <= vehicle.battery_level <= 100
+
+    async def test_golf_gte_hybrid_door_access_via_na_conn(self):
+        """Hybrid door/lock access properties parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        # door_locked returns a bool — fixture state: False (unlocked)
+        assert vehicle.door_locked is False
+        assert isinstance(vehicle.door_locked, bool)
