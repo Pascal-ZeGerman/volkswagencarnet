@@ -10,6 +10,8 @@ from json import dumps as to_json
 from typing import Any
 import logging
 
+from aiohttp import ClientTimeout
+
 from .vw_const import Services, VehicleStatusParameter as P, Paths
 from .vw_utilities import find_path, is_valid_path
 
@@ -50,6 +52,7 @@ class Vehicle:
             self._homeregion = region_config.get("homeregion") or "https://msg.volkswagen.de"
         else:
             self._homeregion = "https://msg.volkswagen.de"
+        self._home_region_discovered: bool = False  # session cache guard for lazy discovery
         self._discovered = False
         self._states = {}
         self._requests: dict[str, object] = {
@@ -132,10 +135,82 @@ class Vehicle:
         }
         return True
 
+    async def _ensure_home_region(self) -> None:
+        """Lazily discover and cache this vehicle's home region server.
+
+        Called at the start of discover() on first vehicle API access.
+        Sets self._home_region_discovered = True immediately to prevent
+        concurrent re-entry (optimistic lock pattern).
+
+        For NA region: probes homeregion_candidates from region config.
+        Any HTTP response (200, 400, 401, 403, 404) = server is reachable.
+        Validates candidate URL against VW_DOMAIN_ALLOWLIST before assigning.
+
+        For EMEA: returns immediately (homeregion is statically configured).
+
+        On failure: logs WARNING and retains self._homeregion fallback value.
+        """
+        if self._home_region_discovered:
+            return
+
+        # Set guard BEFORE async probes to prevent concurrent re-entry
+        self._home_region_discovered = True
+
+        if self._connection is None:
+            return
+
+        if self._connection._session_region != "NA":
+            return  # EMEA: home region is static from config — no discovery needed
+
+        candidates = self._connection._session_region_config.get(
+            "homeregion_candidates", []
+        )
+
+        timeout = ClientTimeout(total=10)
+
+        for candidate in candidates:
+            # Validate candidate before probing — skip malformed entries
+            if not self._connection._is_allowed_vw_domain(candidate):
+                _LOGGER.debug(
+                    "Home region candidate %r failed domain validation, skipping", candidate
+                )
+                continue
+
+            probe_url = f"{candidate}/vehicle/v1/vehicles/{self._url}/capabilities"
+            try:
+                _LOGGER.debug("Probing home region candidate: %s", candidate)
+                async with self._connection._session.get(
+                    url=probe_url,
+                    headers=self._connection._session_headers,
+                    timeout=timeout,
+                    raise_for_status=False,
+                ) as resp:
+                    # Any response (even auth error) = server is reachable and routing works
+                    if resp.status in (200, 400, 401, 403, 404):
+                        self._homeregion = candidate
+                        _LOGGER.debug(
+                            "Home region for %s: %s (HTTP %d)",
+                            self._url, candidate, resp.status,
+                        )
+                        return
+            except Exception as exc:
+                _LOGGER.debug(
+                    "Home region probe failed for %s at %s: %s",
+                    self._url, candidate, exc,
+                )
+                continue
+
+        _LOGGER.warning(
+            "Could not discover home region for %s, using fallback: %s",
+            self._url, self._homeregion,
+        )
+        # self._homeregion retains its initialized value (from __init__)
+
     # API get and set functions #
     # Init and update vehicle data
     async def discover(self) -> None:
         """Discover vehicle and initial data."""
+        await self._ensure_home_region()
 
         _LOGGER.debug("Attempting discovery of supported API endpoints for vehicle")
 
@@ -904,6 +979,15 @@ class Vehicle:
         :return:
         """
         return self.vin
+
+    @property
+    def home_region_url(self) -> str:
+        """Return the discovered (or fallback) home region URL for this vehicle.
+
+        Useful for Home Assistant logging and debugging which regional server
+        is being used for this vehicle's API calls.
+        """
+        return self._homeregion
 
     # Information from vehicle states #
     # Car information
