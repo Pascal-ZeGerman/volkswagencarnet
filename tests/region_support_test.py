@@ -80,95 +80,124 @@ class TestConnectionRegionDetection:
 
 
 class TestEndpointDiscovery:
-    """Test endpoint discovery for NA region."""
+    """Test market config discovery for NA region."""
 
     @pytest.mark.asyncio
     async def test_discovery_not_needed_for_emea(self):
-        """EMEA region should skip discovery."""
+        """EMEA region should skip discovery and return True."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="DE")
-            result = await conn._discover_endpoints()
-            assert result is True  # Should return immediately
+            result = await conn._discover_market_config()
+            assert result is True  # Should return immediately for non-NA
+            assert conn._service_status.get("discovery") == "Skipped"
 
     @pytest.mark.asyncio
     async def test_discovery_finds_working_endpoint(self):
-        """Should find first working endpoint from candidates."""
+        """Should find first working candidate, validate URLs, cache config."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
-            # Pre-clear base_api to simulate a scenario requiring discovery
-            conn._base_api = None
+            # Clear discovery cache so method runs (not cached from __init__)
+            conn.discovery_config = {}
 
-            # Mock successful response for second candidate
-            mock_response = Mock()
+            # Mock successful OIDC config response from second candidate
+            mock_response = AsyncMock()
             mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "issuer": "https://identity.na.vwgroup.io",
+                "authorization_endpoint": "https://identity.na.vwgroup.io/oidc/v1/authorize",
+                "token_endpoint": "https://identity.na.vwgroup.io/oidc/v1/token",
+                "evil_field": "https://evil.com/steal",  # should be filtered out
+            })
 
-            # Create async context manager mock
+            # Create async context manager mock for second candidate
             async_cm = AsyncMock()
             async_cm.__aenter__.return_value = mock_response
             async_cm.__aexit__.return_value = None
 
-            with patch.object(conn._session, "get") as mock_get:
-                # First candidate fails, second succeeds
-                mock_get.side_effect = [
-                    Exception("Connection refused"),  # First fails
-                    async_cm,  # Second succeeds (https://na.bff.cariad.digital)
-                ]
+            call_count = [0]
+            def mock_get(*args, **kwargs):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    raise Exception("Connection refused")  # First candidate fails
+                return async_cm  # Second candidate succeeds
 
-                result = await conn._discover_endpoints()
+            with patch.object(conn._session, "get", side_effect=mock_get):
+                result = await conn._discover_market_config()
 
                 assert result is True
-                # Should have found second candidate
+                # Should have updated to second candidate
                 assert conn._base_api == "https://na.bff.cariad.digital"
+                # Config should be cached and validated (evil.com URL filtered out)
+                assert "issuer" in conn.discovery_config
+                assert "evil_field" not in conn.discovery_config
+                assert conn._service_status.get("discovery") == "Success"
+
+    @pytest.mark.asyncio
+    async def test_discovery_uses_cache_on_second_call(self):
+        """Second call with populated discovery_config should return True immediately."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="US")
+            # Pre-populate cache
+            conn.discovery_config = {"issuer": "https://identity.na.vwgroup.io"}
+
+            with patch.object(conn._session, "get") as mock_get:
+                result = await conn._discover_market_config()
+
+                assert result is True
+                mock_get.assert_not_called()  # No network call when cached
 
     @pytest.mark.asyncio
     async def test_discovery_fails_all_candidates(self):
-        """Should return False when all candidates fail."""
+        """Should return False when all candidates fail, NOT block login."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
-            # Pre-clear base_api to simulate a scenario requiring discovery
-            conn._base_api = None
+            # Clear cache so method runs
+            conn.discovery_config = {}
+            original_base_api = conn._base_api  # pre-confirmed hardcoded value
 
             with patch.object(conn._session, "get") as mock_get:
-                # All 6 candidates fail
-                mock_get.side_effect = [Exception("Connection refused")] * 6
+                # All candidates fail
+                mock_get.side_effect = [Exception("Connection refused")] * 10
 
-                result = await conn._discover_endpoints()
+                result = await conn._discover_market_config()
 
                 assert result is False
-                assert conn._base_api is None
+                assert conn._service_status.get("discovery") == "Failed"
+                # base_api stays at hardcoded value (not cleared on failure)
+                assert conn._base_api == original_base_api
 
 
 class TestLoginWithDiscovery:
-    """Test login process with endpoint discovery."""
+    """Test login process with market config discovery."""
 
     @pytest.mark.asyncio
-    async def test_login_fails_when_discovery_fails(self):
-        """Login should fail if NA endpoint discovery fails."""
+    async def test_login_proceeds_even_when_discovery_fails(self):
+        """Discovery failure should NOT block NA login — hardcoded fallback is used."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
-            # Pre-clear base_api so that doLogin triggers discovery
-            conn._base_api = None
 
             with patch.object(
-                conn, "_discover_endpoints", new_callable=AsyncMock
+                conn, "_discover_market_config", new_callable=AsyncMock
             ) as mock_discover:
-                mock_discover.return_value = False
+                with patch.object(conn, "_login", new_callable=AsyncMock) as mock_login:
+                    mock_discover.return_value = False  # discovery fails
+                    mock_login.return_value = False  # login also fails (no real creds)
 
-                result = await conn.doLogin()
+                    result = await conn.doLogin()
 
-                assert result is False
-                mock_discover.assert_called_once()
+                    # Discovery is called on every NA doLogin()
+                    mock_discover.assert_called_once()
+                    # Login is still attempted even when discovery fails
+                    mock_login.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_login_continues_after_successful_discovery(self):
-        """Login should proceed after successful NA endpoint discovery."""
+    async def test_login_calls_discovery_on_every_na_login(self):
+        """doLogin() calls _discover_market_config() for NA on every login."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
-            # Pre-clear base_api so that doLogin triggers discovery
-            conn._base_api = None
 
             with patch.object(
-                conn, "_discover_endpoints", new_callable=AsyncMock
+                conn, "_discover_market_config", new_callable=AsyncMock
             ) as mock_discover:
                 with patch.object(conn, "_login", new_callable=AsyncMock) as mock_login:
                     with patch.object(
