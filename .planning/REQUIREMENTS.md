@@ -37,13 +37,13 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 - [x] **INT-01**: Library can discover market-specific configuration from VW endpoints with fallback to hardcoded values
 - [x] **INT-02**: Library routes NA authentication through identity.na.vwgroup.io (not base API)
 - [x] **INT-03**: Library handles NA redirect URI format (HTTPS callback, not custom scheme)
-- [ ] **INT-04**: Library discovers per-vehicle home region for API calls
+- [x] **INT-04**: Library discovers per-vehicle home region for API calls
 - [x] **INT-05**: Library handles rate limiting with exponential backoff and retry logic
 
 ### Backward Compatibility (Cross-Cutting)
 
-- [ ] **COMPAT-01**: EMEA authentication flow remains unchanged (no breaking changes to existing API)
-- [ ] **COMPAT-02**: Existing EMEA users can upgrade library without code changes
+- [x] **COMPAT-01**: EMEA authentication flow remains unchanged (no breaking changes to existing API)
+- [x] **COMPAT-02**: Existing EMEA users can upgrade library without code changes
 - [x] **COMPAT-03**: Region detection automatically routes to correct flow (EMEA vs NA) based on country parameter
 - [x] **COMPAT-04**: Token storage structure supports both single-token (EMEA) and three-token (NA) models
 - [ ] **COMPAT-05**: All existing vehicle data APIs work with NA authentication
@@ -115,10 +115,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INT-01 | Phase 5: Reliability & Discovery | Complete |
 | INT-02 | Phase 2: NA OAuth Login Flow | Complete |
 | INT-03 | Phase 2: NA OAuth Login Flow | Complete |
-| INT-04 | Phase 5: Reliability & Discovery | Pending |
+| INT-04 | Phase 5: Reliability & Discovery | Complete |
 | INT-05 | Phase 5: Reliability & Discovery | Complete |
-| COMPAT-01 | Phase 6: Backward Compatibility | Pending |
-| COMPAT-02 | Phase 6: Backward Compatibility | Pending |
+| COMPAT-01 | Phase 6: Backward Compatibility | Complete |
+| COMPAT-02 | Phase 6: Backward Compatibility | Complete |
 | COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
 | COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
 | COMPAT-05 | Phase 6: Backward Compatibility | Pending |
