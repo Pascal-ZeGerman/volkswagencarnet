@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 Phase: 5 of 7 (Reliability Discovery) - IN PROGRESS
-Plan: 1 of 3 in current phase (05-01 complete)
-Status: Phase 5 Plan 1 complete
-Last activity: 2026-02-19 -- Phase 5 Plan 1 completed (VW_DOMAIN_ALLOWLIST, _discover_market_config(), centralized retry)
+Plan: 2 of 3 in current phase (05-02 complete)
+Status: Phase 5 Plan 2 complete
+Last activity: 2026-02-19 -- Phase 5 Plan 2 completed (_ensure_home_region(), home_region_url property, lazy NA home region discovery)
 
-Progress: [████████░░] 80%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -31,10 +31,10 @@ Progress: [████████░░] 80%
 | 02-na-oauth-login-flow | 2 | 14 min | 7 min |
 | 03-three-token-architecture | 3 | 8 min | 2.7 min |
 | 04-token-lifecycle-management | 2 | 7 min | 3.5 min |
-| 05-reliability-discovery | 1 | 5 min | 5 min |
+| 05-reliability-discovery | 2 | 6 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 5 min, 2 min, 1 min, 2 min
+- Last 5 plans: 5 min, 2 min, 1 min, 2 min, 1 min
 - Trend: fast
 
 *Updated after each plan completion*
@@ -76,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase 05-01]: get() returns {state: Throttled} (not {status_code: 429}) after retry exhaustion in _request()
 - [Phase 05-01]: _discover_endpoints() kept as thin alias to _discover_market_config() for backward compatibility
 - [Phase 05-01]: Transient network errors (ClientConnectionError, ServerTimeoutError) retry with same MAX_RETRIES_ON_RATE_LIMIT limit as 429
+- [Phase 05-02]: Guard flag set at entry (not exit) of _ensure_home_region() — optimistic lock prevents concurrent probe storms
+- [Phase 05-02]: EMEA returns immediately without network calls — home region is statically configured, no probe needed
+- [Phase 05-02]: Domain allowlist validation before probing each candidate — guards against config injection or malformed entries
+- [Phase 05-02]: HTTP 200/400/401/403/404 all count as "reachable" — auth errors prove routing works; 5xx or connection errors mean unreachable
 
 ### Pending Todos
 
@@ -90,5 +94,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md
 Resume file: .planning/phases/05-reliability-discovery/05-CONTEXT.md
