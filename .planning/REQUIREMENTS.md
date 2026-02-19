@@ -46,7 +46,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 - [x] **COMPAT-02**: Existing EMEA users can upgrade library without code changes
 - [x] **COMPAT-03**: Region detection automatically routes to correct flow (EMEA vs NA) based on country parameter
 - [x] **COMPAT-04**: Token storage structure supports both single-token (EMEA) and three-token (NA) models
-- [ ] **COMPAT-05**: All existing vehicle data APIs work with NA authentication
+- [x] **COMPAT-05**: All existing vehicle data APIs work with NA authentication
 
 ### Testing & Validation
 
@@ -121,7 +121,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMPAT-02 | Phase 6: Backward Compatibility | Complete |
 | COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
 | COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
-| COMPAT-05 | Phase 6: Backward Compatibility | Pending |
+| COMPAT-05 | Phase 6: Backward Compatibility | Complete |
 | TEST-01 | Phase 7: End-to-End Validation | Pending |
 | TEST-02 | Phase 7: End-to-End Validation | Pending |
 | TEST-03 | Phase 7: End-to-End Validation | Pending |

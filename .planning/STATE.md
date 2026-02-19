@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 5 - Reliability Discovery (complete) / Phase 6 next
+**Current focus:** Phase 6 - Backward Compatibility (complete) / Phase 7 next
 
 ## Current Position
 
-Phase: 6 of 7 (Backward Compatibility) - IN PROGRESS
-Plan: 1 of 1 in current phase (06-01 complete)
-Status: Phase 6 Plan 1 complete — EMEA regression tests and API surface contract tests
-Last activity: 2026-02-19 -- Phase 6 Plan 1 completed (emea_regression_test.py: ConnectionAPIContractTest, 5 EMEA regression tests)
+Phase: 6 of 7 (Backward Compatibility) - COMPLETE
+Plan: 2 of 2 in current phase (06-02 complete)
+Status: Phase 6 complete — both plans done (EMEA regression + NA vehicle property compat tests)
+Last activity: 2026-02-19 -- Phase 6 Plan 2 completed (na_vehicle_compat_test.py: NAVehiclePropertyCompatTest 7 tests, NAGolfGteHybridCompatTest 3 tests; COMPAT-05 verified)
 
-Progress: [█████████░] 95%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -34,11 +34,12 @@ Progress: [█████████░] 95%
 | 05-reliability-discovery | 3 | 8 min | 2.7 min |
 
 **Recent Trend:**
-- Last 5 plans: 5 min, 2 min, 1 min, 2 min, 1 min
+- Last 5 plans: 2 min, 1 min, 2 min, 1 min, 2 min
 - Trend: fast
 
 *Updated after each plan completion*
 | Phase 06-backward-compatibility P01 | 2 | 2 tasks | 1 files |
+| Phase 06-backward-compatibility P02 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 06-backward-compatibility]: ConnectionAPIContractTest uses IsolatedAsyncioTestCase (not pytest class) since all 6 methods are synchronous def tests — no async machinery needed
 - [Phase 06-backward-compatibility]: EMEA regression tests use module-level @pytest.mark.asyncio async functions with connection/session fixtures (auto-registered via conftest.py) — no inline mock factories
 - [Phase 06-backward-compatibility]: _na_auth_level default confirmed as Python None (not string 'none') per vw_connection.py line 122 — assertion uses 'is None'
+- [Phase 06-02]: Golf GTE hybrid fixture-probe step confirms actual property values before writing assertions — prevents fragile wrong-value tests
+- [Phase 06-02]: vw_vehicle.py has zero property-layer region-branching — 4 region references are in home region endpoint discovery only, not data properties
+- [Phase 06-02]: NA compat test pattern: _make_na_conn() factory + vehicle._states.update(fixture) + vehicle._discovered = True
 
 ### Pending Todos
 
@@ -101,5 +105,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 05-03-PLAN.md (Phase 5 complete)
-Resume file: .planning/phases/06-emea-compat/ (next phase)
+Stopped at: Completed 06-02-PLAN.md (Phase 6 complete)
+Resume file: .planning/phases/07-live-validation/ (next phase)
