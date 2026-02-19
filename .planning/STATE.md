@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 ## Current Position
 
-Phase: 5 of 7 (Reliability Discovery) - COMPLETE
-Plan: 3 of 3 in current phase (05-03 complete)
-Status: Phase 5 complete — all 3 plans done
-Last activity: 2026-02-19 -- Phase 5 Plan 3 completed (reliability_test.py: MarketConfigDiscoveryTest, HomeRegionDiscoveryTest, RetryBackoffTest)
+Phase: 6 of 7 (Backward Compatibility) - IN PROGRESS
+Plan: 1 of 1 in current phase (06-01 complete)
+Status: Phase 6 Plan 1 complete — EMEA regression tests and API surface contract tests
+Last activity: 2026-02-19 -- Phase 6 Plan 1 completed (emea_regression_test.py: ConnectionAPIContractTest, 5 EMEA regression tests)
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 95%
 
 ## Performance Metrics
 
@@ -38,6 +38,7 @@ Progress: [█████████░] 90%
 - Trend: fast
 
 *Updated after each plan completion*
+| Phase 06-backward-compatibility P01 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 05-03]: All three test classes in single reliability_test.py — unified scope for tightly related Phase 5 capabilities
 - [Phase 05-03]: raises_disconnect as plain (non-async) function for ServerDisconnectedError tests — session.request() called synchronously before context manager
 - [Phase 05-03]: assertLogs() context manager for WARNING verification — more robust than patching logger or inspecting mock calls
+- [Phase 06-backward-compatibility]: ConnectionAPIContractTest uses IsolatedAsyncioTestCase (not pytest class) since all 6 methods are synchronous def tests — no async machinery needed
+- [Phase 06-backward-compatibility]: EMEA regression tests use module-level @pytest.mark.asyncio async functions with connection/session fixtures (auto-registered via conftest.py) — no inline mock factories
+- [Phase 06-backward-compatibility]: _na_auth_level default confirmed as Python None (not string 'none') per vw_connection.py line 122 — assertion uses 'is None'
 
 ### Pending Todos
 
