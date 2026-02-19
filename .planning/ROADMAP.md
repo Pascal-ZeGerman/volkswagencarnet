@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: NA OAuth Login Flow** - IDK token exchange via NA identity provider (completed 2026-02-18)
 - [x] **Phase 3: Three-Token Architecture** - Brand and MBB token layers with client registration (completed 2026-02-18)
 - [ ] **Phase 4: Token Lifecycle Management** - Per-endpoint token selection and hierarchical refresh
-- [ ] **Phase 5: Reliability & Discovery** - Market config discovery, home region routing, rate limiting
+- [x] **Phase 5: Reliability & Discovery** - Market config discovery, home region routing, rate limiting (completed 2026-02-19)
 - [ ] **Phase 6: Backward Compatibility** - EMEA regression protection and upgrade path validation
 - [ ] **Phase 7: End-to-End Validation** - Real credentials, real vehicle, full test suite
 
@@ -139,6 +139,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 2. NA OAuth Login Flow | 2/2 | Complete    | 2026-02-18 |
 | 3. Three-Token Architecture | 3/3 | Complete   | 2026-02-18 |
 | 4. Token Lifecycle Management | 1/2 | In Progress|  |
-| 5. Reliability & Discovery | 1/3 | In Progress|  |
+| 5. Reliability & Discovery | 3/3 | Complete   | 2026-02-19 |
 | 6. Backward Compatibility | 0/1 | Not started | - |
 | 7. End-to-End Validation | 0/2 | Not started | - |
