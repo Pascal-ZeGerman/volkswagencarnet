@@ -34,11 +34,11 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 
 ### Integration & Reliability (F7-F10: Important Features)
 
-- [ ] **INT-01**: Library can discover market-specific configuration from VW endpoints with fallback to hardcoded values
+- [x] **INT-01**: Library can discover market-specific configuration from VW endpoints with fallback to hardcoded values
 - [x] **INT-02**: Library routes NA authentication through identity.na.vwgroup.io (not base API)
 - [x] **INT-03**: Library handles NA redirect URI format (HTTPS callback, not custom scheme)
 - [ ] **INT-04**: Library discovers per-vehicle home region for API calls
-- [ ] **INT-05**: Library handles rate limiting with exponential backoff and retry logic
+- [x] **INT-05**: Library handles rate limiting with exponential backoff and retry logic
 
 ### Backward Compatibility (Cross-Cutting)
 
@@ -112,11 +112,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MGMT-04 | Phase 4: Token Lifecycle Management | Complete |
 | MGMT-05 | Phase 4: Token Lifecycle Management | Complete |
 | MGMT-06 | Phase 4: Token Lifecycle Management | Complete |
-| INT-01 | Phase 5: Reliability & Discovery | Pending |
+| INT-01 | Phase 5: Reliability & Discovery | Complete |
 | INT-02 | Phase 2: NA OAuth Login Flow | Complete |
 | INT-03 | Phase 2: NA OAuth Login Flow | Complete |
 | INT-04 | Phase 5: Reliability & Discovery | Pending |
-| INT-05 | Phase 5: Reliability & Discovery | Pending |
+| INT-05 | Phase 5: Reliability & Discovery | Complete |
 | COMPAT-01 | Phase 6: Backward Compatibility | Pending |
 | COMPAT-02 | Phase 6: Backward Compatibility | Pending |
 | COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
