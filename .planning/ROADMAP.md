@@ -106,10 +106,11 @@ Plans:
   1. EMEA authentication flow produces identical results before and after NA code is merged (same API calls, same token handling, same behavior)
   2. Existing EMEA users can upgrade the library version without modifying any of their code (no constructor signature changes, no new required parameters, no behavior changes for default configuration)
   3. All existing vehicle data APIs (battery, location, status, charging, climate) work correctly when authenticated via NA tokens
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: EMEA regression test suite and compatibility verification
+- [ ] 06-01-PLAN.md — EMEA login sequence regression + Connection API surface contract (inspect.signature)
+- [ ] 06-02-PLAN.md — NA-authenticated Vehicle property compat against EMEA fixture data
 
 ### Phase 7: End-to-End Validation
 **Goal**: NA authentication is validated against real VW CarNet infrastructure with real credentials and a real vehicle
