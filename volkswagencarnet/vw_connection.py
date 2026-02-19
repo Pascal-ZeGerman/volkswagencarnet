@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
 import logging
-from random import randint, random
+from random import random
 import secrets
 import time
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -52,6 +52,17 @@ from .vw_utilities import json_loads
 from .vw_vehicle import Vehicle
 
 MAX_RETRIES_ON_RATE_LIMIT = 3
+
+VW_DOMAIN_ALLOWLIST = (
+    ".vwgroup.io",       # identity.na.vwgroup.io, identity.vwgroup.io
+    ".con-veh.net",      # b-h-s.spr.us00.p.con-veh.net (confirmed NA base)
+    ".cariad.digital",   # emea.bff.cariad.digital, na.bff.cariad.digital candidates
+    ".vwg-connect.com",  # mbboauth-1d.prd.ece.vwg-connect.com
+    ".volkswagen.de",    # msg.volkswagen.de (EMEA home region)
+    ".volkswagen.com",   # msg.volkswagen.com (NA homeregion candidate)
+    ".vw.com",           # msg.vw.com (NA homeregion candidate)
+    ".vw.us",            # msg.vw.us (NA homeregion candidate)
+)
 
 _LOGGER = logging.getLogger(__name__)  # pylint: disable=unreachable
 
@@ -101,6 +112,8 @@ class Connection:
         self._jarCookie = None
 
         self._service_status = {}
+        self._is_throttled: bool = False
+        self.discovery_config: dict = {}
 
         # NA three-token registry (empty for EMEA, populated during NA login)
         self._na_tokens: dict = {}   # keys: "idk", "brand", "mbb"
@@ -206,40 +219,83 @@ class Connection:
             "Add URL to _classify_endpoint() or check base_api configuration."
         )
 
-    async def _discover_endpoints(self) -> bool:
-        """Discover working endpoints for regions without confirmed URLs.
+    def _is_allowed_vw_domain(self, url: str) -> bool:
+        """Return True if URL hostname ends with a known VW Group domain suffix."""
+        try:
+            hostname = urlparse(url).hostname or ""
+            return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
+        except Exception:
+            return False
+
+    async def _discover_market_config(self) -> bool:
+        """Discover and cache market configuration from VW OIDC discovery endpoint.
+
+        Called on every doLogin() for NA region. Uses self.discovery_config as
+        session cache guard — if already populated, returns True immediately.
+        Validates all URL values against VW_DOMAIN_ALLOWLIST before storing.
+
+        On failure: logs WARNING, leaves self._base_api at hardcoded default,
+        sets self._service_status["discovery"] = "Failed". Does NOT block login.
 
         Returns:
-            True if discovery successful, False otherwise
+            True if discovery succeeded or was already cached, False on failure.
         """
         if self._session_region != "NA":
-            return True  # Only needed for NA region
+            self._service_status["discovery"] = "Skipped"
+            return True
 
-        _LOGGER.info("Attempting endpoint discovery for North America region")
+        if self.discovery_config:
+            # Already discovered this session — use cache
+            return True
 
-        base_api_candidates = self._session_region_config.get("base_api_candidates", [])
+        candidates = self._session_region_config.get("base_api_candidates", [])
+        timeout = ClientTimeout(total=10)
 
-        for candidate in base_api_candidates:
+        for candidate in candidates:
+            config_url = f"{candidate}/login/v1/idk/openid-configuration"
             try:
-                _LOGGER.debug("Testing base API endpoint: %s", candidate)
-                async with self._session.get(
-                    url=f"{candidate}/login/v1/idk/openid-configuration",
-                    timeout=ClientTimeout(total=5),
-                ) as req:
-                    if req.status == 200:
-                        _LOGGER.info("Found working base API endpoint: %s", candidate)
-                        self._base_api = candidate
-                        return True
-            except Exception as e:
-                _LOGGER.debug("Endpoint %s failed: %s", candidate, str(e))
+                _LOGGER.debug("Attempting market config discovery at %s", config_url)
+                async with self._session.get(url=config_url, timeout=timeout) as resp:
+                    if resp.status != 200:
+                        continue
+                    raw_config = await resp.json()
+
+                    # Validate all URL values against allowlist before applying
+                    validated = {}
+                    for key, value in raw_config.items():
+                        if isinstance(value, str) and value.startswith("http"):
+                            if not self._is_allowed_vw_domain(value):
+                                _LOGGER.warning(
+                                    "Discovery: rejected URL %r for key %r (domain not in allowlist)",
+                                    value, key,
+                                )
+                                continue
+                        validated[key] = value
+
+                    self.discovery_config = validated
+                    self._base_api = candidate
+                    self._service_status["discovery"] = "Success"
+                    _LOGGER.debug("Market config discovery succeeded via %s", candidate)
+                    return True
+
+            except Exception as exc:
+                _LOGGER.debug("Config discovery attempt failed for %s: %s", candidate, exc)
                 continue
 
-        _LOGGER.error(
-            "Could not discover working endpoints for NA region. "
-            "Please check network traffic or report at: "
-            "https://github.com/robinostlund/volkswagencarnet/issues"
+        _LOGGER.warning(
+            "Discovery failed, falling back to hardcoded config. "
+            "Endpoint %s confirmed working as fallback.",
+            self._session_region_config.get("base_api", "unknown"),
         )
+        self._service_status["discovery"] = "Failed"
         return False
+
+    async def _discover_endpoints(self) -> bool:
+        """Thin alias for _discover_market_config() for backward compatibility.
+
+        Deprecated: Use _discover_market_config() directly.
+        """
+        return await self._discover_market_config()
 
     # API Login
     async def doLogin(self, tries: int = 1):
@@ -247,11 +303,11 @@ class Connection:
         async with self._login_lock:
             _LOGGER.debug("Initiating new login")
 
-            # Discover endpoints if needed
-            if self._session_region == "NA" and not self._base_api:
-                if not await self._discover_endpoints():
-                    _LOGGER.error("Endpoint discovery failed for NA region")
-                    return False
+            # Discover market config for NA (result cached in self.discovery_config)
+            if self._session_region == "NA":
+                if not await self._discover_market_config():
+                    _LOGGER.warning("Market config discovery failed, using hardcoded values")
+                    # Do NOT return False — self._base_api has hardcoded pre-confirmed value
 
             for i in range(tries):
                 self._session_logged_in = await self._login()
@@ -1185,95 +1241,136 @@ class Connection:
                 await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
 
     # HTTP methods to API
-    async def _request(self, method, url, return_raw=False, _retry_401: bool = False, **kwargs):
-        """Perform a query to the VW-Group API."""
+    async def _request(self, method, url, return_raw=False, _retry_401: bool = False,
+                       _no_retry: bool = False, **kwargs):
+        """Perform a query to the VW-Group API with retry on 429 and transient errors."""
         _LOGGER.debug('HTTP %s "%s"', method, url)
         if kwargs.get("json", None):
             _LOGGER.debug("Request payload: %s", kwargs.get("json", None))
-        try:
-            async with self._session.request(
-                method,
-                url,
-                headers=self._session_headers,
-                timeout=ClientTimeout(total=TIMEOUT.seconds),
-                cookies=self._jarCookie,
-                raise_for_status=False,
-                **kwargs,
-            ) as response:
-                # NA inline 401 retry: refresh the appropriate token and retry once
-                if response.status == 401 and self._session_region == "NA" and not _retry_401:
-                    _LOGGER.debug("NA: Got 401 on %s, attempting inline token refresh and retry", url)
-                    try:
-                        token_type = self._classify_endpoint(url)
-                        if token_type == "idk":
-                            await self._refresh_idk_token()
-                        elif token_type == "brand":
-                            await self._refresh_brand_token()
-                        elif token_type == "mbb":
-                            await self._refresh_mbb_from_refresh_token()
-                    except (AuthenticationError, ValueError) as refresh_exc:
-                        _LOGGER.warning("NA: Inline token refresh failed for 401: %s", refresh_exc)
-                        # Fall through to raise_for_status which will surface the 401
-                    else:
-                        # Retry the original request once with the new token
-                        return await self._request(method, url, return_raw=return_raw, _retry_401=True, **kwargs)
 
-                response.raise_for_status()
+        attempt = 0
 
-                # Update cookie jar
-                if self._jarCookie is not None:
-                    self._jarCookie.update(response.cookies)
-                else:
-                    self._jarCookie = response.cookies
-
-                # Update service status
-                await self.update_service_status(url, response.status)
-
-                try:
-                    if response.status == 204:
-                        if return_raw:
-                            res = response
+        while True:
+            try:
+                async with self._session.request(
+                    method,
+                    url,
+                    headers=self._session_headers,
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                    cookies=self._jarCookie,
+                    raise_for_status=False,
+                    **kwargs,
+                ) as response:
+                    # NA inline 401 retry (Phase 4 — unchanged)
+                    if response.status == 401 and self._session_region == "NA" and not _retry_401:
+                        _LOGGER.debug("NA: Got 401 on %s, attempting inline token refresh and retry", url)
+                        try:
+                            token_type = self._classify_endpoint(url)
+                            if token_type == "idk":
+                                await self._refresh_idk_token()
+                            elif token_type == "brand":
+                                await self._refresh_brand_token()
+                            elif token_type == "mbb":
+                                await self._refresh_mbb_from_refresh_token()
+                        except (AuthenticationError, ValueError) as refresh_exc:
+                            _LOGGER.warning("NA: Inline token refresh failed for 401: %s", refresh_exc)
                         else:
-                            res = {"status_code": response.status}
-                    elif 200 <= response.status < 300:
-                        res = await response.json(loads=json_loads)
+                            return await self._request(method, url, return_raw=return_raw, _retry_401=True, **kwargs)
+
+                    # Phase 5: 429 handling BEFORE raise_for_status
+                    if response.status == 429 and not _no_retry and attempt < MAX_RETRIES_ON_RATE_LIMIT:
+                        retry_after_raw = response.headers.get("Retry-After")
+                        if retry_after_raw:
+                            try:
+                                delay = max(float(retry_after_raw), 1.0)
+                            except (ValueError, TypeError):
+                                delay = float(2 ** attempt)
+                        else:
+                            delay = float(2 ** attempt)  # 1s, 2s, 4s
+                        attempt += 1
+                        self._is_throttled = True
+                        self._service_status["throttled"] = True
+                        _LOGGER.warning(
+                            "Rate limited, retrying in %.0fs (attempt %d/%d)",
+                            delay, attempt, MAX_RETRIES_ON_RATE_LIMIT,
+                        )
+                        await asyncio.sleep(delay)
+                        continue  # retry the while loop
+
+                    # All retries exhausted (or _no_retry): surface the error
+                    response.raise_for_status()
+
+                    # Successful response — reset throttle state
+                    self._is_throttled = False
+                    self._service_status["throttled"] = False
+
+                    # Update cookie jar
+                    if self._jarCookie is not None:
+                        self._jarCookie.update(response.cookies)
                     else:
+                        self._jarCookie = response.cookies
+
+                    # Update service status
+                    await self.update_service_status(url, response.status)
+
+                    try:
+                        if response.status == 204:
+                            if return_raw:
+                                res = response
+                            else:
+                                res = {"status_code": response.status}
+                        elif 200 <= response.status < 300:
+                            res = await response.json(loads=json_loads)
+                        else:
+                            res = {}
+                            _LOGGER.debug(
+                                "Not success status code [%s] response: %s",
+                                response.status,
+                                response.text,
+                            )
+                    except Exception:  # pylint: disable=broad-exception-caught
                         res = {}
                         _LOGGER.debug(
-                            "Not success status code [%s] response: %s",
+                            "Something went wrong [%s] response: %s",
                             response.status,
                             response.text,
                         )
-                except Exception:  # pylint: disable=broad-exception-caught
-                    res = {}
+                        if return_raw:
+                            return response
+                        return res
+
                     _LOGGER.debug(
-                        "Something went wrong [%s] response: %s",
+                        'Request for "%s" returned with status code [%s], headers: %s, response: %s',
+                        url,
                         response.status,
-                        response.text,
+                        response.headers,
+                        res,
                     )
+
                     if return_raw:
-                        return response
+                        res = response
                     return res
 
-                _LOGGER.debug(
-                    'Request for "%s" returned with status code [%s], headers: %s, response: %s',
-                    url,
-                    response.status,
-                    response.headers,
-                    res,
+            except (client_exceptions.ClientConnectionError, client_exceptions.ServerTimeoutError) as net_err:
+                if _no_retry or attempt >= MAX_RETRIES_ON_RATE_LIMIT:
+                    await self.update_service_status(url, 1000)
+                    raise net_err from None
+                delay = float(2 ** attempt)
+                attempt += 1
+                _LOGGER.warning(
+                    "Transient network error, retrying in %.0fs (attempt %d/%d): %s",
+                    delay, attempt, MAX_RETRIES_ON_RATE_LIMIT, net_err,
                 )
+                await asyncio.sleep(delay)
+                # continue is implicit — while loop wraps the try/except
 
-                if return_raw:
-                    res = response
-                return res
-        except client_exceptions.ClientResponseError as httperror:
-            # Update service status
-            await self.update_service_status(url, httperror.code)
-            raise httperror from None
-        except Exception as error:
-            # Update service status
-            await self.update_service_status(url, 1000)
-            raise error from None
+            except client_exceptions.ClientResponseError as httperror:
+                await self.update_service_status(url, httperror.code)
+                raise httperror from None
+
+            except Exception as error:
+                await self.update_service_status(url, 1000)
+                raise error from None
 
     async def get(self, url, vin="", tries=0):
         """Perform a get query."""
@@ -1290,13 +1387,9 @@ class Connection:
                     'Received "unauthorized" error while fetching data: %s', error
                 )
                 self._session_logged_in = False
-            elif error.status == 429 and tries < MAX_RETRIES_ON_RATE_LIMIT:
-                delay = randint(1, 3 + tries * 2)
-                _LOGGER.debug(
-                    "Server side throttled. Waiting %s, try %s", delay, tries + 1
-                )
-                await asyncio.sleep(delay)
-                return await self.get(url, vin, tries + 1)
+            elif error.status == 429:
+                # Retry exhausted in _request() — surface as Throttled state
+                return {"state": "Throttled"}
             elif error.status == 500:
                 _LOGGER.debug(
                     "Got HTTP 500 from server, service might be temporarily unavailable"
@@ -1311,41 +1404,17 @@ class Connection:
 
     async def post(self, url, vin="", tries=0, return_raw=False, **data):
         """Perform a post query."""
-        try:
-            if data:
-                return await self._request(
-                    METH_POST, url, return_raw=return_raw, **data
-                )
-            return await self._request(METH_POST, url, return_raw=return_raw)
-        except client_exceptions.ClientResponseError as error:
-            if error.status == 429 and tries < MAX_RETRIES_ON_RATE_LIMIT:
-                delay = randint(1, 3 + tries * 2)
-                _LOGGER.debug(
-                    "Server side throttled. Waiting %s, try %s", delay, tries + 1
-                )
-                await asyncio.sleep(delay)
-                return await self.post(
-                    url, vin, tries + 1, return_raw=return_raw, **data
-                )
-            raise
+        if data:
+            return await self._request(
+                METH_POST, url, return_raw=return_raw, **data
+            )
+        return await self._request(METH_POST, url, return_raw=return_raw)
 
     async def put(self, url, vin="", tries=0, return_raw=False, **data):
         """Perform a put query."""
-        try:
-            if data:
-                return await self._request(METH_PUT, url, return_raw=return_raw, **data)
-            return await self._request(METH_PUT, url, return_raw=return_raw)
-        except client_exceptions.ClientResponseError as error:
-            if error.status == 429 and tries < MAX_RETRIES_ON_RATE_LIMIT:
-                delay = randint(1, 3 + tries * 2)
-                _LOGGER.debug(
-                    "Server side throttled. Waiting %s, try %s", delay, tries + 1
-                )
-                await asyncio.sleep(delay)
-                return await self.put(
-                    url, vin, tries + 1, return_raw=return_raw, **data
-                )
-            raise
+        if data:
+            return await self._request(METH_PUT, url, return_raw=return_raw, **data)
+        return await self._request(METH_PUT, url, return_raw=return_raw)
 
     # Update data for all Vehicles
     async def update(self):
@@ -2047,6 +2116,15 @@ class Connection:
             None for EMEA connections or before login.
         """
         return self._na_auth_level
+
+    @property
+    def is_throttled(self) -> bool:
+        """Return True if the last request exhausted all retry attempts due to rate limiting.
+
+        Useful for Home Assistant integrations to skip a poll cycle when throttled.
+        Resets to False on the next successful request.
+        """
+        return self._is_throttled
 
     def vehicle(self, vin):
         """Return vehicle object for given vin."""

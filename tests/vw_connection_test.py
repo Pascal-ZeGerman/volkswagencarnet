@@ -61,16 +61,6 @@ class SendCommandsTest(IsolatedAsyncioTestCase):
 class RateLimitTest(IsolatedAsyncioTestCase):
     """Test that rate limiting towards VW works."""
 
-    invocations = 0
-
-    async def rateLimitedFunction(self, url, vin=""):
-        """Limit calls test function."""
-        ri = MagicMock(aiohttp.RequestInfo)
-        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
-        e.status = 429
-        self.invocations = self.invocations + 1
-        raise e
-
     @pytest.mark.asyncio
     @pytest.mark.skipif(
         condition=sys.version_info < (3, 11),
@@ -81,10 +71,12 @@ class RateLimitTest(IsolatedAsyncioTestCase):
         spec_set=vw_connection.Connection,
         new=TwoVehiclesConnection,
     )
-    @patch("volkswagencarnet.vw_connection.MAX_RETRIES_ON_RATE_LIMIT", 1)
     async def test_rate_limit(self):
-        """Test rate limiting functionality."""
+        """Test that get() returns Throttled state after 429 retry exhaustion.
 
+        Retry logic is centralized in _request(). get() catches the raised
+        ClientResponseError with status 429 and returns {"state": "Throttled"}.
+        """
         from unittest.mock import AsyncMock
 
         sess = AsyncMock()
@@ -92,11 +84,13 @@ class RateLimitTest(IsolatedAsyncioTestCase):
         # noinspection PyArgumentList
         conn = vw_connection.Connection(sess, "", "")
 
-        self.invocations = 0
-        with patch.object(conn, "_request", self.rateLimitedFunction):
+        ri = MagicMock(aiohttp.RequestInfo)
+        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
+        e.status = 429
+
+        with patch.object(conn, "_request", side_effect=e):
             res = await conn.get("foo")
-            assert res == {"status_code": 429}
-        assert self.invocations == vw_connection.MAX_RETRIES_ON_RATE_LIMIT + 1
+            assert res == {"state": "Throttled"}
 
 
 class NAOAuthLoginTest(IsolatedAsyncioTestCase):

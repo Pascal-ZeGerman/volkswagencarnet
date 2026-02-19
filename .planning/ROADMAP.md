@@ -91,11 +91,12 @@ Plans:
   1. Library attempts market-specific configuration discovery from VW endpoints and falls back to hardcoded values if discovery fails
   2. Library discovers per-vehicle home region and routes API calls to the correct regional server
   3. Rate-limited responses (HTTP 429) trigger exponential backoff and retry (up to 3 attempts) before returning a throttled state
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Market config discovery and home region routing
-- [ ] 05-02: Rate limiting and error handling
+- [ ] 05-01-PLAN.md — VW_DOMAIN_ALLOWLIST, _is_allowed_vw_domain(), _discover_market_config(), discovery_config attr, is_throttled property; centralized retry in _request() with Retry-After + exponential backoff; remove duplicate retry from get/post/put
+- [ ] 05-02-PLAN.md — Vehicle._ensure_home_region() lazy discovery, _home_region_discovered guard, home_region_url property, wire into discover()
+- [ ] 05-03-PLAN.md — reliability_test.py: MarketConfigDiscoveryTest (7 tests), HomeRegionDiscoveryTest (6 tests), RetryBackoffTest (8 tests)
 
 ### Phase 6: Backward Compatibility
 **Goal**: Existing EMEA users experience zero breaking changes after the NA authentication code is merged
@@ -138,6 +139,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 2. NA OAuth Login Flow | 2/2 | Complete    | 2026-02-18 |
 | 3. Three-Token Architecture | 3/3 | Complete   | 2026-02-18 |
 | 4. Token Lifecycle Management | 1/2 | In Progress|  |
-| 5. Reliability & Discovery | 0/2 | Not started | - |
+| 5. Reliability & Discovery | 0/3 | Not started | - |
 | 6. Backward Compatibility | 0/1 | Not started | - |
 | 7. End-to-End Validation | 0/2 | Not started | - |
