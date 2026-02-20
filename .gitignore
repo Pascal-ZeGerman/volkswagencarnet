@@ -13,3 +13,5 @@ dist
 /volkswagencarnet/version.py
 /volkswagencarnet.iml
 htmlcov
+.planning/
+tests/e2e/*.log
