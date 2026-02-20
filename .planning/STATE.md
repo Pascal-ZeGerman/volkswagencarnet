@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 7 - End-to-End Validation (in progress)
+**Current focus:** Phase 7 - End-to-End Validation (COMPLETE)
 
 ## Current Position
 
-Phase: 7 of 7 (End-to-End Validation) - IN PROGRESS
-Plan: 1 of 2 in current phase (07-01 complete)
-Status: Phase 7 Plan 1 complete — e2e infrastructure: norecursedirs, cryptography, na_connection fixture with full-auth enforcement
-Last activity: 2026-02-20 -- Phase 7 Plan 1 completed (tests/e2e/conftest.py: credential guard + na_connection fixture; TEST-05 verified)
+Phase: 7 of 7 (End-to-End Validation) - COMPLETE
+Plan: 2 of 2 in current phase (07-01, 07-02 complete)
+Status: ALL PHASES COMPLETE — 18 live e2e tests covering full NA auth flow + vehicle data
+Last activity: 2026-02-20 -- Phase 7 Plan 2 completed (tests/e2e/: test_na_login.py, test_na_vehicle_data.py, test_na_token_refresh.py)
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -41,6 +41,7 @@ Progress: [██████████] 99%
 | Phase 06-backward-compatibility P01 | 2 | 2 tasks | 1 files |
 | Phase 06-backward-compatibility P02 | 2 | 2 tasks | 1 files |
 | Phase 07-end-to-end-validation P01 | 5 | 3 tasks | 5 files |
+| Phase 07-end-to-end-validation P02 | 2 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase 07-end-to-end-validation]: EnvironmentError at import (not pytest.skip) for missing credentials — immediate, loud failure naming both required env vars
 - [Phase 07-end-to-end-validation]: na_auth_level == 'full' check uses AssertionError (not pytest.skip) — tests requiring Brand/MBB tokens always receive fully-authenticated connection or never run
 - [Phase 07-end-to-end-validation]: module-scoped fixture with loop_scope='module' required by pytest-asyncio strict mode — single real login per test module
+- [Phase 07-end-to-end-validation]: JWKS URI fetched inline via aiohttp in test_na_login.py — avoids dependency on Connection.get_openid_config() and keeps test self-contained
+- [Phase 07-end-to-end-validation]: Soft-assert pattern for vehicle data: None values soft-skipped (unsupported), not failed — handles heterogeneous vehicle capabilities across models
+- [Phase 07-end-to-end-validation]: expires_at key used for token expiry assertions in e2e tests (not 'expiry') — matches actual _na_tokens structure
 
 ### Pending Todos
 
@@ -109,5 +113,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 07-01-PLAN.md (e2e infrastructure: norecursedirs, cryptography, na_connection fixture)
-Resume file: .planning/phases/07-end-to-end-validation/07-02-PLAN.md (next: NA live vehicle data tests)
+Stopped at: Completed 07-02-PLAN.md (18 live e2e tests: test_na_login.py, test_na_vehicle_data.py, test_na_token_refresh.py)
+Resume file: N/A — all 7 phases complete

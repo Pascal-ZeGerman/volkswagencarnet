@@ -50,12 +50,12 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 
 ### Testing & Validation
 
-- [ ] **TEST-01**: NA authentication tested end-to-end with real CarNet credentials
-- [ ] **TEST-02**: All three token types successfully obtained and validated
-- [ ] **TEST-03**: Vehicle data retrieval (battery, location, status) working with NA tokens
-- [ ] **TEST-04**: Token refresh working for all three token types
+- [x] **TEST-01**: NA authentication tested end-to-end with real CarNet credentials
+- [x] **TEST-02**: All three token types successfully obtained and validated
+- [x] **TEST-03**: Vehicle data retrieval (battery, location, status) working with NA tokens
+- [x] **TEST-04**: Token refresh working for all three token types
 - [x] **TEST-05**: EMEA authentication regression tests pass (no backward compatibility breaks)
-- [ ] **TEST-06**: Multi-vehicle support working with NA authentication
+- [x] **TEST-06**: Multi-vehicle support working with NA authentication
 
 ## v2 Requirements
 
@@ -122,12 +122,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
 | COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
 | COMPAT-05 | Phase 6: Backward Compatibility | Complete |
-| TEST-01 | Phase 7: End-to-End Validation | Pending |
-| TEST-02 | Phase 7: End-to-End Validation | Pending |
-| TEST-03 | Phase 7: End-to-End Validation | Pending |
-| TEST-04 | Phase 7: End-to-End Validation | Pending |
+| TEST-01 | Phase 7: End-to-End Validation | Complete |
+| TEST-02 | Phase 7: End-to-End Validation | Complete |
+| TEST-03 | Phase 7: End-to-End Validation | Complete |
+| TEST-04 | Phase 7: End-to-End Validation | Complete |
 | TEST-05 | Phase 7: End-to-End Validation | Complete |
-| TEST-06 | Phase 7: End-to-End Validation | Pending |
+| TEST-06 | Phase 7: End-to-End Validation | Complete |
 
 **Coverage:**
 - v1 requirements: 32 total
