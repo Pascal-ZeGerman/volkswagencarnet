@@ -54,7 +54,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 - [ ] **TEST-02**: All three token types successfully obtained and validated
 - [ ] **TEST-03**: Vehicle data retrieval (battery, location, status) working with NA tokens
 - [ ] **TEST-04**: Token refresh working for all three token types
-- [ ] **TEST-05**: EMEA authentication regression tests pass (no backward compatibility breaks)
+- [x] **TEST-05**: EMEA authentication regression tests pass (no backward compatibility breaks)
 - [ ] **TEST-06**: Multi-vehicle support working with NA authentication
 
 ## v2 Requirements
@@ -126,7 +126,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-02 | Phase 7: End-to-End Validation | Pending |
 | TEST-03 | Phase 7: End-to-End Validation | Pending |
 | TEST-04 | Phase 7: End-to-End Validation | Pending |
-| TEST-05 | Phase 7: End-to-End Validation | Pending |
+| TEST-05 | Phase 7: End-to-End Validation | Complete |
 | TEST-06 | Phase 7: End-to-End Validation | Pending |
 
 **Coverage:**
