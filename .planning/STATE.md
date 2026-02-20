@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 6 - Backward Compatibility (complete) / Phase 7 next
+**Current focus:** Phase 7 - End-to-End Validation (in progress)
 
 ## Current Position
 
-Phase: 6 of 7 (Backward Compatibility) - COMPLETE
-Plan: 2 of 2 in current phase (06-02 complete)
-Status: Phase 6 complete — both plans done (EMEA regression + NA vehicle property compat tests)
-Last activity: 2026-02-19 -- Phase 6 Plan 2 completed (na_vehicle_compat_test.py: NAVehiclePropertyCompatTest 7 tests, NAGolfGteHybridCompatTest 3 tests; COMPAT-05 verified)
+Phase: 7 of 7 (End-to-End Validation) - IN PROGRESS
+Plan: 1 of 2 in current phase (07-01 complete)
+Status: Phase 7 Plan 1 complete — e2e infrastructure: norecursedirs, cryptography, na_connection fixture with full-auth enforcement
+Last activity: 2026-02-20 -- Phase 7 Plan 1 completed (tests/e2e/conftest.py: credential guard + na_connection fixture; TEST-05 verified)
 
-Progress: [██████████] 98%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -40,6 +40,7 @@ Progress: [██████████] 98%
 *Updated after each plan completion*
 | Phase 06-backward-compatibility P01 | 2 | 2 tasks | 1 files |
 | Phase 06-backward-compatibility P02 | 2 | 2 tasks | 1 files |
+| Phase 07-end-to-end-validation P01 | 5 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ Recent decisions affecting current work:
 - [Phase 06-02]: Golf GTE hybrid fixture-probe step confirms actual property values before writing assertions — prevents fragile wrong-value tests
 - [Phase 06-02]: vw_vehicle.py has zero property-layer region-branching — 4 region references are in home region endpoint discovery only, not data properties
 - [Phase 06-02]: NA compat test pattern: _make_na_conn() factory + vehicle._states.update(fixture) + vehicle._discovered = True
+- [Phase 07-end-to-end-validation]: EnvironmentError at import (not pytest.skip) for missing credentials — immediate, loud failure naming both required env vars
+- [Phase 07-end-to-end-validation]: na_auth_level == 'full' check uses AssertionError (not pytest.skip) — tests requiring Brand/MBB tokens always receive fully-authenticated connection or never run
+- [Phase 07-end-to-end-validation]: module-scoped fixture with loop_scope='module' required by pytest-asyncio strict mode — single real login per test module
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19
-Stopped at: Completed 06-02-PLAN.md (Phase 6 complete)
-Resume file: .planning/phases/07-live-validation/ (next phase)
+Last session: 2026-02-20
+Stopped at: Completed 07-01-PLAN.md (e2e infrastructure: norecursedirs, cryptography, na_connection fixture)
+Resume file: .planning/phases/07-end-to-end-validation/07-02-PLAN.md (next: NA live vehicle data tests)
