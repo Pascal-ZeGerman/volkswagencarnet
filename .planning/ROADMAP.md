@@ -123,11 +123,11 @@ Plans:
   4. Token refresh works for all three token types without requiring re-login
   5. Full existing EMEA test suite passes with zero regressions
   6. Multiple vehicles are discoverable and accessible if the account has more than one vehicle
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: Unit and integration test suite
-- [ ] 07-02: Live credential end-to-end validation
+- [ ] 07-01-PLAN.md — E2E infrastructure: norecursedirs config, cryptography dep, gitignore, conftest.py credential guard + login fixture; EMEA regression verification
+- [ ] 07-02-PLAN.md — Live test files: test_na_login.py (TEST-01, TEST-02), test_na_vehicle_data.py (TEST-03, TEST-06), test_na_token_refresh.py (TEST-04)
 
 ## Progress
 
