@@ -8,8 +8,10 @@ import base64
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
+import json
 import logging
 from random import random
+import re
 import secrets
 import time
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -326,14 +328,28 @@ class Connection:
             # Get list of vehicles from account
             _LOGGER.debug("Fetching vehicles associated with account")
             self._session_headers.pop("Content-Type", None)
-            loaded_vehicles = await self.get(
-                url=f"{self._base_api}/vehicle/v2/vehicles"
-            )
+
+            if self._session_region == "NA":
+                # NA uses Car-Net garage endpoint: GET /account/v1/garage?idToken={id_token}
+                # Confirmed from APK decompilation: cz.a Retrofit interface @GET("account/v1/garage")
+                id_token = self._session_tokens.get("identity", {}).get("id_token", "")
+                loaded_vehicles = await self._request(
+                    METH_GET,
+                    f"{self._base_api}/account/v1/garage",
+                    params={"idToken": id_token},
+                )
+                vehicle_list = loaded_vehicles.get("data", {}).get("vehicles")
+            else:
+                loaded_vehicles = await self.get(
+                    url=f"{self._base_api}/vehicle/v2/vehicles"
+                )
+                vehicle_list = loaded_vehicles.get("data")
+
             # Add Vehicle class object for all VIN-numbers from account
-            if loaded_vehicles.get("data") is not None:
+            if vehicle_list is not None:
                 _LOGGER.debug("Found vehicle(s) associated with account")
                 self._vehicles = []
-                for vehicle in loaded_vehicles.get("data"):
+                for vehicle in vehicle_list:
                     self._vehicles.append(Vehicle(self, vehicle.get("vin")))
             else:
                 _LOGGER.warning("Failed to login to Volkswagen Connect API")
@@ -346,17 +362,20 @@ class Connection:
 
     async def get_openid_config(self) -> Dict[str, str]:
         """Get OpenID config."""
-        # Use identity_endpoint for NA region, otherwise use base_api
-        identity_endpoint = self._session_region_config.get("identity_endpoint")
-        if identity_endpoint:
-            config_url = f"{identity_endpoint}/.well-known/openid-configuration"
+        # NA: use hardcoded endpoints from region config (app does not fetch well-known)
+        auth_ep = self._session_region_config.get("auth_endpoint")
+        token_ep = self._session_region_config.get("token_endpoint")
+        if auth_ep and token_ep:
             _LOGGER.debug(
-                "Requesting openid config from identity endpoint: %s", config_url
+                "NA: using hardcoded auth=%s token=%s", auth_ep, token_ep
             )
-        else:
-            config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
-            _LOGGER.debug("Requesting openid config from base API: %s", config_url)
+            return {
+                "authorization_endpoint": auth_ep,
+                "token_endpoint": token_ep,
+            }
 
+        config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
+        _LOGGER.debug("Requesting openid config from base API: %s", config_url)
         req = await self._session.get(url=config_url)
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
@@ -434,9 +453,11 @@ class Connection:
                 _LOGGER.info("Authorization error: %s", error_description)
                 raise AuthenticationError(f"{error_msg}: {error_description}")
 
-            # If redirected, fetch the new location
+            # If redirected, fetch the new location — follow any further redirects
+            # automatically (NA identity server uses a multi-hop chain before
+            # landing on the login form).
             req = await self._session.get(
-                url=ref, headers=self._session_auth_headers, allow_redirects=False
+                url=ref, headers=self._session_auth_headers, allow_redirects=True
             )
 
             if req.status != 200:
@@ -457,6 +478,67 @@ class Connection:
             return None
         return state_input["value"]
 
+    def _extract_identitykit_form(self, page_html: str) -> dict:
+        """Extract hidden fields from a VW IdentiKit login form.
+
+        Handles two page types:
+        - Email step: server-rendered form[id="emailPasswordForm"] with hidden inputs
+        - Password step: React SPA — data embedded in window._IDK JavaScript object
+
+        Returns dict with keys: csrf, relay_state, hmac, form_action
+        Raises AuthenticationError if neither format is recognised.
+        """
+        soup = BeautifulSoup(page_html, "html.parser")
+        form = soup.select_one('form[id="emailPasswordForm"]')
+        if form:
+            # Server-rendered email step
+            def _val(selector):
+                el = form.select_one(selector)
+                return el["value"] if el and el.get("value") else None
+
+            return {
+                "csrf": _val('input[name="_csrf"]'),
+                "relay_state": _val('input[name="relayState"]'),
+                "hmac": _val('input[name="hmac"]'),
+                "form_action": form.get("action"),
+            }
+
+        # React-rendered password step — extract from window._IDK object
+        # templateModel value is valid JSON; outer object uses unquoted JS keys
+        tm_match = re.search(r'templateModel\s*:\s*(\{.*?\}),\s*\n', page_html, re.DOTALL)
+        csrf_match = re.search(r"csrf_token\s*:\s*'([^']+)'", page_html)
+
+        if not tm_match or not csrf_match:
+            raise AuthenticationError("IdentiKit form not found — login page structure unknown")
+
+        try:
+            tm = json.loads(tm_match.group(1))
+        except json.JSONDecodeError as exc:
+            raise AuthenticationError(
+                f"IdentiKit form not found — templateModel JSON parse error: {exc}"
+            )
+
+        hmac = tm.get("hmac")
+        relay_state = tm.get("relayState")
+        post_action = tm.get("postAction")  # e.g. "login/authenticate"
+        client_id = tm.get("clientLegalEntityModel", {}).get("clientId") or self._client_id
+        csrf = csrf_match.group(1)
+
+        if not all([hmac, relay_state, post_action, csrf]):
+            raise AuthenticationError(
+                f"IdentiKit form incomplete (JS path) — missing: "
+                f"{[k for k, v in {'hmac': hmac, 'relayState': relay_state, 'postAction': post_action, 'csrf': csrf}.items() if not v]}"
+            )
+
+        # Reconstruct the full form action path from client_id + postAction
+        form_action = f"/signin-service/v1/{client_id}/{post_action}"
+        return {
+            "csrf": csrf,
+            "relay_state": relay_state,
+            "hmac": hmac,
+            "form_action": form_action,
+        }
+
     async def post_form(
         self, session, url: str, headers: dict, form_data: dict, redirect: bool = True
     ) -> str:
@@ -466,7 +548,7 @@ class Connection:
         )
 
         # Redirect case
-        if not redirect and req.status == 302:
+        if not redirect and 300 <= req.status < 400:
             return req.headers.get("Location")
 
         # Handle explicit error 400 (form validation failure)
@@ -484,7 +566,11 @@ class Connection:
                 if error_code == "wrong-email-credentials":
                     raise AuthenticationError("Wrong username or password")
 
-            # Unknown 400 error
+            # Unknown 400 error — log truncated body for debugging
+            _LOGGER.debug(
+                "post_form 400 response (first 500 chars): %s",
+                page_content[:500],
+            )
             raise AuthenticationError(
                 "Login form validation failed with unknown 400 error"
             )
@@ -511,6 +597,7 @@ class Connection:
         MAX_REDIRECT_DEPTH = 10
         max_depth = MAX_REDIRECT_DEPTH
         stop_uri = self._session_region_config.get("redirect_uri", APP_URI)
+        _LOGGER.debug("follow_redirects: stop_uri=%s start_ref=%s", stop_uri, ref)
         while not ref.startswith(stop_uri):
             if max_depth == 0:
                 raise RedirectError(
@@ -520,9 +607,14 @@ class Connection:
             response = await session.get(
                 url=ref, headers=self._session_auth_headers, allow_redirects=False
             )
+            location = response.headers.get("Location")
+            _LOGGER.debug(
+                "follow_redirects: GET %s → HTTP %s, Location: %s",
+                ref, response.status, location,
+            )
 
             # Check if we hit a terms and conditions page (HTTP 200 with no redirect)
-            if response.status == 200 and "Location" not in response.headers:
+            if response.status == 200 and not location:
                 page_content = await response.text()
                 if (
                     "termsAndConditions" in page_content
@@ -538,10 +630,10 @@ class Connection:
                         "then try logging in again."
                     )
 
-            if "Location" not in response.headers:
+            if not location:
                 _LOGGER.warning("Failed to find next redirect location")
                 raise RedirectError("Failed to find next redirect location")
-            ref = urljoin(ref, response.headers["Location"])
+            ref = urljoin(ref, location)
             max_depth -= 1
         return ref
 
@@ -599,6 +691,107 @@ class Connection:
         jwt_auth_code = parse_qs(urlparse(redirect_response).query)["code"][0]
         return jwt_auth_code
 
+    async def _get_authorization_code_na(self, openid_config: dict) -> str:
+        """NA-specific authorization code flow using VW IdentiKit two-step login."""
+        authorization_endpoint = openid_config["authorization_endpoint"]
+        # Login forms are served by the identity server (identity.na.vwgroup.io),
+        # not by the base API (b-h-s.spr.us00.p.con-veh.net).
+        identity_base = self._session_region_config.get(
+            "identity_endpoint", "https://identity.na.vwgroup.io"
+        )
+
+        # ── Step 1: get the email identifier page ────────────────────────────
+        identifier_page = await self.get_authorization_page(authorization_endpoint)
+
+        # ── Step 2: parse IdentiKit email form ────────────────────────────────
+        form_data = self._extract_identitykit_form(identifier_page)
+        if not all(form_data.values()):
+            raise AuthenticationError(
+                f"IdentiKit form incomplete — missing fields: "
+                f"{[k for k, v in form_data.items() if not v]}"
+            )
+
+        # ── Step 3: POST email ─────────────────────────────────────────────────
+        identifier_url = urljoin(identity_base, form_data["form_action"])
+        email_payload = {
+            "_csrf": form_data["csrf"],
+            "relayState": form_data["relay_state"],
+            "hmac": form_data["hmac"],
+            "email": self._session_auth_username,
+        }
+        redirect_loc = await self.post_form(
+            self._session, identifier_url, self._session_auth_headers, email_payload, redirect=False
+        )
+        if not redirect_loc:
+            raise AuthenticationError("No redirect received after email submission")
+
+        # ── Step 4: GET password page ──────────────────────────────────────────
+        password_page_url = urljoin(identity_base, redirect_loc)
+        async with self._session.get(
+            password_page_url, headers=self._session_auth_headers, allow_redirects=False
+        ) as resp:
+            if resp.status != 200:
+                raise AuthenticationError(
+                    f"Password page returned HTTP {resp.status} — check credentials or service availability"
+                )
+            password_page = await resp.text()
+
+        # ── Step 5: parse IdentiKit password form ─────────────────────────────
+        form_data2 = self._extract_identitykit_form(password_page)
+        if not all(form_data2.values()):
+            raise AuthenticationError(
+                f"IdentiKit password form incomplete — missing: "
+                f"{[k for k, v in form_data2.items() if not v]}"
+            )
+
+        # ── Step 6: POST password ──────────────────────────────────────────────
+        authenticate_url = urljoin(identity_base, form_data2["form_action"])
+        _LOGGER.debug(
+            "_get_authorization_code_na Step 6: authenticate_url=%s relayState=%s hmac=%s csrf=%s",
+            authenticate_url,
+            form_data2.get("relay_state", "?")[:20],
+            form_data2.get("hmac", "?")[:20],
+            form_data2.get("csrf", "?")[:20],
+        )
+        password_payload = {
+            "_csrf": form_data2["csrf"],
+            "relayState": form_data2["relay_state"],
+            "hmac": form_data2["hmac"],
+            "email": self._session_auth_username,
+            "password": self._session_auth_password,
+        }
+        redirect_loc2 = await self.post_form(
+            self._session, authenticate_url, self._session_auth_headers, password_payload, redirect=False
+        )
+        if not redirect_loc2:
+            raise AuthenticationError("No redirect received after password submission — check credentials")
+
+        # Detect explicit password rejection before spending hops on follow_redirects
+        if "error=login.errors.password_invalid" in redirect_loc2:
+            raise AuthenticationError(
+                "Password rejected by VW identity server (login.errors.password_invalid). "
+                "Verify credentials and account is not locked."
+            )
+
+        # Detect throttling — too many failed login attempts
+        if "login.error.throttled" in redirect_loc2:
+            raise AuthenticationError(
+                "VW identity server is throttling login attempts (login.error.throttled). "
+                "Too many failed attempts. Wait a few minutes before retrying."
+            )
+
+        # ── Step 7: follow redirect chain to callback URL ──────────────────────
+        final_url = await self.follow_redirects(self._session, identity_base, redirect_loc2)
+
+        # ── Step 8: extract authorization code ────────────────────────────────
+        code = parse_qs(urlparse(final_url).query).get("code", [None])[0]
+        if not code:
+            raise AuthenticationError(
+                f"Authorization code not found in callback URL: {final_url!r}"
+            )
+        _LOGGER.debug("NA: authorization code obtained")
+        return code
+
     async def _exchange_code_for_tokens(
         self, auth_code: str, token_endpoint: str
     ) -> dict:
@@ -632,12 +825,30 @@ class Connection:
         if self._session_region == "NA":
             self._session_auth_headers["X-QMAuth"] = self._calculate_xqmauth()
 
-        # Token endpoint
-        token_response = await self.post_form(
-            self._session, token_endpoint, self._session_auth_headers, token_body
+        _LOGGER.debug(
+            "Token exchange request: endpoint=%s keys=%s has_verifier=%s",
+            token_endpoint,
+            list(token_body.keys()),
+            bool(token_body.get("code_verifier")),
         )
 
-        return json_loads(token_response)
+        # Use direct POST for token exchange to capture error body on failure
+        resp = await self._session.post(
+            token_endpoint,
+            headers=self._session_auth_headers,
+            data=token_body,
+            allow_redirects=False,
+        )
+        resp_text = await resp.text()
+        if resp.status != 200:
+            _LOGGER.debug(
+                "Token exchange HTTP %s response body: %s", resp.status, resp_text[:500]
+            )
+            raise AuthenticationError(
+                f"Token exchange failed with HTTP {resp.status}: {resp_text[:200]}"
+            )
+
+        return json_loads(resp_text)
 
     async def _register_mbb_client(self) -> str:
         """Register as MBB OAuth client and return xclientId.
@@ -851,18 +1062,23 @@ class Connection:
         if not self._na_token_endpoint:
             raise AuthenticationError("Cannot refresh IDK token: _na_token_endpoint not set (login not completed?)")
 
+        # NA AZS server requires the same code_verifier from the original PKCE login
+        # (non-standard extension — confirmed from APK decompilation of AzsRefreshRequest)
+        pkce_verifier = getattr(self, "_pkce_verifier", None) or ""
         refresh_body = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": self._client_id,
+            "code_verifier": pkce_verifier,
         }
+        # Public PKCE client (59992128_MYVW_ANDROID) does NOT use X-QMAuth —
+        # that header causes HTTP 400 "Internal Service validation failure" from b-h-s server.
         refresh_headers = {
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": USER_AGENT,
             "x-android-package-name": ANDROID_PACKAGE_NAME,
-            "X-QMAuth": self._calculate_xqmauth(),  # Fresh value each attempt
         }
 
         max_attempts = 3
@@ -870,8 +1086,9 @@ class Connection:
             try:
                 response = await self._session.post(
                     url=self._na_token_endpoint,
-                    headers={**refresh_headers, "X-QMAuth": self._calculate_xqmauth()},
+                    headers=refresh_headers,
                     data=refresh_body,
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
                 )
                 if response.status == 200:
                     tokens = await response.json()
@@ -1002,10 +1219,11 @@ class Connection:
             raise
 
     async def _login_na(self) -> bool:
-        """NA-specific login flow using identity.na.vwgroup.io.
+        """NA-specific login flow using b-h-s.spr.us00.p.con-veh.net OIDC endpoints.
 
         Obtains IDK access_token and refresh_token via OAuth authorization
-        code flow with X-QMAuth header on token exchange.
+        code flow with PKCE. Auth and token endpoints are on the base API.
+        Client: 59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID (public, no secret).
 
         NOTE: IDK-only BFF access hypothesis (whether the IDK token alone is
         sufficient for /vehicle/v1/vehicles without a Brand token) is validated
@@ -1020,17 +1238,17 @@ class Connection:
             self._session_headers = HEADERS_SESSION.copy()
             self._session_auth_headers = HEADERS_AUTH.copy()
 
-            # NA does not use PKCE (app does not send code_challenge)
-            self._pkce_verifier = None
-            self._pkce_challenge = None
+            # NA uses PKCE: code_verifier replaces client_secret at token exchange
+            self._pkce_verifier = self._generate_pkce_verifier()
+            self._pkce_challenge = self._generate_pkce_challenge(self._pkce_verifier)
 
             # Get OpenID config (routes to identity.na.vwgroup.io for NA)
             openid_config = await self.get_openid_config()
             token_endpoint = openid_config["token_endpoint"]
             self._na_token_endpoint = token_endpoint  # persist for Phase 4 IDK refresh
 
-            # Get authorization code via standard OAuth form flow
-            auth_code = await self._get_authorization_code(openid_config)
+            # Get authorization code via IdentiKit two-step flow
+            auth_code = await self._get_authorization_code_na(openid_config)
 
             # Exchange code for tokens (X-QMAuth header injected inside for NA)
             tokens = await self._exchange_code_for_tokens(auth_code, token_endpoint)
