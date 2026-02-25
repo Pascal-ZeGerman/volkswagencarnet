@@ -15,3 +15,10 @@ dist
 htmlcov
 .planning/
 tests/e2e/*.log
+
+# Local research, APK analysis, and debug artifacts
+App-APK/
+.VW_NA_Auth_Analysis/
+docs/
+tests/debug_na_login.py
+tests/e2e/debug_auth_page.html
