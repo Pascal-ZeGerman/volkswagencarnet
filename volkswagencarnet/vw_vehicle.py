@@ -1686,6 +1686,10 @@ class Vehicle:
     @property
     def position(self) -> dict[str, str | float | None]:
         """Return position."""
+        # NA region: read from na_location state populated by RVS endpoint
+        if self._connection is not None and self._connection._session_region == "NA":
+            return self._na_position()
+        # EMEA: existing logic unchanged
         output: dict[str, str | float | None]
         try:
             if self.vehicle_moving:
@@ -1699,6 +1703,52 @@ class Vehicle:
             output = {"lat": "?", "lng": "?"}
         return output
 
+    def _na_position(self) -> dict[str, str | float | None]:
+        """Return position for NA region from na_location state.
+
+        Returns:
+            Dict with lat, lng, timestamp keys.
+
+        Raises:
+            ValueError: If na_location data is present but has unexpected structure.
+        """
+        na_loc = self._states.get("na_location")
+        if na_loc is None:
+            return {"lat": None, "lng": None, "timestamp": None}
+        try:
+            loc = na_loc["location"]
+            return {
+                "lat": float(loc["latitude"]),
+                "lng": float(loc["longitude"]),
+                "timestamp": na_loc.get("eventTimeStamp"),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"NA location data has unexpected structure: {exc!r}. "
+                f"Raw na_location: {na_loc!r}"
+            ) from exc
+
+    def _na_door_locked(self) -> bool:
+        """Return door locked state for NA region from na_status state.
+
+        Returns:
+            True if lockStatus == 'LOCKED', False otherwise.
+
+        Raises:
+            ValueError: If na_status is present but lockStatus field is missing.
+        """
+        na_status = self._states.get("na_status")
+        if na_status is None:
+            return False
+        try:
+            lock_status = na_status["lockStatus"]
+        except KeyError as exc:
+            raise ValueError(
+                f"NA status data missing 'lockStatus' field. "
+                f"Raw na_status keys: {list(na_status.keys())!r}"
+            ) from exc
+        return lock_status == "LOCKED"
+
     @property
     def position_last_updated(self) -> datetime | str:
         """Return position last updated."""
@@ -1709,6 +1759,10 @@ class Vehicle:
     @property
     def is_position_supported(self) -> bool:
         """Return true if position is available."""
+        # NA region: supported if na_location data is present
+        if self._connection is not None and self._connection._session_region == "NA":
+            return self._states.get("na_location") is not None
+        # EMEA: existing logic unchanged
         return is_valid_path(self.attrs, Paths.PARKING_TS) or self.attrs.get(
             "isMoving", False
         )
@@ -2582,6 +2636,10 @@ class Vehicle:
     @property
     def door_locked(self) -> bool:
         """Return true if all doors are locked."""
+        # NA region: read from na_status state populated by RVS endpoint
+        if self._connection is not None and self._connection._session_region == "NA":
+            return self._na_door_locked()
+        # EMEA: existing logic unchanged
         return find_path(self.attrs, Paths.ACCESS_DOOR_LOCK) == "locked"
 
     @property
@@ -2597,6 +2655,10 @@ class Vehicle:
     @property
     def is_door_locked_supported(self) -> bool:
         """Return true if supported."""
+        # NA region: supported if na_status data is present
+        if self._connection is not None and self._connection._session_region == "NA":
+            return self._states.get("na_status") is not None
+        # EMEA: existing logic unchanged
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             return False
         return is_valid_path(self.attrs, Paths.ACCESS_DOOR_LOCK)
