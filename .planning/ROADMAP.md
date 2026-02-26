@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: End-to-End Validation** - Real credentials, real vehicle, full test suite (completed 2026-02-20)
 - [x] **Phase 8: Fix Stale Unit Tests** - Align unit tests with confirmed NA production behavior (completed 2026-02-26)
 - [x] **Phase 9: Requirements Wording & Docs Cleanup** - Requirements accuracy and docstring consistency (completed 2026-02-26)
-- [ ] **Phase 10: NA Vehicle Data Endpoint Research** - APK analysis to document NA vehicle data API endpoints, auth requirements, and response structure
+- [x] **Phase 10: NA Vehicle Data Endpoint Research** - APK analysis to document NA vehicle data API endpoints, auth requirements, and response structure (completed 2026-02-26)
 - [ ] **Phase 11: NA Vehicle Data Implementation** - Wire NA endpoints into Vehicle class so real telemetry replaces 404/None for NA vehicles
 - [ ] **Phase 12: Full API Values E2E Validation** - E2E tests confirming real GPS and lock values from live NA vehicle, plus EMEA regression
 
@@ -161,10 +161,10 @@ Plans:
   2. The token type required for NA vehicle data calls is confirmed (IDK id_token, access_token, or other) and the required Authorization header format is documented
   3. The response JSON structure for at least the location and lock-status endpoints is documented with field names and types
   4. A written endpoint spec exists in .planning/ that plan-phase can reference during Phase 11 implementation
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md — APK source analysis: scan /tmp/vwapk_jadx/sources/ for NA vehicle data URL patterns, auth header construction, response models; produce endpoint spec document
+- [ ] 10-01-PLAN.md — Write NA-VEHICLE-API-SPEC.md from pre-extracted APK findings: RVS endpoints, carnetVehicleToken auth flow, VehicleLocation/DoorLockStatus response structures, Phase 11 priority order
 
 ### Phase 11: NA Vehicle Data Implementation
 **Goal**: NA vehicles return real telemetry (GPS coordinates and lock status) from live VW CarNet API instead of 404 errors or None values
@@ -212,6 +212,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. End-to-End Validation | 2/2 | Complete   | 2026-02-20 |
 | 8. Fix Stale Unit Tests | 1/1 | Complete | 2026-02-26 |
 | 9. Requirements Wording & Docs Cleanup | 1/1 | Complete | 2026-02-26 |
-| 10. NA Vehicle Data Endpoint Research | 0/1 | Pending | |
+| 10. NA Vehicle Data Endpoint Research | 1/1 | Complete   | 2026-02-26 |
 | 11. NA Vehicle Data Implementation | 0/2 | Pending | |
 | 12. Full API Values E2E Validation | 0/1 | Pending | |
