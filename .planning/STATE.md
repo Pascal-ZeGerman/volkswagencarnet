@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T17:47:40Z"
+last_updated: "2026-02-26T17:51:08.129Z"
 progress:
   total_phases: 12
   completed_phases: 11
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 20
+  completed_plans: 20
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 11-na-vehicle-data-implementation (complete)
-Plan: 1 of 1 complete
-Status: Phase 11 complete — carnetVehicleToken session creation + RVS telemetry fetch wired into Connection and Vehicle; EMEA paths unchanged; 123 tests pass
-Last activity: 2026-02-26 - Completed Phase 11 Plan 1: NA vehicle session + RVS data fetch (vw_connection.py + vw_vehicle.py)
+Plan: 2 of 2 complete
+Status: Phase 11 complete — NA property dispatch (_na_position, _na_door_locked), RVS fixtures, 16 unit tests; 139 tests pass
+Last activity: 2026-02-26 - Completed Phase 11 Plan 2: NA vehicle property helpers + unit tests (vw_vehicle.py + tests/na_vehicle_data_test.py)
 
-Progress: [█████████░] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -56,6 +56,8 @@ Progress: [█████████░] 96%
 
 *Updated after each plan completion*
 
+| Phase 11-na-vehicle-data-implementation P02 | 8 min | 3 tasks | 5 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -80,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 11-na-vehicle-data-implementation]: carnetVehicleToken cached in _na_tokens[vin]["vehicle_session"] with JWT exp-based TTL + 5min buffer
 - [Phase 11-na-vehicle-data-implementation]: Vehicle.update() NA branch calls _update_na_vehicle() and returns immediately — EMEA asyncio.gather never reached for NA
 - [Phase 11-na-vehicle-data-implementation]: RVS partial data returned even if one endpoint fails — None only when vehicle session creation fails entirely
+- [Phase 11-na-vehicle-data-implementation]: NA branch guard checks _session_region == 'NA' before dispatching to _na_* helpers — safe for Vehicle(None, vin) construction
+- [Phase 11-na-vehicle-data-implementation]: compat test updated to inject na_status fixture for NA door_locked test — NA vehicles use na_status, not EMEA selectivestatus, for lock state
 
 ### Pending Todos
 
@@ -99,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 11-01-PLAN.md (NA vehicle session + RVS data fetch — _create_na_vehicle_session + _get_na_vehicle_data on Connection, NA dispatch in Vehicle.update())
+Stopped at: Completed 11-02-PLAN.md (NA vehicle property dispatch + _na_position()/_na_door_locked() helpers + 16 unit tests in tests/na_vehicle_data_test.py)
 Resume file: None
