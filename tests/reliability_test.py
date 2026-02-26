@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp import client_exceptions
 
 from volkswagencarnet.vw_connection import Connection, VW_DOMAIN_ALLOWLIST
+from volkswagencarnet.vw_const import REGION_CONFIGS
 from volkswagencarnet.vw_vehicle import Vehicle
 
 
@@ -85,7 +86,9 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
         ctx, _ = _make_resp_ctx(200, json_data=oidc_config)
         conn._session.get = MagicMock(return_value=ctx)
 
-        result = await conn._discover_market_config()
+        fake_candidates = ["https://b-h-s.spr.us00.p.con-veh.net"]
+        with patch.dict(REGION_CONFIGS["NA"], {"base_api_candidates": fake_candidates}):
+            result = await conn._discover_market_config()
 
         self.assertTrue(result)
         self.assertEqual(conn.discovery_config.get("issuer"), "https://identity.na.vwgroup.io")
@@ -103,7 +106,9 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
         ctx, _ = _make_resp_ctx(200, json_data=oidc_config)
         conn._session.get = MagicMock(return_value=ctx)
 
-        await conn._discover_market_config()
+        fake_candidates = ["https://b-h-s.spr.us00.p.con-veh.net"]
+        with patch.dict(REGION_CONFIGS["NA"], {"base_api_candidates": fake_candidates}):
+            await conn._discover_market_config()
 
         # Malicious URL must NOT be in discovery_config
         token_ep = conn.discovery_config.get("token_endpoint", "")
