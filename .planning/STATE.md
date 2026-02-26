@@ -2,17 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-10)
+See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Phase 7 - End-to-End Validation (COMPLETE)
+**Current focus:** Milestone v1.5 — Full API Values (requirements phase)
 
 ## Current Position
 
-Phase: 7 of 7 (End-to-End Validation) - COMPLETE
-Plan: 2 of 2 in current phase (07-01, 07-02 complete)
-Status: ALL PHASES COMPLETE — 18 live e2e tests covering full NA auth flow + vehicle data
-Last activity: 2026-02-20 -- Phase 7 Plan 2 completed (tests/e2e/: test_na_login.py, test_na_vehicle_data.py, test_na_token_refresh.py)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements for v1.5 Full API Values
+Last activity: 2026-02-25 — Milestone v1.5 started
 
 Progress: [██████████] 100%
 
@@ -112,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-20
-Stopped at: Completed 07-02-PLAN.md (18 live e2e tests: test_na_login.py, test_na_vehicle_data.py, test_na_token_refresh.py)
-Resume file: N/A — all 7 phases complete
+Last session: 2026-02-21
+Stopped at: Account locked by VW (app + automation). All code fixes in place, 73 unit tests pass. Waiting 24h+ for lockout to expire before running e2e tests.
+Resume file: .planning/phases/07-end-to-end-validation/.continue-here.md

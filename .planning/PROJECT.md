@@ -22,15 +22,11 @@ NA users can authenticate with VW CarNet and retrieve vehicle data (battery leve
 
 ### Active
 
-<!-- Current scope - what we're building to fix NA authentication -->
+<!-- Current scope - v1.5 NA vehicle telemetry data -->
 
-- [ ] NA region OAuth2 authentication working end-to-end
-- [ ] Three-token architecture (IDK → Brand → MBB) from Audi analysis
-- [ ] X-QMAuth header calculation for token exchange
-- [ ] MBB OAuth client registration flow
-- [ ] Region-specific endpoint configuration (identity.na.vwgroup.io)
-- [ ] Tested with real NA credentials against actual vehicle
-- [ ] Backward compatibility with EMEA maintained (no breaking changes)
+- [ ] NA vehicle data endpoints discovered via APK analysis
+- [ ] Library fetches real vehicle state (location, lock status) for NA vehicles
+- [ ] Vehicle properties return actual values instead of 404/None for NA
 
 ### Out of Scope
 
@@ -78,5 +74,16 @@ NA users can authenticate with VW CarNet and retrieve vehicle data (battery leve
 | Use Audi analysis as blueprint | Sister brand shares VW Group IT infrastructure | — Pending |
 | Maintain backward compatibility | Can't break existing EMEA users | — Pending |
 
+## Current Milestone: v1.5 Full API Values
+
+**Goal:** Discover NA-specific vehicle data endpoints and make real vehicle telemetry (location, lock status) available for NA users
+
+**Target features:**
+- APK analysis to identify NA vehicle data API endpoints
+- Implement NA data retrieval in Vehicle class (replace 404s with real data)
+- Location/GPS and door/lock status as priority properties
+- Battery, charging, climate as bonus if the endpoint structure exposes them
+- E2E validation confirming real values from live NA vehicle
+
 ---
-*Last updated: 2026-02-10 after initialization*
+*Last updated: 2026-02-25 after v1.5 milestone start*
