@@ -123,7 +123,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
         # Call _login() — validates that _login() dispatches to _login_na() for NA
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_123"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_123"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=token_response),
         ):
             result = await conn._login()
@@ -146,7 +146,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
             patch.object(conn, "get_openid_config", return_value=openid_config),
             patch.object(
                 conn,
-                "_get_authorization_code",
+                "_get_authorization_code_na",
                 side_effect=AuthenticationError("Wrong username or password"),
             ),
         ):
@@ -169,7 +169,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_bad"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_bad"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=bad_token_response),
         ):
             result = await conn._login_na()
@@ -190,7 +190,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
             patch.object(conn, "get_openid_config", return_value=openid_config),
             patch.object(
                 conn,
-                "_get_authorization_code",
+                "_get_authorization_code_na",
                 side_effect=RedirectError("Too many redirects"),
             ),
         ):
@@ -263,7 +263,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_123"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_123"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", return_value="xclient-001"),
@@ -287,7 +287,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_brand_fail"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_brand_fail"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(
                 conn,
@@ -310,7 +310,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_reg_fail"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_reg_fail"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(
@@ -333,7 +333,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_mbb_fail"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_mbb_fail"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", return_value="xclient-002"),
@@ -360,7 +360,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_refresh"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_refresh"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", return_value="xclient-003"),
@@ -386,7 +386,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_inject"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_inject"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", mock_register),
@@ -411,7 +411,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_cb"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_cb"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", return_value="new-xclient"),
@@ -434,7 +434,7 @@ class NAThreeTokenTest(IsolatedAsyncioTestCase):
 
         with (
             patch.object(conn, "get_openid_config", return_value=openid_config),
-            patch.object(conn, "_get_authorization_code", return_value="auth_code_no_cb"),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_no_cb"),
             patch.object(conn, "_exchange_code_for_tokens", return_value=idk_tokens),
             patch.object(conn, "_exchange_brand_token", return_value=brand_tokens),
             patch.object(conn, "_register_mbb_client", return_value="should-not-be-used"),
@@ -579,8 +579,9 @@ class NATokenLifecycleTest(IsolatedAsyncioTestCase):
 
         assert mock_brand_refresh.call_count == 1
 
-    async def test_idk_refresh_uses_fresh_xqmauth_per_attempt(self):
-        """_refresh_idk_token retries up to 3 times on failure, using X-QMAuth each attempt."""
+    async def test_idk_refresh_retries_up_to_three_times(self):
+        """IDK refresh retries up to 3 times on failure; body contains refresh_token,
+        grant_type=refresh_token, and code_verifier (no X-QMAuth — server rejects it with HTTP 400)."""
         conn = self._make_na_conn()
         conn._na_tokens = self._na_tokens_fixture()
         conn._na_token_endpoint = "https://id.example.com/token"
@@ -609,11 +610,12 @@ class NATokenLifecycleTest(IsolatedAsyncioTestCase):
                 await conn._refresh_idk_token()
 
         assert mock_session_post.call_count == 3
-        # Verify all calls included X-QMAuth header matching 'v1:...' pattern
+        # Verify all calls sent correct body parameters (no X-QMAuth — server rejects it with HTTP 400)
         for call in mock_session_post.call_args_list:
-            headers = call[1].get("headers", {})
-            xqmauth = headers.get("X-QMAuth", "")
-            assert xqmauth.startswith("v1:")
+            data = call[1].get("data", {})
+            assert data.get("refresh_token") == "idk_rt"
+            assert data.get("grant_type") == "refresh_token"
+            assert data.get("code_verifier") is not None
 
     async def test_idk_refresh_raises_after_max_retries(self):
         """_refresh_idk_token raises AuthenticationError after 3 failed attempts."""
