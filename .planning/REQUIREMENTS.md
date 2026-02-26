@@ -10,8 +10,8 @@ Phases 8-9 in ROADMAP.md close v1.0 tech debt; phases 10+ deliver v1.5 features.
 
 ### Endpoint Discovery
 
-- [ ] **DISC-01**: Library automatically uses correct NA-specific vehicle data endpoints (not EMEA paths that return 404 for NA)
-- [ ] **DISC-02**: NA endpoint authentication requirements confirmed — which token type and headers are needed for vehicle data calls
+- [x] **DISC-01**: Library automatically uses correct NA-specific vehicle data endpoints (not EMEA paths that return 404 for NA)
+- [x] **DISC-02**: NA endpoint authentication requirements confirmed — which token type and headers are needed for vehicle data calls
 
 ### Vehicle Data Integration
 
@@ -59,8 +59,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DISC-01 | Phase 10 | Pending |
-| DISC-02 | Phase 10 | Pending |
+| DISC-01 | Phase 10 | Complete |
+| DISC-02 | Phase 10 | Complete |
 | DATA-01 | Phase 11 | Pending |
 | DATA-02 | Phase 11 | Pending |
 | DATA-03 | Phase 11 | Pending |

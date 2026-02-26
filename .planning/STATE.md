@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T04:53:47Z"
+last_updated: "2026-02-26T16:28:59.749Z"
 progress:
   total_phases: 12
-  completed_phases: 9
-  total_plans: 17
-  completed_plans: 17
+  completed_phases: 10
+  total_plans: 18
+  completed_plans: 18
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Milestone v1.5 — Full API Values (Phase 9 complete, Phase 10 ready to plan)
+**Current focus:** Milestone v1.5 — Full API Values (Phase 10 complete, Phase 11 ready — NA-VEHICLE-API-SPEC.md written)
 
 ## Current Position
 
-Phase: 09-requirements-wording-cleanup (complete)
+Phase: 10-na-vehicle-data-endpoint-research (complete)
 Plan: 1 of 1 complete
-Status: Phase 9 complete — MGMT-02/TEST-02/TEST-04 wording corrected; docstring fixed; issued_at added
-Last activity: 2026-02-26 - Completed Phase 9 Plan 1: Requirements wording cleanup + issued_at consistency
+Status: Phase 10 complete — NA vehicle data API spec written; RVS endpoints + carnetVehicleToken auth documented; DISC-01/DISC-02 resolved
+Last activity: 2026-02-26 - Completed Phase 10 Plan 1: NA vehicle data endpoint research (APK static analysis → NA-VEHICLE-API-SPEC.md)
 
-Progress: [█████████░] 83%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -47,9 +47,10 @@ Progress: [█████████░] 83%
 | 05-reliability-discovery | 3 | 8 min | 2.7 min |
 | 08-fix-stale-unit-tests | 1 | 2 min | 2 min |
 | 09-requirements-wording-cleanup | 1 | 2 min | 2 min |
+| 10-na-vehicle-data-endpoint-research | 1 | 2 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 1 min, 2 min, 1 min, 2 min, 2 min
+- Last 5 plans: 2 min, 1 min, 2 min, 2 min, 2 min
 - Trend: fast
 
 *Updated after each plan completion*
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [NA auth confirmed 2026-02-25]: IDK-only flow confirmed working; Brand/MBB not available on NA Car-Net (`/login/v1/volkswagen/token` → 404)
 - [NA auth confirmed 2026-02-25]: Vehicle list at `GET /account/v1/garage?idToken={idk_id_token}` — confirmed working
 - [NA auth confirmed 2026-02-25]: `/vehicle/v1/vehicles/{vin}/capabilities` and selectivestatus return 404 for NA — different data API needed
+- [Phase 10-na-vehicle-data-endpoint-research]: NA vehicle data requires carnetVehicleToken from POST ss/v1/user/{userId}/vehicle/{vehicleId}/session — separate from IDK auth
+- [Phase 10-na-vehicle-data-endpoint-research]: RVS endpoints: /rvs/v1/vehicle/{vid} (status/lock) and /rvs/v1/location/vehicle/{vid} (GPS) are the NA equivalents of EMEA selectivestatus and location
 
 ### Pending Todos
 
@@ -79,8 +82,9 @@ None yet.
 
 ### Blockers/Concerns
 
-- NA vehicle data endpoints unknown — Phase 10 APK research must resolve before implementation can begin
-- `/vehicle/v1/vehicles/{vin}/capabilities` returns 404 for NA vehicles — EMEA discovery path cannot be reused
+- NA vehicle data implementation pending — Phase 11 unblocked but not yet started
+- `tsp` enum value for vehicle session creation unverified (likely "VWNA") — requires live traffic confirmation in Phase 11
+- Auth header for POST ss/v1/.../session unverified — Phase 11 should probe IDK access_token Bearer first
 
 ### Quick Tasks Completed
 
@@ -91,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 09-01-PLAN.md (requirements wording cleanup — MGMT-02/TEST-02/TEST-04 corrected; docstring fixed; issued_at added)
+Stopped at: Completed 10-01-PLAN.md (NA vehicle data APK research — RVS endpoint spec written to .planning/NA-VEHICLE-API-SPEC.md; DISC-01/DISC-02 resolved)
 Resume file: None
