@@ -212,6 +212,12 @@ class Vehicle:
         """Discover vehicle and initial data."""
         await self._ensure_home_region()
 
+        # NA region: skip EMEA capability/selectivestatus endpoints (return 404 for NA)
+        if self._connection is not None and self._connection._session_region == "NA":
+            _LOGGER.debug("NA vehicle %s: skipping EMEA capability discovery", self.vin)
+            self._discovered = True
+            return
+
         _LOGGER.debug("Attempting discovery of supported API endpoints for vehicle")
 
         capabilities_response = await self._connection.getOperationList(self.vin)
@@ -272,11 +278,31 @@ class Vehicle:
         _LOGGER.debug("API endpoints: %s", self._services)
         self._discovered = True
 
+    async def _update_na_vehicle(self) -> bool:
+        """Fetch NA vehicle telemetry from RVS endpoints.
+
+        Calls Connection._get_na_vehicle_data() and stores the result in _states.
+        Returns True if at least partial data was stored, False if all fetches failed.
+        """
+        if self._connection is None:
+            return False
+        data = await self._connection._get_na_vehicle_data(self.vin)
+        if data is None:
+            _LOGGER.warning("NA vehicle %s: all telemetry fetches failed", self.vin)
+            return False
+        self._states.update({k: v for k, v in data.items() if v is not None})
+        _LOGGER.debug("NA vehicle %s: updated states keys=%s", self.vin, list(data.keys()))
+        return True
+
     async def update(self) -> None:
         """Try to fetch data for all known API endpoints."""
         if not self._discovered:
             await self.discover()
         if not self.deactivated:
+            # NA region: use RVS endpoint path instead of EMEA selectivestatus
+            if self._connection is not None and self._connection._session_region == "NA":
+                await self._update_na_vehicle()
+                return
             await asyncio.gather(
                 self.get_selectivestatus(
                     [

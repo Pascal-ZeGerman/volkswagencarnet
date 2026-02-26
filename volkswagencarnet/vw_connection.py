@@ -1219,6 +1219,282 @@ class Connection:
             _LOGGER.error("NA: MBB re-exchange fallback also failed")
             raise
 
+    async def _create_na_vehicle_session(self, vin: str) -> str | None:
+        """Create and cache a carnetVehicleToken for the given VIN.
+
+        Probes ``tsp`` values in order ``["VWNA", "VW"]`` until the server
+        returns HTTP 200.  On the first attempt for each ``tsp`` value the IDK
+        access_token is sent as a Bearer Authorization header; if the server
+        responds 401 the same ``tsp`` is retried with NO Authorization header
+        (some NA environments reject the header).
+
+        The resulting JWT is cached in
+        ``self._na_tokens[vin]["vehicle_session"]`` with ``token``,
+        ``expires_at`` (JWT ``exp`` claim), and ``issued_at`` fields.  A 5-minute
+        buffer is applied so callers never receive a near-expired token.
+
+        Token values are NEVER logged at any log level.
+
+        Args:
+            vin: Vehicle Identification Number.
+
+        Returns:
+            The carnetVehicleToken string on success, or ``None`` if all
+            ``tsp`` probe values are exhausted or the IDK id_token is missing.
+        """
+        idk_entry = self._na_tokens.get("idk", {})
+        idk_id_token = idk_entry.get("id_token", "")
+        idk_access_token = idk_entry.get("access_token", "")
+
+        if not idk_id_token:
+            _LOGGER.warning("NA: cannot create vehicle session for %s — IDK id_token missing", vin)
+            return None
+
+        # Parse userId from IDK id_token JWT sub claim
+        try:
+            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
+            user_id = claims.get("sub", "")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("NA: failed to decode IDK id_token for userId: %s", exc)
+            return None
+
+        if not user_id:
+            _LOGGER.warning("NA: IDK id_token has no 'sub' claim, cannot create vehicle session")
+            return None
+
+        # Check cache — return cached token if not expiring within 5 minutes
+        cached = self._na_tokens.get(vin, {}).get("vehicle_session")
+        if cached and cached.get("expires_at", 0) > time.time() + 300:
+            return cached["token"]
+
+        base_api = self._base_api
+        session_url = f"{base_api}/ss/v1/user/{user_id}/vehicle/{vin}/session"
+
+        tsp_probe_sequence = ["VWNA", "VW"]
+        vehicle_token: str | None = None
+
+        for tsp_value in tsp_probe_sequence:
+            body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": None}
+
+            # First attempt: send IDK access_token Bearer header
+            auth_headers = {
+                "Authorization": f"Bearer {idk_access_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            try:
+                resp = await self._session.post(
+                    url=session_url,
+                    json=body,
+                    headers=auth_headers,
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                    allow_redirects=False,
+                )
+                status = resp.status
+
+                if status == 401:
+                    # Retry same tsp without Authorization header
+                    _LOGGER.debug(
+                        "NA vehicle session: 401 with auth header for tsp=%r, retrying without auth", tsp_value
+                    )
+                    no_auth_headers = {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    }
+                    resp = await self._session.post(
+                        url=session_url,
+                        json=body,
+                        headers=no_auth_headers,
+                        timeout=ClientTimeout(total=TIMEOUT.seconds),
+                        allow_redirects=False,
+                    )
+                    status = resp.status
+
+                if status == 200:
+                    data = await resp.json()
+                    vehicle_token = data.get("carnetVehicleToken")
+                    if vehicle_token:
+                        _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
+                        break
+                    else:
+                        _LOGGER.warning(
+                            "NA vehicle session: tsp=%r got 200 but no carnetVehicleToken in response", tsp_value
+                        )
+                        continue
+                elif status in (400, 422):
+                    _LOGGER.debug(
+                        "NA vehicle session: tsp=%r returned %d, trying next tsp", tsp_value, status
+                    )
+                    continue
+                else:
+                    body_text = await resp.text()
+                    _LOGGER.warning(
+                        "NA vehicle session: tsp=%r returned unexpected status %d: %s",
+                        tsp_value, status, body_text[:200],
+                    )
+                    continue
+
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning("NA vehicle session: exception during tsp=%r probe: %s", tsp_value, exc)
+                continue
+
+        if not vehicle_token:
+            _LOGGER.warning(
+                "NA: vehicle session creation failed for %s — all tsp values exhausted", vin
+            )
+            return None
+
+        # Parse JWT exp claim for cache TTL
+        try:
+            token_claims = jwt.decode(vehicle_token, options={"verify_signature": False})
+            expires_at = token_claims.get("exp", time.time() + 1800)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.debug("NA: could not decode vehicle token JWT for exp claim: %s", exc)
+            expires_at = time.time() + 1800
+
+        if vin not in self._na_tokens:
+            self._na_tokens[vin] = {}
+        self._na_tokens[vin]["vehicle_session"] = {
+            "token": vehicle_token,
+            "expires_at": expires_at,
+            "issued_at": time.time(),
+        }
+        return vehicle_token
+
+    async def _get_na_vehicle_data(self, vin: str) -> dict | None:
+        """Fetch NA vehicle telemetry from RVS endpoints.
+
+        Calls ``_create_na_vehicle_session(vin)`` to obtain a
+        ``carnetVehicleToken``, then fetches:
+
+        - ``GET {base_api}/rvs/v1/location/vehicle/{vin}`` — GPS location
+        - ``GET {base_api}/rvs/v1/vehicle/{vin}`` — vehicle status / lock state
+
+        On HTTP 401 from either RVS endpoint, the cached vehicle session is
+        invalidated and ``_create_na_vehicle_session`` is called once more
+        before a single retry.
+
+        Raw response bodies are logged at DEBUG level so Phase 12 can confirm
+        the exact field names (including ``x-mobile-session-id``).
+
+        Token values (vehicle token, IDK tokens) are NEVER logged.
+
+        Args:
+            vin: Vehicle Identification Number.
+
+        Returns:
+            A dict with keys ``"na_location"`` and ``"na_status"`` (either may
+            be ``None`` if that particular fetch failed).  Returns ``None`` only
+            when vehicle session creation itself fails (no data at all possible).
+        """
+        # Ensure IDK token is valid before proceeding
+        if not await self.validate_tokens():
+            _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", vin)
+            return None
+
+        vehicle_token = await self._create_na_vehicle_session(vin)
+        if vehicle_token is None:
+            return None
+
+        # Parse userId from IDK id_token for RVS headers
+        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
+        try:
+            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
+            user_id = claims.get("sub", "")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
+            user_id = ""
+
+        # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
+        rvs_headers: dict = {
+            "Authorization": f"Bearer {vehicle_token}",
+            "x-user-id": user_id,
+            "x-app-version": "2025.12.10-8414",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        # Add x-mobile-session-id if cached from prior session response
+        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
+        if session_id:
+            rvs_headers["x-mobile-session-id"] = session_id
+
+        base_api = self._base_api
+
+        # --- Location fetch ---
+        location_data: dict | None = None
+        location_url = f"{base_api}/rvs/v1/location/vehicle/{vin}"
+        try:
+            loc_resp = await self._session.get(
+                url=location_url,
+                headers=rvs_headers,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            if loc_resp.status == 401:
+                _LOGGER.debug("NA RVS location: 401 — refreshing vehicle session and retrying")
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if vehicle_token:
+                    rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
+                    loc_resp = await self._session.get(
+                        url=location_url,
+                        headers=rvs_headers,
+                        timeout=ClientTimeout(total=TIMEOUT.seconds),
+                        allow_redirects=False,
+                    )
+            if loc_resp.status == 200:
+                location_data = await loc_resp.json()
+                _LOGGER.debug("NA RVS location response: %s", await loc_resp.text() if not location_data else location_data)
+            else:
+                body_preview = await loc_resp.text()
+                _LOGGER.warning(
+                    "NA RVS location fetch failed for %s: HTTP %d — %s",
+                    vin, loc_resp.status, body_preview[:200],
+                )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("NA RVS location fetch exception for %s: %s", vin, exc)
+
+        # --- Status fetch ---
+        status_data: dict | None = None
+        status_url = f"{base_api}/rvs/v1/vehicle/{vin}"
+        try:
+            st_resp = await self._session.get(
+                url=status_url,
+                headers=rvs_headers,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            if st_resp.status == 401:
+                _LOGGER.debug("NA RVS status: 401 — refreshing vehicle session and retrying")
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if vehicle_token:
+                    rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
+                    st_resp = await self._session.get(
+                        url=status_url,
+                        headers=rvs_headers,
+                        timeout=ClientTimeout(total=TIMEOUT.seconds),
+                        allow_redirects=False,
+                    )
+            if st_resp.status == 200:
+                status_data = await st_resp.json()
+                _LOGGER.debug("NA RVS status response: %s", status_data)
+            else:
+                body_preview = await st_resp.text()
+                _LOGGER.warning(
+                    "NA RVS status fetch failed for %s: HTTP %d — %s",
+                    vin, st_resp.status, body_preview[:200],
+                )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("NA RVS status fetch exception for %s: %s", vin, exc)
+
+        # Return partial data even if one endpoint failed
+        return {
+            "na_location": location_data,
+            "na_status": status_data,
+        }
+
     async def _login_na(self) -> bool:
         """NA-specific login flow using b-h-s.spr.us00.p.con-veh.net OIDC endpoints.
 
