@@ -15,9 +15,9 @@ Phases 8-9 in ROADMAP.md close v1.0 tech debt; phases 10+ deliver v1.5 features.
 
 ### Vehicle Data Integration
 
-- [ ] **DATA-01**: Library fetches vehicle state data from NA endpoints with a non-404 response
-- [ ] **DATA-02**: NA API response correctly parsed and stored in `Vehicle._states`
-- [ ] **DATA-03**: `Vehicle.discover()` completes for NA vehicles with populated service data (not empty capabilities)
+- [x] **DATA-01**: Library fetches vehicle state data from NA endpoints with a non-404 response
+- [x] **DATA-02**: NA API response correctly parsed and stored in `Vehicle._states`
+- [x] **DATA-03**: `Vehicle.discover()` completes for NA vehicles with populated service data (not empty capabilities)
 
 ### Vehicle Properties
 
@@ -61,9 +61,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 |-------------|-------|--------|
 | DISC-01 | Phase 10 | Complete |
 | DISC-02 | Phase 10 | Complete |
-| DATA-01 | Phase 11 | Pending |
-| DATA-02 | Phase 11 | Pending |
-| DATA-03 | Phase 11 | Pending |
+| DATA-01 | Phase 11 | Complete |
+| DATA-02 | Phase 11 | Complete |
+| DATA-03 | Phase 11 | Complete |
 | PROP-01 | Phase 11 | Pending |
 | PROP-02 | Phase 11 | Pending |
 | TEST-07 | Phase 12 | Pending |

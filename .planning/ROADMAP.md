@@ -212,6 +212,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. End-to-End Validation | 2/2 | Complete   | 2026-02-20 |
 | 8. Fix Stale Unit Tests | 1/1 | Complete | 2026-02-26 |
 | 9. Requirements Wording & Docs Cleanup | 1/1 | Complete | 2026-02-26 |
-| 10. NA Vehicle Data Endpoint Research | 1/1 | Complete   | 2026-02-26 |
-| 11. NA Vehicle Data Implementation | 0/2 | Pending | |
+| 10. NA Vehicle Data Endpoint Research | 1/1 | Complete    | 2026-02-26 |
+| 11. NA Vehicle Data Implementation | 1/2 | In Progress|  |
 | 12. Full API Values E2E Validation | 0/1 | Pending | |
