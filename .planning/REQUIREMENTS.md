@@ -59,23 +59,23 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DISC-01 | TBD | Pending |
-| DISC-02 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
-| PROP-01 | TBD | Pending |
-| PROP-02 | TBD | Pending |
-| TEST-07 | TBD | Pending |
-| TEST-08 | TBD | Pending |
-| TEST-09 | TBD | Pending |
-| TEST-10 | TBD | Pending |
+| DISC-01 | Phase 10 | Pending |
+| DISC-02 | Phase 10 | Pending |
+| DATA-01 | Phase 11 | Pending |
+| DATA-02 | Phase 11 | Pending |
+| DATA-03 | Phase 11 | Pending |
+| PROP-01 | Phase 11 | Pending |
+| PROP-02 | Phase 11 | Pending |
+| TEST-07 | Phase 12 | Pending |
+| TEST-08 | Phase 12 | Pending |
+| TEST-09 | Phase 12 | Pending |
+| TEST-10 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 11 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 11
+- Mapped to phases: 11 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after v1.5 milestone definition*
+*Last updated: 2026-02-25 after v1.5 roadmap creation (Phases 10-12)*

@@ -19,6 +19,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Reliability & Discovery** - Market config discovery, home region routing, rate limiting (completed 2026-02-19)
 - [ ] **Phase 6: Backward Compatibility** - EMEA regression protection and upgrade path validation
 - [x] **Phase 7: End-to-End Validation** - Real credentials, real vehicle, full test suite (completed 2026-02-20)
+- [ ] **Phase 8: Fix Stale Unit Tests** - Align unit tests with confirmed NA production behavior
+- [ ] **Phase 9: Requirements Wording & Docs Cleanup** - Requirements accuracy and docstring consistency
+- [ ] **Phase 10: NA Vehicle Data Endpoint Research** - APK analysis to document NA vehicle data API endpoints, auth requirements, and response structure
+- [ ] **Phase 11: NA Vehicle Data Implementation** - Wire NA endpoints into Vehicle class so real telemetry replaces 404/None for NA vehicles
+- [ ] **Phase 12: Full API Values E2E Validation** - E2E tests confirming real GPS and lock values from live NA vehicle, plus EMEA regression
 
 ## Phase Details
 
@@ -147,10 +152,54 @@ Plans:
 Plans:
 - [ ] 09-01-PLAN.md — Update REQUIREMENTS.md wording for MGMT-02/TEST-02/TEST-04; fix _refresh_idk_token() docstring (remove "Requires X-QMAuth header"); add issued_at key to _login_na() token writes for consistency
 
+### Phase 10: NA Vehicle Data Endpoint Research
+**Goal**: NA vehicle data API endpoints are fully documented — URLs, required auth tokens, request format, and response structure — so implementation can proceed without guesswork
+**Depends on**: Phase 9
+**Requirements**: DISC-01, DISC-02
+**Success Criteria** (what must be TRUE):
+  1. At least one NA vehicle data endpoint URL is identified from APK source (jadx-decompiled Java/Kotlin) that returns vehicle state (location, lock status, or similar)
+  2. The token type required for NA vehicle data calls is confirmed (IDK id_token, access_token, or other) and the required Authorization header format is documented
+  3. The response JSON structure for at least the location and lock-status endpoints is documented with field names and types
+  4. A written endpoint spec exists in .planning/ that plan-phase can reference during Phase 11 implementation
+**Plans**: TBD
+
+Plans:
+- [ ] 10-01-PLAN.md — APK source analysis: scan /tmp/vwapk_jadx/sources/ for NA vehicle data URL patterns, auth header construction, response models; produce endpoint spec document
+
+### Phase 11: NA Vehicle Data Implementation
+**Goal**: NA vehicles return real telemetry (GPS coordinates and lock status) from live VW CarNet API instead of 404 errors or None values
+**Depends on**: Phase 10
+**Requirements**: DATA-01, DATA-02, DATA-03, PROP-01, PROP-02
+**Success Criteria** (what must be TRUE):
+  1. `Vehicle.discover()` completes for NA vehicles and populates service data without hitting 404 on every capability endpoint
+  2. Calling `vehicle.update()` for a NA vehicle returns a non-404 response and stores parsed data in `Vehicle._states`
+  3. `vehicle.position` returns a dict with real latitude and longitude values (not None) for a NA vehicle with location sharing enabled
+  4. `vehicle.doors_locked` returns a real boolean (True or False, not None) reflecting the actual lock state of the NA vehicle
+  5. All NA data calls use the correct token type identified in Phase 10 research (no auth errors on data retrieval)
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01-PLAN.md — Vehicle.discover() NA branch: skip/replace EMEA capability endpoints, call NA vehicle list endpoint, store service data in _states
+- [ ] 11-02-PLAN.md — Vehicle NA property implementation: position and doors_locked properties reading from NA _states structure; unit tests with fixture data
+
+### Phase 12: Full API Values E2E Validation
+**Goal**: Real GPS coordinates and lock status are confirmed from a live NA vehicle, and all v1.0 NA tests plus the full EMEA unit suite remain green
+**Depends on**: Phase 11
+**Requirements**: TEST-07, TEST-08, TEST-09, TEST-10
+**Success Criteria** (what must be TRUE):
+  1. E2E test `test_na_vehicle_data` asserts `vehicle.position` returns non-None latitude and longitude from the real NA vehicle (not a fixture)
+  2. E2E test `test_na_lock_status` asserts `vehicle.doors_locked` returns a real boolean from the real NA vehicle
+  3. All six v1.0 NA e2e tests (login, vehicle discovery, IDK token refresh) continue passing without modification
+  4. Running `pytest tests/` (unit suite, no credentials required) exits with 0 failures after Phase 11 changes are merged
+**Plans**: TBD
+
+Plans:
+- [ ] 12-01-PLAN.md — New e2e tests: test_na_position.py (TEST-07) and test_na_lock_status.py (TEST-08); EMEA regression run confirming 0 failures (TEST-09, TEST-10)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -163,3 +212,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 7. End-to-End Validation | 2/2 | Complete   | 2026-02-20 |
 | 8. Fix Stale Unit Tests | 0/1 | Pending | |
 | 9. Requirements Wording & Docs Cleanup | 0/1 | Pending | |
+| 10. NA Vehicle Data Endpoint Research | 0/1 | Pending | |
+| 11. NA Vehicle Data Implementation | 0/2 | Pending | |
+| 12. Full API Values E2E Validation | 0/1 | Pending | |
