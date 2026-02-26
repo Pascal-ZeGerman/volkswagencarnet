@@ -21,8 +21,8 @@ Phases 8-9 in ROADMAP.md close v1.0 tech debt; phases 10+ deliver v1.5 features.
 
 ### Vehicle Properties
 
-- [ ] **PROP-01**: `vehicle.position` (or NA equivalent) returns real GPS coordinates (latitude/longitude) for NA vehicles
-- [ ] **PROP-02**: `vehicle.doors_locked` (or NA equivalent) returns real lock/unlock state for NA vehicles
+- [x] **PROP-01**: `vehicle.position` (or NA equivalent) returns real GPS coordinates (latitude/longitude) for NA vehicles
+- [x] **PROP-02**: `vehicle.doors_locked` (or NA equivalent) returns real lock/unlock state for NA vehicles
 
 ### Testing & Validation
 
@@ -64,8 +64,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DATA-01 | Phase 11 | Complete |
 | DATA-02 | Phase 11 | Complete |
 | DATA-03 | Phase 11 | Complete |
-| PROP-01 | Phase 11 | Pending |
-| PROP-02 | Phase 11 | Pending |
+| PROP-01 | Phase 11 | Complete |
+| PROP-02 | Phase 11 | Complete |
 | TEST-07 | Phase 12 | Pending |
 | TEST-08 | Phase 12 | Pending |
 | TEST-09 | Phase 12 | Pending |

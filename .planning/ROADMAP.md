@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Fix Stale Unit Tests** - Align unit tests with confirmed NA production behavior (completed 2026-02-26)
 - [x] **Phase 9: Requirements Wording & Docs Cleanup** - Requirements accuracy and docstring consistency (completed 2026-02-26)
 - [x] **Phase 10: NA Vehicle Data Endpoint Research** - APK analysis to document NA vehicle data API endpoints, auth requirements, and response structure (completed 2026-02-26)
-- [ ] **Phase 11: NA Vehicle Data Implementation** - Wire NA endpoints into Vehicle class so real telemetry replaces 404/None for NA vehicles
+- [x] **Phase 11: NA Vehicle Data Implementation** - Wire NA endpoints into Vehicle class so real telemetry replaces 404/None for NA vehicles (completed 2026-02-26)
 - [ ] **Phase 12: Full API Values E2E Validation** - E2E tests confirming real GPS and lock values from live NA vehicle, plus EMEA regression
 
 ## Phase Details
@@ -213,5 +213,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 8. Fix Stale Unit Tests | 1/1 | Complete | 2026-02-26 |
 | 9. Requirements Wording & Docs Cleanup | 1/1 | Complete | 2026-02-26 |
 | 10. NA Vehicle Data Endpoint Research | 1/1 | Complete    | 2026-02-26 |
-| 11. NA Vehicle Data Implementation | 1/2 | In Progress|  |
+| 11. NA Vehicle Data Implementation | 2/2 | Complete   | 2026-02-26 |
 | 12. Full API Values E2E Validation | 0/1 | Pending | |
