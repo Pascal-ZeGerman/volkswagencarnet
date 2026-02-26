@@ -1044,7 +1044,8 @@ class Connection:
     async def _refresh_idk_token(self) -> None:
         """Refresh the IDK access_token using the stored IDK refresh_token.
 
-        Requires X-QMAuth header (same as initial IDK token exchange).
+        Does NOT send X-QMAuth header (server rejects it with HTTP 400 — confirmed from
+        traffic capture; public PKCE client 59992128_MYVW_ANDROID omits it by design).
         Updates self._na_tokens['idk'], self._session_tokens['identity'],
         and self._session_headers['Authorization'].
         After successful IDK refresh, immediately cascades to _refresh_brand_token()
@@ -1275,6 +1276,7 @@ class Connection:
                 "access_token": tokens["access_token"],
                 "refresh_token": tokens.get("refresh_token"),
                 "id_token": tokens["id_token"],
+                "issued_at": time.time(),
                 "expires_at": tokens.get("expires_in", 3600) + time.time(),
                 "scopes": tokens.get("scope", ""),
             }
@@ -1285,6 +1287,7 @@ class Connection:
                 self._na_tokens["brand"] = {
                     "access_token": brand_tokens.get("access_token"),
                     "refresh_token": brand_tokens.get("refresh_token"),
+                    "issued_at": time.time(),
                     "expires_at": brand_tokens.get("expires_in", 3600) + time.time(),
                     "scopes": brand_tokens.get("scope", ""),
                 }
@@ -1313,6 +1316,7 @@ class Connection:
                 self._na_tokens["mbb"] = {
                     "access_token": mbb_working.get("access_token"),
                     "refresh_token": mbb_working.get("refresh_token"),
+                    "issued_at": time.time(),
                     "expires_at": mbb_working.get("expires_in", 3600) + time.time(),
                     "scopes": mbb_working.get("scope", "sc2:fal"),
                 }

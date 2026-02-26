@@ -79,7 +79,7 @@ Plans:
 **Requirements**: MGMT-01, MGMT-02, MGMT-03, MGMT-04, MGMT-05, MGMT-06
 **Success Criteria** (what must be TRUE):
   1. Library automatically selects the correct token type based on the API endpoint being called (IDK for Cariad BFF, MBB for legacy vehicle APIs, Brand for GraphQL)
-  2. Each token type can be refreshed independently without requiring full re-login (IDK via refresh_token + X-QMAuth, Brand via fresh IDK access_token re-exchange, MBB via refresh_token + X-Client-ID)
+  2. IDK via refresh_token + code_verifier (X-QMAuth omitted — server rejects it with HTTP 400); Brand via fresh IDK access_token re-exchange, MBB via refresh_token + X-Client-ID
   3. Refreshing the IDK token automatically triggers Brand token refresh when the Brand token depends on the now-stale IDK access_token
   4. Library tracks expiry timestamps per token type and proactively refreshes before expiry
 **Plans**: 2 plans
@@ -123,9 +123,9 @@ Plans:
 **Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06
 **Success Criteria** (what must be TRUE):
   1. Full NA login flow completes successfully with real CarNet credentials against the live VW API (not mocked)
-  2. All three token types (IDK, Brand, MBB) are successfully obtained and contain valid JWT claims
+  2. IDK token is successfully obtained and contains valid JWT claims; Brand/MBB tokens not available on NA Car-Net (endpoints return 404)
   3. Vehicle data (battery level, location, lock status) is successfully retrieved for at least one real NA vehicle
-  4. Token refresh works for all three token types without requiring re-login
+  4. IDK token refresh works without requiring re-login; Brand/MBB token refresh not applicable (NA Car-Net does not expose these endpoints)
   5. Full existing EMEA test suite passes with zero regressions
   6. Multiple vehicles are discoverable and accessible if the account has more than one vehicle
 **Plans**: 2 plans
