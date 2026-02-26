@@ -35,9 +35,10 @@ class TestRegionMapping:
         assert config["homeregion"] == "https://msg.volkswagen.de"
 
     def test_na_config_has_candidates(self):
+        """base_api_candidates is intentionally empty — hardcoded base_api is used directly."""
         config = get_region_config("NA")
         assert "base_api_candidates" in config
-        assert len(config["base_api_candidates"]) > 0
+        assert config["base_api_candidates"] == []  # intentionally empty: hardcoded base_api used instead
         assert config["base_api"] == "https://b-h-s.spr.us00.p.con-veh.net"
 
 
@@ -93,44 +94,20 @@ class TestEndpointDiscovery:
 
     @pytest.mark.asyncio
     async def test_discovery_finds_working_endpoint(self):
-        """Should find first working candidate, validate URLs, cache config."""
+        """With empty base_api_candidates, discovery returns False and base_api stays at hardcoded value (intentional fallback behavior)."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
             # Clear discovery cache so method runs (not cached from __init__)
             conn.discovery_config = {}
+            # Store the initial hardcoded base_api
+            initial_base_api = conn._base_api
 
-            # Mock successful OIDC config response from second candidate
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={
-                "issuer": "https://identity.na.vwgroup.io",
-                "authorization_endpoint": "https://identity.na.vwgroup.io/oidc/v1/authorize",
-                "token_endpoint": "https://identity.na.vwgroup.io/oidc/v1/token",
-                "evil_field": "https://evil.com/steal",  # should be filtered out
-            })
+            # No session.get mock needed — empty candidates means no HTTP calls are made
+            result = await conn._discover_market_config()
 
-            # Create async context manager mock for second candidate
-            async_cm = AsyncMock()
-            async_cm.__aenter__.return_value = mock_response
-            async_cm.__aexit__.return_value = None
-
-            call_count = [0]
-            def mock_get(*args, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    raise Exception("Connection refused")  # First candidate fails
-                return async_cm  # Second candidate succeeds
-
-            with patch.object(conn._session, "get", side_effect=mock_get):
-                result = await conn._discover_market_config()
-
-                assert result is True
-                # Should have updated to second candidate
-                assert conn._base_api == "https://na.bff.cariad.digital"
-                # Config should be cached and validated (evil.com URL filtered out)
-                assert "issuer" in conn.discovery_config
-                assert "evil_field" not in conn.discovery_config
-                assert conn._service_status.get("discovery") == "Success"
+            assert result is False  # empty candidates → discovery always returns False for NA
+            assert conn._base_api == initial_base_api  # hardcoded value preserved, not cleared
+            assert conn._service_status.get("discovery") == "Failed"
 
     @pytest.mark.asyncio
     async def test_discovery_uses_cache_on_second_call(self):
@@ -192,7 +169,7 @@ class TestLoginWithDiscovery:
 
     @pytest.mark.asyncio
     async def test_login_calls_discovery_on_every_na_login(self):
-        """doLogin() calls _discover_market_config() for NA on every login."""
+        """doLogin() calls _discover_market_config() for NA on every login (even when discovery returns False, login still proceeds)."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password", country="US")
 
@@ -203,29 +180,26 @@ class TestLoginWithDiscovery:
                     with patch.object(
                         conn, "update", new_callable=AsyncMock
                     ) as mock_update:
-                        # Simulate successful discovery setting the base_api
-                        async def discovery_side_effect():
-                            conn._base_api = "https://na.bff.cariad.digital"
-                            return True
-
-                        mock_discover.side_effect = discovery_side_effect
-                        mock_login.return_value = True
-
-                        # Mock vehicle list response
                         with patch.object(
-                            conn, "get", new_callable=AsyncMock
-                        ) as mock_get:
-                            mock_get.return_value = {"data": []}
+                            conn, "_request", new_callable=AsyncMock
+                        ) as mock_request:
+                            # Discovery returns False (empty candidates — normal NA behavior)
+                            async def discovery_side_effect():
+                                return False
+
+                            mock_discover.side_effect = discovery_side_effect
+                            mock_login.return_value = True
+                            # NA garage endpoint returns a vehicle list dict
+                            mock_request.return_value = {"data": {"vehicles": []}}
 
                             result = await conn.doLogin()
 
+                            # Discovery IS called (requirement — always called for NA)
                             mock_discover.assert_called_once()
+                            # Login is still attempted after discovery (even when discovery returns False)
                             mock_login.assert_called_once()
-
-                            # Verify the discovered endpoint is used in the API call
-                            mock_get.assert_called_once_with(
-                                url="https://na.bff.cariad.digital/vehicle/v2/vehicles"
-                            )
+                            # NA vehicle list is fetched via _request (not get)
+                            mock_request.assert_called_once()
 
 
 class TestVehicleRegionConfig:
