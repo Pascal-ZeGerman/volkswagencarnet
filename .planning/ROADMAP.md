@@ -129,6 +129,24 @@ Plans:
 - [ ] 07-01-PLAN.md — E2E infrastructure: norecursedirs config, cryptography dep, gitignore, conftest.py credential guard + login fixture; EMEA regression verification
 - [ ] 07-02-PLAN.md — Live test files: test_na_login.py (TEST-01, TEST-02), test_na_vehicle_data.py (TEST-03, TEST-06), test_na_token_refresh.py (TEST-04)
 
+### Phase 8: Fix Stale Unit Tests
+**Goal**: All unit tests accurately reflect current production behavior after NA implementation evolved (empty base_api_candidates by design; IDK refresh omits X-QMAuth by design)
+**Depends on**: Phase 7
+**Requirements**: MGMT-02, INT-01
+**Gap Closure**: Closes Tier 1 tech debt from v1.0 audit — 6 failing tests across 3 files
+
+Plans:
+- [ ] 08-01-PLAN.md — Fix test_idk_refresh_uses_fresh_xqmauth_per_attempt (vw_connection_test.py); update 5 discovery/region tests in region_support_test.py and reliability_test.py to reflect intentional empty base_api_candidates design
+
+### Phase 9: Requirements Wording & Docs Cleanup
+**Goal**: Requirements accurately describe implemented behavior; code docstrings match implementation; token structure is consistent at login time and post-refresh
+**Depends on**: Phase 8
+**Requirements**: MGMT-02, TEST-02, TEST-04
+**Gap Closure**: Closes Tier 2 + Tier 3 code tech debt from v1.0 audit
+
+Plans:
+- [ ] 09-01-PLAN.md — Update REQUIREMENTS.md wording for MGMT-02/TEST-02/TEST-04; fix _refresh_idk_token() docstring (remove "Requires X-QMAuth header"); add issued_at key to _login_na() token writes for consistency
+
 ## Progress
 
 **Execution Order:**
@@ -143,3 +161,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 5. Reliability & Discovery | 3/3 | Complete   | 2026-02-19 |
 | 6. Backward Compatibility | 1/2 | In Progress|  |
 | 7. End-to-End Validation | 2/2 | Complete   | 2026-02-20 |
+| 8. Fix Stale Unit Tests | 0/1 | Pending | |
+| 9. Requirements Wording & Docs Cleanup | 0/1 | Pending | |
