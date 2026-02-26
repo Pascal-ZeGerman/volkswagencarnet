@@ -1,79 +1,45 @@
-# Requirements: VW CarNet NA Authentication Fix
+# Requirements: VW CarNet NA Full API Values
 
-**Defined:** 2026-02-10
-**Core Value:** NA users can authenticate with VW CarNet and retrieve vehicle data (battery level, location, status) for homelab integration without breaking existing EMEA functionality.
+**Defined:** 2026-02-25
+**Core Value:** NA users can retrieve real vehicle telemetry (location, lock status) from VW CarNet for homelab integration without breaking existing EMEA functionality.
 
-## v1 Requirements
+## v1.5 Requirements
 
-Requirements for NA authentication fix. Each maps to roadmap phases.
+Requirements for NA vehicle data retrieval. Each maps to roadmap phases.
+Phases 8-9 in ROADMAP.md close v1.0 tech debt; phases 10+ deliver v1.5 features.
 
-### Authentication Core (F1-F3: Foundation)
+### Endpoint Discovery
 
-- [ ] **AUTH-01**: Library can calculate X-QMAuth header using time-based HMAC-SHA256
-- [x] **AUTH-02**: Library can exchange authorization code for IDK token with X-QMAuth header
-- [x] **AUTH-03**: Library can register as MBB OAuth client and receive xclientId
-- [ ] **AUTH-04**: Library stores NA region-specific constants (client_id, endpoints, scope, redirect_uri)
-- [ ] **AUTH-05**: Library can distinguish between identity endpoint and base API endpoint for NA
+- [ ] **DISC-01**: Library automatically uses correct NA-specific vehicle data endpoints (not EMEA paths that return 404 for NA)
+- [ ] **DISC-02**: NA endpoint authentication requirements confirmed — which token type and headers are needed for vehicle data calls
 
-### Token Exchange (F1-F2-F4: Three-Token Architecture)
+### Vehicle Data Integration
 
-- [x] **TOKEN-01**: Library can exchange IDK access_token for Brand token at `/login/v1/volkswagen/token`
-- [x] **TOKEN-02**: Library can exchange IDK id_token for initial MBB token via MBB OAuth endpoint
-- [x] **TOKEN-03**: Library immediately refreshes MBB token after initial grant (uses second token, not first)
-- [x] **TOKEN-04**: Library stores all three token types separately (IDK, Brand, MBB) with metadata
-- [x] **TOKEN-05**: Library includes X-Client-ID header in all MBB OAuth requests
+- [ ] **DATA-01**: Library fetches vehicle state data from NA endpoints with a non-404 response
+- [ ] **DATA-02**: NA API response correctly parsed and stored in `Vehicle._states`
+- [ ] **DATA-03**: `Vehicle.discover()` completes for NA vehicles with populated service data (not empty capabilities)
 
-### Token Management (F5-F6: Selection and Refresh)
+### Vehicle Properties
 
-- [x] **MGMT-01**: Library selects correct token type per API endpoint (IDK for Cariad BFF, MBB for legacy, Brand for GraphQL)
-- [ ] **MGMT-02**: Library can refresh IDK token independently using IDK refresh_token and X-QMAuth header
-- [x] **MGMT-03**: Library can refresh Brand token independently by re-exchanging current IDK access_token
-- [x] **MGMT-04**: Library can refresh MBB token independently using MBB refresh_token and X-Client-ID header
-- [x] **MGMT-05**: Library respects token hierarchy when refreshing (IDK refresh triggers Brand refresh if needed)
-- [x] **MGMT-06**: Library tracks token expiry per token type and refreshes proactively
-
-### Integration & Reliability (F7-F10: Important Features)
-
-- [x] **INT-01**: Library can discover market-specific configuration from VW endpoints with fallback to hardcoded values
-- [x] **INT-02**: Library routes NA authentication through identity.na.vwgroup.io (not base API)
-- [x] **INT-03**: Library handles NA redirect URI format (HTTPS callback, not custom scheme)
-- [x] **INT-04**: Library discovers per-vehicle home region for API calls
-- [x] **INT-05**: Library handles rate limiting with exponential backoff and retry logic
-
-### Backward Compatibility (Cross-Cutting)
-
-- [x] **COMPAT-01**: EMEA authentication flow remains unchanged (no breaking changes to existing API)
-- [x] **COMPAT-02**: Existing EMEA users can upgrade library without code changes
-- [x] **COMPAT-03**: Region detection automatically routes to correct flow (EMEA vs NA) based on country parameter
-- [x] **COMPAT-04**: Token storage structure supports both single-token (EMEA) and three-token (NA) models
-- [x] **COMPAT-05**: All existing vehicle data APIs work with NA authentication
+- [ ] **PROP-01**: `vehicle.position` (or NA equivalent) returns real GPS coordinates (latitude/longitude) for NA vehicles
+- [ ] **PROP-02**: `vehicle.doors_locked` (or NA equivalent) returns real lock/unlock state for NA vehicles
 
 ### Testing & Validation
 
-- [x] **TEST-01**: NA authentication tested end-to-end with real CarNet credentials
-- [ ] **TEST-02**: All three token types successfully obtained and validated
-- [x] **TEST-03**: Vehicle data retrieval (battery, location, status) working with NA tokens
-- [ ] **TEST-04**: Token refresh working for all three token types
-- [x] **TEST-05**: EMEA authentication regression tests pass (no backward compatibility breaks)
-- [x] **TEST-06**: Multi-vehicle support working with NA authentication
+- [ ] **TEST-07**: E2E test confirms position returns non-None GPS coordinates for real NA vehicle
+- [ ] **TEST-08**: E2E test confirms lock status returns real boolean for real NA vehicle
+- [ ] **TEST-09**: All v1.0 NA e2e tests continue passing (login, vehicle discovery, IDK token refresh)
+- [ ] **TEST-10**: EMEA regression suite passes with 0 failures after NA data changes
 
 ## v2 Requirements
 
-Deferred enhancements. Not in current roadmap.
+Deferred — promote to v1.5 after APK research if the NA API exposes these.
 
-### Advanced Features
+### Additional Vehicle Properties
 
-- **GRAPH-01**: GraphQL API support using Brand token
-- **PERSIST-01**: Persistent storage of MBB xclientId across sessions
-- **PERSIST-02**: Token serialization/deserialization for session resume
-- **REFRESH-01**: Pre-emptive token refresh before expiry (all three types in parallel)
-
-### Nice-to-Have Reliability
-
-- **DISC-01**: Dynamic client_id discovery from market config (instead of hardcoded fallback)
-- **DISC-02**: Automatic API Level detection per vehicle (Level 0 vs Level 1)
-- **ERROR-01**: Detailed error messages mapping HTTP errors to user-actionable guidance
-- **RETRY-01**: Intelligent retry logic distinguishing transient vs permanent failures
+- **PROP-03**: `vehicle.battery_level` returns real state of charge (%) for NA vehicles
+- **PROP-04**: `vehicle.charging_state` returns real charging status for NA vehicles
+- **PROP-05**: Climate/HVAC properties (`climatisation_target_temperature`, etc.) work for NA vehicles
 
 ## Out of Scope
 
@@ -81,60 +47,35 @@ Explicitly excluded to maintain focus on core goal.
 
 | Feature | Reason |
 |---------|--------|
-| Vehicle control (lock, climate, charging) | Read-only monitoring sufficient for homelab use case |
-| Mobile app development | Library is for programmatic access only |
-| Real-time push notifications | Polling-based updates sufficient |
-| 2FA/MFA handling | Not required for basic authentication flow |
-| PKCE for NA region | Official app doesn't use it despite server support |
-| API Level 0 + Level 1 simultaneous support | Modern vehicles use Level 1; implement Level 0 only if needed |
-| APK decompilation for credentials | 2026 traffic capture provides current working credentials |
-| GraphQL in v1 | REST API sufficient for vehicle monitoring |
+| Vehicle control (lock, climate start/stop) | Read-only monitoring sufficient for homelab use case |
+| GraphQL API | REST sufficient for vehicle data |
+| MBB/Brand token data endpoints | IDK token sufficient for NA data calls |
+| EMEA feature enhancements | Focus solely on NA data gap |
+| Multi-region simultaneous session | Single region per Connection instance |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1: NA Foundation | Pending |
-| AUTH-02 | Phase 2: NA OAuth Login Flow | Complete |
-| AUTH-03 | Phase 3: Three-Token Architecture | Complete |
-| AUTH-04 | Phase 1: NA Foundation | Pending |
-| AUTH-05 | Phase 1: NA Foundation | Pending |
-| TOKEN-01 | Phase 3: Three-Token Architecture | Complete |
-| TOKEN-02 | Phase 3: Three-Token Architecture | Complete |
-| TOKEN-03 | Phase 3: Three-Token Architecture | Complete |
-| TOKEN-04 | Phase 3: Three-Token Architecture | Complete |
-| TOKEN-05 | Phase 3: Three-Token Architecture | Complete |
-| MGMT-01 | Phase 4: Token Lifecycle Management | Complete |
-| MGMT-02 | Phase 8: Fix Stale Unit Tests / Phase 9: Requirements Wording & Docs Cleanup | Pending |
-| MGMT-03 | Phase 4: Token Lifecycle Management | Complete |
-| MGMT-04 | Phase 4: Token Lifecycle Management | Complete |
-| MGMT-05 | Phase 4: Token Lifecycle Management | Complete |
-| MGMT-06 | Phase 4: Token Lifecycle Management | Complete |
-| INT-01 | Phase 5: Reliability & Discovery | Complete |
-| INT-02 | Phase 2: NA OAuth Login Flow | Complete |
-| INT-03 | Phase 2: NA OAuth Login Flow | Complete |
-| INT-04 | Phase 5: Reliability & Discovery | Complete |
-| INT-05 | Phase 5: Reliability & Discovery | Complete |
-| COMPAT-01 | Phase 6: Backward Compatibility | Complete |
-| COMPAT-02 | Phase 6: Backward Compatibility | Complete |
-| COMPAT-03 | Phase 2: NA OAuth Login Flow | Complete |
-| COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
-| COMPAT-05 | Phase 6: Backward Compatibility | Complete |
-| TEST-01 | Phase 7: End-to-End Validation | Complete |
-| TEST-02 | Phase 9: Requirements Wording & Docs Cleanup | Pending |
-| TEST-03 | Phase 7: End-to-End Validation | Complete |
-| TEST-04 | Phase 9: Requirements Wording & Docs Cleanup | Pending |
-| TEST-05 | Phase 7: End-to-End Validation | Complete |
-| TEST-06 | Phase 7: End-to-End Validation | Complete |
+| DISC-01 | TBD | Pending |
+| DISC-02 | TBD | Pending |
+| DATA-01 | TBD | Pending |
+| DATA-02 | TBD | Pending |
+| DATA-03 | TBD | Pending |
+| PROP-01 | TBD | Pending |
+| PROP-02 | TBD | Pending |
+| TEST-07 | TBD | Pending |
+| TEST-08 | TBD | Pending |
+| TEST-09 | TBD | Pending |
+| TEST-10 | TBD | Pending |
 
 **Coverage:**
-- v1 requirements: 32 total
-- Mapped to phases: 32
-- Unmapped: 0
-- Pending gap closure (Phase 8-9): MGMT-02, TEST-02, TEST-04
+- v1.5 requirements: 11 total
+- Mapped to phases: 0 (roadmap pending)
+- Unmapped: 11
 
 ---
-*Requirements defined: 2026-02-10*
-*Last updated: 2026-02-18 after Phase 2 Plan 01 completion (AUTH-02, INT-02, INT-03, COMPAT-03)*
+*Requirements defined: 2026-02-25*
+*Last updated: 2026-02-25 after v1.5 milestone definition*
