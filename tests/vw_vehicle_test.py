@@ -96,6 +96,7 @@ class VehicleTest(IsolatedAsyncioTestCase):
 
         vehicle._discovered = False
         vehicle.deactivated = False
+        vehicle._connection = None  # None → EMEA path (skips NA branch)
         await vehicle.update()
 
         vehicle.discover.assert_called_once()
