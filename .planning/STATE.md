@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+last_updated: "2026-02-26T04:53:47Z"
+progress:
+  total_phases: 12
+  completed_phases: 9
+  total_plans: 17
+  completed_plans: 17
+---
+
 # Project State
 
 ## Project Reference
@@ -9,17 +22,17 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 08-fix-stale-unit-tests (complete)
+Phase: 09-requirements-wording-cleanup (complete)
 Plan: 1 of 1 complete
-Status: Phase 8 complete — unit test suite at 0 failures
-Last activity: 2026-02-26 - Completed Phase 8 Plan 1: Fix 6 stale unit tests
+Status: Phase 9 complete — MGMT-02/TEST-02/TEST-04 wording corrected; docstring fixed; issued_at added
+Last activity: 2026-02-26 - Completed Phase 9 Plan 1: Requirements wording cleanup + issued_at consistency
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 83%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 3.2 min
 - Total execution time: 0.49 hours
 
@@ -33,6 +46,7 @@ Progress: [████████░░] 80%
 | 04-token-lifecycle-management | 2 | 7 min | 3.5 min |
 | 05-reliability-discovery | 3 | 8 min | 2.7 min |
 | 08-fix-stale-unit-tests | 1 | 2 min | 2 min |
+| 09-requirements-wording-cleanup | 1 | 2 min | 2 min |
 
 **Recent Trend:**
 - Last 5 plans: 1 min, 2 min, 1 min, 2 min, 2 min
@@ -48,6 +62,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 - [Phase 08-fix-stale-unit-tests]: NA base_api_candidates == [] is intentional — hardcoded base_api used directly, discovery candidates unused
+- [Phase 09-requirements-wording-cleanup]: _na_tokens writes at login time now include issued_at: time.time() matching refresh method structure
+- [Phase 09-requirements-wording-cleanup]: _refresh_idk_token() docstring corrected — X-QMAuth NOT sent (server rejects with HTTP 400), PKCE code_verifier used instead
 - [Phase 08-fix-stale-unit-tests]: IDK refresh body must contain refresh_token, grant_type, code_verifier — X-QMAuth intentionally absent (HTTP 400)
 - [Phase 08-fix-stale-unit-tests]: NA doLogin fetches vehicle list via _request() to garage endpoint, not get() to vehicle/v2/vehicles
 - [Roadmap v1.5]: 3 phases (10-12) derived from 11 v1.5 requirements; APK research gates implementation gates E2E validation
@@ -75,5 +91,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 08-01-PLAN.md (fix stale unit tests — 6 tests fixed, 0 failures)
+Stopped at: Completed 09-01-PLAN.md (requirements wording cleanup — MGMT-02/TEST-02/TEST-04 corrected; docstring fixed; issued_at added)
 Resume file: None
