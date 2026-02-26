@@ -26,7 +26,7 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 ### Token Management (F5-F6: Selection and Refresh)
 
 - [x] **MGMT-01**: Library selects correct token type per API endpoint (IDK for Cariad BFF, MBB for legacy, Brand for GraphQL)
-- [x] **MGMT-02**: Library can refresh IDK token independently using IDK refresh_token and X-QMAuth header
+- [ ] **MGMT-02**: Library can refresh IDK token independently using IDK refresh_token and X-QMAuth header
 - [x] **MGMT-03**: Library can refresh Brand token independently by re-exchanging current IDK access_token
 - [x] **MGMT-04**: Library can refresh MBB token independently using MBB refresh_token and X-Client-ID header
 - [x] **MGMT-05**: Library respects token hierarchy when refreshing (IDK refresh triggers Brand refresh if needed)
@@ -51,9 +51,9 @@ Requirements for NA authentication fix. Each maps to roadmap phases.
 ### Testing & Validation
 
 - [x] **TEST-01**: NA authentication tested end-to-end with real CarNet credentials
-- [x] **TEST-02**: All three token types successfully obtained and validated
+- [ ] **TEST-02**: All three token types successfully obtained and validated
 - [x] **TEST-03**: Vehicle data retrieval (battery, location, status) working with NA tokens
-- [x] **TEST-04**: Token refresh working for all three token types
+- [ ] **TEST-04**: Token refresh working for all three token types
 - [x] **TEST-05**: EMEA authentication regression tests pass (no backward compatibility breaks)
 - [x] **TEST-06**: Multi-vehicle support working with NA authentication
 
@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOKEN-04 | Phase 3: Three-Token Architecture | Complete |
 | TOKEN-05 | Phase 3: Three-Token Architecture | Complete |
 | MGMT-01 | Phase 4: Token Lifecycle Management | Complete |
-| MGMT-02 | Phase 4: Token Lifecycle Management | Complete |
+| MGMT-02 | Phase 8: Fix Stale Unit Tests / Phase 9: Requirements Wording & Docs Cleanup | Pending |
 | MGMT-03 | Phase 4: Token Lifecycle Management | Complete |
 | MGMT-04 | Phase 4: Token Lifecycle Management | Complete |
 | MGMT-05 | Phase 4: Token Lifecycle Management | Complete |
@@ -123,9 +123,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMPAT-04 | Phase 3: Three-Token Architecture | Complete |
 | COMPAT-05 | Phase 6: Backward Compatibility | Complete |
 | TEST-01 | Phase 7: End-to-End Validation | Complete |
-| TEST-02 | Phase 7: End-to-End Validation | Complete |
+| TEST-02 | Phase 9: Requirements Wording & Docs Cleanup | Pending |
 | TEST-03 | Phase 7: End-to-End Validation | Complete |
-| TEST-04 | Phase 7: End-to-End Validation | Complete |
+| TEST-04 | Phase 9: Requirements Wording & Docs Cleanup | Pending |
 | TEST-05 | Phase 7: End-to-End Validation | Complete |
 | TEST-06 | Phase 7: End-to-End Validation | Complete |
 
@@ -133,6 +133,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1 requirements: 32 total
 - Mapped to phases: 32
 - Unmapped: 0
+- Pending gap closure (Phase 8-9): MGMT-02, TEST-02, TEST-04
 
 ---
 *Requirements defined: 2026-02-10*
