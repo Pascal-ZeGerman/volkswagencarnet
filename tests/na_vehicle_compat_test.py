@@ -119,7 +119,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         vehicle._states.update(_load_fixture("egolf", "selectivestatus_by_app.json"))
         vehicle._discovered = True
 
-        # access.accessStatus.value.doorLockStatus == "locked"
+        # NA region: door_locked reads from na_status["lockStatus"] (not EMEA selectivestatus).
+        # Inject na_status fixture so the NA branch returns the expected locked state.
+        vehicle._states["na_status"] = _load_fixture("na_vehicle", "rvs_status.json")
         assert vehicle.door_locked is True
         assert isinstance(vehicle.door_locked, bool)
 
