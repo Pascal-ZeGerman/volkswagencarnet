@@ -1,7 +1,7 @@
 """Unit tests for NA Connection vehicle session and RVS data methods (Phase 11).
 
 Tests cover:
-- Connection._create_na_vehicle_session(): tsp probe, JWT parsing, token caching, 401 retry
+- Connection._create_na_vehicle_session(): tsp_provider lookup, JWT parsing, token caching, 401 retry
 - Connection._get_na_vehicle_data(): RVS fetch, partial data return, 401 cache invalidation
 """
 
@@ -46,7 +46,10 @@ def _make_na_connection() -> Connection:
         "idk": {
             "id_token": FAKE_IDK_ID_TOKEN,
             "access_token": FAKE_IDK_ACCESS_TOKEN,
-        }
+        },
+        VIN: {
+            "tsp_provider": "ATC",  # stored during doLogin() garage parse
+        },
     }
     return conn
 
@@ -86,32 +89,34 @@ class NAVehicleSessionTest(IsolatedAsyncioTestCase):
         conn._session.post.assert_not_called()
 
     @patch("volkswagencarnet.vw_connection.jwt.decode")
-    async def test_create_session_probes_vwna_first(self, mock_jwt):
-        """First POST uses tsp='VWNA'."""
+    async def test_create_session_uses_tsp_provider_from_na_tokens(self, mock_jwt):
+        """Session POST uses tsp value from _na_tokens[vin]['tsp_provider']."""
         mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
         conn = _make_na_connection()
+        conn._na_tokens[VIN]["tsp_provider"] = "ATC"
         conn._session.post = AsyncMock(
             return_value=_mock_resp(200, {"carnetVehicleToken": FAKE_VEHICLE_TOKEN})
         )
         result = await conn._create_na_vehicle_session(VIN)
         assert result == FAKE_VEHICLE_TOKEN
-        first_call = conn._session.post.call_args_list[0]
-        assert first_call.kwargs["json"]["tsp"] == "VWNA"
+        assert conn._session.post.call_count == 1  # single attempt, no probe loop
+        call = conn._session.post.call_args_list[0]
+        assert call.kwargs["json"]["tsp"] == "ATC"
 
     @patch("volkswagencarnet.vw_connection.jwt.decode")
-    async def test_create_session_falls_back_to_vw(self, mock_jwt):
-        """Falls back to tsp='VW' when tsp='VWNA' returns 400."""
+    async def test_create_session_defaults_to_atc_when_no_tsp_provider(self, mock_jwt):
+        """Falls back to tsp='ATC' when no tsp_provider is stored for the VIN."""
         mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
         conn = _make_na_connection()
-        conn._session.post = AsyncMock(side_effect=[
-            _mock_resp(400),                                                 # VWNA → rejected
-            _mock_resp(200, {"carnetVehicleToken": FAKE_VEHICLE_TOKEN}),    # VW → success
-        ])
+        # Remove tsp_provider to test default fallback
+        conn._na_tokens.pop(VIN, None)
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": FAKE_VEHICLE_TOKEN})
+        )
         result = await conn._create_na_vehicle_session(VIN)
         assert result == FAKE_VEHICLE_TOKEN
-        assert conn._session.post.call_count == 2
-        second_call = conn._session.post.call_args_list[1]
-        assert second_call.kwargs["json"]["tsp"] == "VW"
+        call = conn._session.post.call_args_list[0]
+        assert call.kwargs["json"]["tsp"] == "ATC"
 
     @patch("volkswagencarnet.vw_connection.jwt.decode")
     async def test_create_session_retries_without_auth_on_401(self, mock_jwt):
@@ -145,13 +150,13 @@ class NAVehicleSessionTest(IsolatedAsyncioTestCase):
         assert "issued_at" in cached
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
-    async def test_create_session_returns_none_when_all_tsp_fail(self, _mock_jwt):
-        """Returns None after exhausting all tsp probe values."""
+    async def test_create_session_returns_none_when_tsp_fails(self, _mock_jwt):
+        """Returns None when session POST returns 400 (wrong tsp or invalid request)."""
         conn = _make_na_connection()
-        conn._session.post = AsyncMock(return_value=_mock_resp(400))
+        conn._session.post = AsyncMock(return_value=_mock_resp(400, text_data="Bad Request"))
         result = await conn._create_na_vehicle_session(VIN)
         assert result is None
-        assert conn._session.post.call_count == 2  # VWNA and VW both tried
+        assert conn._session.post.call_count == 1  # single attempt only
 
 
 class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
