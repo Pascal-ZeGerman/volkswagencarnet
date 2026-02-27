@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Requirements Wording & Docs Cleanup** - Requirements accuracy and docstring consistency (completed 2026-02-26)
 - [x] **Phase 10: NA Vehicle Data Endpoint Research** - APK analysis to document NA vehicle data API endpoints, auth requirements, and response structure (completed 2026-02-26)
 - [x] **Phase 11: NA Vehicle Data Implementation** - Wire NA endpoints into Vehicle class so real telemetry replaces 404/None for NA vehicles (completed 2026-02-26)
-- [ ] **Phase 12: Full API Values E2E Validation** - E2E tests confirming real GPS and lock values from live NA vehicle, plus EMEA regression
+- [x] **Phase 12: Full API Values E2E Validation** - E2E tests confirming real GPS and lock values from live NA vehicle, plus EMEA regression (completed 2026-02-26)
 
 ## Phase Details
 
@@ -164,7 +164,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md — Write NA-VEHICLE-API-SPEC.md from pre-extracted APK findings: RVS endpoints, carnetVehicleToken auth flow, VehicleLocation/DoorLockStatus response structures, Phase 11 priority order
+- [x] 10-01-PLAN.md — Write NA-VEHICLE-API-SPEC.md from pre-extracted APK findings: RVS endpoints, carnetVehicleToken auth flow, VehicleLocation/DoorLockStatus response structures, Phase 11 priority order (completed 2026-02-26)
 
 ### Phase 11: NA Vehicle Data Implementation
 **Goal**: NA vehicles return real telemetry (GPS coordinates and lock status) from live VW CarNet API instead of 404 errors or None values
@@ -176,7 +176,7 @@ Plans:
   3. `vehicle.position` returns a dict with real latitude and longitude values (not None) for a NA vehicle with location sharing enabled
   4. `vehicle.doors_locked` returns a real boolean (True or False, not None) reflecting the actual lock state of the NA vehicle
   5. All NA data calls use the correct token type identified in Phase 10 research (no auth errors on data retrieval)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 11-01-PLAN.md — Vehicle.discover() NA branch: skip/replace EMEA capability endpoints, call NA vehicle list endpoint, store service data in _states
@@ -191,15 +191,35 @@ Plans:
   2. E2E test `test_na_lock_status` asserts `vehicle.doors_locked` returns a real boolean from the real NA vehicle
   3. All six v1.0 NA e2e tests (login, vehicle discovery, IDK token refresh) continue passing without modification
   4. Running `pytest tests/` (unit suite, no credentials required) exits with 0 failures after Phase 11 changes are merged
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 12-01-PLAN.md — New e2e tests: test_na_position.py (TEST-07) and test_na_lock_status.py (TEST-08); EMEA regression run confirming 0 failures (TEST-09, TEST-10)
 
+### Phase 12.1: Fix NA vehicle session TSP values and SPIN challenge-response flow (INSERTED)
+
+**Goal:** `_create_na_vehicle_session()` uses the vehicle's real `tspProvider` from the garage response (e.g., "ATC") instead of probing hardcoded guesses ["VWNA", "VW"] that always return HTTP 400, unblocking E2E GPS and lock status tests
+**Requirements**: DATA-01, DATA-02, TEST-07, TEST-08
+**Depends on:** Phase 12
+**Plans:** 1/1 plans complete
+
+Plans:
+- [ ] 12.1-01-PLAN.md — Store tspProvider + vehicleId from garage response in doLogin(); replace probe loop in _create_na_vehicle_session() with single tsp_provider lookup; update 3 unit tests in na_connection_test.py
+
+### Phase 13: Display of real values from API and manual UAT. Needs to be current location, and lock state
+
+**Goal:** A library consumer can run a demo script to display real GPS coordinates and lock status from their NA vehicle, and all e2e tests pass with SPIN credentials confirming the full NA data pipeline works end-to-end
+**Requirements**: UAT-01, UAT-02
+**Depends on:** Phase 12.1
+**Plans:** 1 plan
+
+Plans:
+- [ ] 13-01-PLAN.md — Create examples/demo_na_vehicle.py (standalone display script); run all e2e tests with SPIN credentials and record UAT results in 13-UAT-RESULTS.md
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 12.1 -> 13
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -213,5 +233,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 8. Fix Stale Unit Tests | 1/1 | Complete | 2026-02-26 |
 | 9. Requirements Wording & Docs Cleanup | 1/1 | Complete | 2026-02-26 |
 | 10. NA Vehicle Data Endpoint Research | 1/1 | Complete    | 2026-02-26 |
-| 11. NA Vehicle Data Implementation | 2/2 | Complete   | 2026-02-26 |
-| 12. Full API Values E2E Validation | 0/1 | Pending | |
+| 11. NA Vehicle Data Implementation | 2/2 | Complete    | 2026-02-26 |
+| 12. Full API Values E2E Validation | 1/1 | Complete    | 2026-02-26 |
+| 12.1. Fix NA Vehicle Session TSP Values (INSERTED) | 1/1 | Complete    | 2026-02-27 |
+| 13. Display of Real Values + Manual UAT | 0/1 | In Progress | |
