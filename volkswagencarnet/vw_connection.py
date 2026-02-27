@@ -86,6 +86,7 @@ class Connection:
         interval=timedelta(minutes=5),
         xclient_id: str | None = None,
         on_xclient_id=None,
+        spin: str | None = None,
     ) -> None:
         """Initialize."""
         self._session = session
@@ -98,6 +99,7 @@ class Connection:
         self._session_auth_password = password
         self._session_tokens = {}
         self._session_country = country.upper()
+        self._spin = spin
 
         # Determine region from country
         self._session_region = get_region_from_country(self._session_country)
@@ -1298,7 +1300,36 @@ class Connection:
         tsp_value = self._na_tokens.get(vin, {}).get("tsp_provider", "ATC")
         _LOGGER.debug("NA vehicle session: using tsp=%r for %s", tsp_value, vin)
 
-        body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": None}
+        # Fetch challenge and compute spinHash when spin is configured
+        spin_hash: str | None = None
+        if self._spin:
+            challenge_url = f"{base_api}/ss/v1/user/{user_id}/challenge"
+            try:
+                challenge_resp = await self._session.get(
+                    challenge_url,
+                    headers={"Authorization": f"Bearer {idk_access_token}"},
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                )
+                if challenge_resp.status == 200:
+                    challenge_data = await challenge_resp.json()
+                    challenge_hex = challenge_data.get("data", {}).get("challenge")
+                    if challenge_hex:
+                        spin_hash = self.hash_spin(challenge_hex, self._spin)
+                    else:
+                        _LOGGER.warning("NA vehicle session: challenge response missing 'challenge' field")
+                        return None
+                else:
+                    body_text = await challenge_resp.text()
+                    _LOGGER.warning(
+                        "NA vehicle session: challenge GET returned %d: %s",
+                        challenge_resp.status, body_text[:200],
+                    )
+                    return None
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning("NA vehicle session: challenge GET failed: %s", exc)
+                return None
+
+        body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": spin_hash}
 
         # First attempt: send IDK access_token Bearer header
         auth_headers = {

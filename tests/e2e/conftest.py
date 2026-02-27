@@ -21,6 +21,7 @@ from volkswagencarnet.vw_connection import Connection
 # ---------------------------------------------------------------------------
 _USERNAME = os.environ.get("VW_TEST_USERNAME")
 _PASSWORD = os.environ.get("VW_TEST_PASSWORD")
+_SPIN = os.environ.get("VW_TEST_SPIN")  # optional 4-digit Security PIN
 
 if not _USERNAME or not _PASSWORD:
     raise EnvironmentError(
@@ -82,7 +83,7 @@ async def na_connection():
     """
     jar = CookieJar()
     async with ClientSession(cookie_jar=jar) as session:
-        conn = Connection(session, _USERNAME, _PASSWORD, country="US")
+        conn = Connection(session, _USERNAME, _PASSWORD, country="US", spin=_SPIN)
         _log.info("NA doLogin() starting — username: %s", _USERNAME)
 
         result = await conn.doLogin()
