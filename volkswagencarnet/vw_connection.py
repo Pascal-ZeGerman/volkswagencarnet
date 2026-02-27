@@ -1247,6 +1247,21 @@ class Connection:
         are NOT valid TSP enum values — both return HTTP 400.  Defaults to
         ``"ATC"`` if no stored tsp_provider is found.
 
+        When SPIN is configured the method performs a two-step flow:
+
+        1. POST vehicle session with ``spinHash=null`` — the server accepts this
+           on the first call and returns a ``carnetVehicleToken``.
+        2. GET ``ss/v1/user/{userId}/challenge`` with that token as Bearer — the
+           challenge endpoint requires the ``carnetVehicleToken``, NOT the IDK
+           access_token.  The response is a flat ``{"challenge": "...",
+           "remainingTries": N}`` object.
+        3. Compute ``spinHash = SHA-512(UTF-8("{challenge}.{spin}"))``.
+        4. POST vehicle session again with the computed ``spinHash`` — this
+           validates the SPIN and returns the final ``carnetVehicleToken``.
+
+        When SPIN is not configured the method performs a single POST with
+        ``spinHash=null``.
+
         On the first attempt the IDK access_token is sent as a Bearer
         Authorization header; if the server responds 401 the same ``tsp`` is
         retried with NO Authorization header (some NA environments reject the
@@ -1292,7 +1307,11 @@ class Connection:
             return cached["token"]
 
         base_api = self._base_api
-        session_url = f"{base_api}/ss/v1/user/{user_id}/vehicle/{vin}/session"
+        # Use the vehicleId (UUID from garage response) for the session URL.
+        # The APK uses {vehicleId} (UUID like "7f3e...") NOT the VIN string.
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        session_url = f"{base_api}/ss/v1/user/{user_id}/vehicle/{vehicle_id}/session"
+        _LOGGER.debug("NA vehicle session: url=%s", session_url)
 
         # Use tspProvider from garage response (stored during doLogin)
         # Valid values: "ATC" (Aeris), "WCT" (WirelessCar), "Unknown"
@@ -1300,106 +1319,169 @@ class Connection:
         tsp_value = self._na_tokens.get(vin, {}).get("tsp_provider", "ATC")
         _LOGGER.debug("NA vehicle session: using tsp=%r for %s", tsp_value, vin)
 
-        # Fetch challenge and compute spinHash when spin is configured
-        spin_hash: str | None = None
-        if self._spin:
-            challenge_url = f"{base_api}/ss/v1/user/{user_id}/challenge"
-            try:
-                challenge_resp = await self._session.get(
-                    challenge_url,
-                    headers={"Authorization": f"Bearer {idk_access_token}"},
-                    timeout=ClientTimeout(total=TIMEOUT.seconds),
-                )
-                if challenge_resp.status == 200:
-                    challenge_data = await challenge_resp.json()
-                    challenge_hex = challenge_data.get("data", {}).get("challenge")
-                    if challenge_hex:
-                        spin_hash = self.hash_spin(challenge_hex, self._spin)
-                    else:
-                        _LOGGER.warning("NA vehicle session: challenge response missing 'challenge' field")
-                        return None
-                else:
-                    body_text = await challenge_resp.text()
-                    _LOGGER.warning(
-                        "NA vehicle session: challenge GET returned %d: %s",
-                        challenge_resp.status, body_text[:200],
-                    )
-                    return None
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                _LOGGER.warning("NA vehicle session: challenge GET failed: %s", exc)
-                return None
-
-        body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": spin_hash}
-
-        # First attempt: send IDK access_token Bearer header
-        auth_headers = {
-            "Authorization": f"Bearer {idk_access_token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
         vehicle_token: str | None = None
 
-        try:
-            resp = await self._session.post(
+        def _post_vehicle_session(spin_hash: str | None) -> "asyncio.coroutine":
+            """Helper returning the coroutine for a vehicle session POST."""
+            body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": spin_hash}
+            auth_headers = {
+                "Authorization": f"Bearer {idk_access_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            return self._session.post(
                 url=session_url,
                 json=body,
                 headers=auth_headers,
                 timeout=ClientTimeout(total=TIMEOUT.seconds),
                 allow_redirects=False,
             )
-            status = resp.status
 
-            if status == 401:
-                # Retry same tsp without Authorization header
-                _LOGGER.debug(
-                    "NA vehicle session: 401 with auth header for tsp=%r, retrying without auth", tsp_value
-                )
-                no_auth_headers = {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                }
-                resp = await self._session.post(
-                    url=session_url,
-                    json=body,
-                    headers=no_auth_headers,
-                    timeout=ClientTimeout(total=TIMEOUT.seconds),
-                    allow_redirects=False,
-                )
+        async def _execute_session_post(spin_hash: str | None) -> str | None:
+            """POST vehicle session and return vehicle_token or None."""
+            nonlocal tsp_value
+            try:
+                resp = await _post_vehicle_session(spin_hash)
                 status = resp.status
 
-            if status == 200:
-                data = await resp.json()
-                # Log response structure to confirm carnetVehicleToken format (string vs. nested object)
-                _LOGGER.debug("NA vehicle session 200 response keys: %s", list(data.keys()))
-                raw_token = data.get("carnetVehicleToken")
-                # Handle both plain string and nested object {"token": "<jwt>"}
-                if isinstance(raw_token, dict):
-                    vehicle_token = raw_token.get("token") or raw_token.get("f49219a")
-                    _LOGGER.debug("NA vehicle session: carnetVehicleToken was a dict, extracted token")
-                else:
-                    vehicle_token = raw_token
-                if vehicle_token:
-                    _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
-                else:
+                if status == 401:
+                    # Retry without Authorization header
+                    _LOGGER.debug(
+                        "NA vehicle session: 401 with auth header for tsp=%r, retrying without auth",
+                        tsp_value,
+                    )
+                    body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": spin_hash}
+                    no_auth_headers = {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    }
+                    resp = await self._session.post(
+                        url=session_url,
+                        json=body,
+                        headers=no_auth_headers,
+                        timeout=ClientTimeout(total=TIMEOUT.seconds),
+                        allow_redirects=False,
+                    )
+                    status = resp.status
+
+                if status == 200:
+                    data = await resp.json()
+                    _LOGGER.debug("NA vehicle session 200 response keys: %s", list(data.keys()))
+                    # Support both flat {"carnetVehicleToken": "..."} and wrapped {"data": {"carnetVehicleToken": "..."}}
+                    payload = data.get("data") if "data" in data else data
+                    raw_token = payload.get("carnetVehicleToken") if isinstance(payload, dict) else None
+                    if raw_token is None:
+                        # Also check top-level as fallback
+                        raw_token = data.get("carnetVehicleToken")
+                    # Handle both plain string and nested object {"token": "<jwt>"}
+                    if isinstance(raw_token, dict):
+                        tok = raw_token.get("token") or raw_token.get("f49219a")
+                        _LOGGER.debug("NA vehicle session: carnetVehicleToken was a dict, extracted token")
+                    else:
+                        tok = raw_token
+                    if tok:
+                        _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
+                        return tok
                     _LOGGER.warning(
                         "NA vehicle session: tsp=%r got 200 but no carnetVehicleToken in response. "
-                        "Response keys: %s", tsp_value, list(data.keys())
+                        "Response keys: %s, payload keys: %s",
+                        tsp_value,
+                        list(data.keys()),
+                        list(payload.keys()) if isinstance(payload, dict) else payload,
                     )
-            else:
+                    return None
                 body_text = await resp.text()
                 _LOGGER.warning(
                     "NA vehicle session: tsp=%r returned %d: %s",
-                    tsp_value, status, body_text[:300],
+                    tsp_value,
+                    status,
+                    body_text[:300],
                 )
+                return None
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning("NA vehicle session: exception for tsp=%r: %s", tsp_value, exc)
+                return None
 
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning("NA vehicle session: exception for tsp=%r: %s", tsp_value, exc)
+        if self._spin:
+            # SPIN flow (from APK d20/i.java UserSession interceptor analysis):
+            #   The AzsSession in the APK is the IDK OIDC session (not a separate carnetVehicleToken).
+            #   d20.i adds:
+            #     - Authorization: Bearer {idk_access_token}   ← azsSession.token.access_token
+            #     - x-user-id: {userId}
+            #     - x-mobile-session-id: {sessionId}
+            #     - x-app-version: 2025.12.10-8414
+            #   The challenge endpoint (ss/v1/user/{userId}/challenge) accepts IDK access_token as
+            #   Bearer when the x-user-id header is also present.
+            #   PinResponse is flat: {"challenge": "<hex>", "remainingTries": N} — no "data" wrapper.
+            #
+            #   Flow:
+            #   1. GET challenge with IDK access_token Bearer + x-user-id header
+            #   2. Compute spinHash = SHA-512(UTF-8("{challenge}.{spin}"))
+            #   3. POST vehicle session with computed spinHash → carnetVehicleToken
+            challenge_url = f"{base_api}/ss/v1/user/{user_id}/challenge"
+            spin_hash: str | None = None
+            try:
+                challenge_resp = await self._session.get(
+                    challenge_url,
+                    headers={
+                        "Authorization": f"Bearer {idk_access_token}",
+                        "x-user-id": user_id,
+                        "x-user-agent": "mobile-android",
+                        "x-app-version": "2025.12.10-8414",
+                        "Accept": "application/json",
+                    },
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                )
+                challenge_status = challenge_resp.status
+                if challenge_status == 200:
+                    # Server wraps PinResponse: {"data": {"challenge": "<hex>", "remainingTries": N}}
+                    challenge_resp_data = await challenge_resp.json()
+                    _LOGGER.debug(
+                        "NA vehicle session: challenge response keys: %s",
+                        list(challenge_resp_data.keys()),
+                    )
+                    # Support both wrapped {"data": {"challenge": ...}} and flat {"challenge": ...}
+                    challenge_data = challenge_resp_data.get("data") or challenge_resp_data
+                    challenge_hex = challenge_data.get("challenge")
+                    if challenge_hex:
+                        spin_hash = self.hash_spin(challenge_hex, self._spin)
+                        _LOGGER.debug(
+                            "NA vehicle session: challenge=%s spin=%s spinHash=%s",
+                            challenge_hex,
+                            self._spin,
+                            spin_hash,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "NA vehicle session: challenge response missing 'challenge' field. "
+                            "Top-level keys: %s, data keys: %s",
+                            list(challenge_resp_data.keys()),
+                            list(challenge_data.keys()) if isinstance(challenge_data, dict) else challenge_data,
+                        )
+                        return None
+                else:
+                    body_text = await challenge_resp.text()
+                    _LOGGER.warning(
+                        "NA vehicle session: challenge GET %d: %s",
+                        challenge_status,
+                        body_text[:200],
+                    )
+                    return None
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning("NA vehicle session: challenge GET failed: %s", exc)
+                return None
+
+            # POST session with computed spinHash → returns carnetVehicleToken
+            vehicle_token = await _execute_session_post(spin_hash=spin_hash)
+        else:
+            # No SPIN configured — single session POST with spinHash=None
+            vehicle_token = await _execute_session_post(spin_hash=None)
 
         if not vehicle_token:
             _LOGGER.warning(
                 "NA: vehicle session creation failed for %s (tsp=%r)",
-                vin, tsp_value,
+                vin,
+                tsp_value,
             )
             return None
 
@@ -1426,8 +1508,8 @@ class Connection:
         Calls ``_create_na_vehicle_session(vin)`` to obtain a
         ``carnetVehicleToken``, then fetches:
 
-        - ``GET {base_api}/rvs/v1/location/vehicle/{vin}`` — GPS location
-        - ``GET {base_api}/rvs/v1/vehicle/{vin}`` — vehicle status / lock state
+        - ``GET {base_api}/rvs/v1/location/vehicle/{vehicle_id}`` — GPS location
+        - ``GET {base_api}/rvs/v1/vehicle/{vehicle_id}`` — vehicle status / lock state
 
         On HTTP 401 from either RVS endpoint, the cached vehicle session is
         invalidated and ``_create_na_vehicle_session`` is called once more
@@ -1479,10 +1561,12 @@ class Connection:
             rvs_headers["x-mobile-session-id"] = session_id
 
         base_api = self._base_api
+        # Use the vehicleId (UUID from garage) for RVS paths — same as vehicle session.
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
 
         # --- Location fetch ---
         location_data: dict | None = None
-        location_url = f"{base_api}/rvs/v1/location/vehicle/{vin}"
+        location_url = f"{base_api}/rvs/v1/location/vehicle/{vehicle_id}"
         try:
             loc_resp = await self._session.get(
                 url=location_url,
@@ -1504,7 +1588,10 @@ class Connection:
                     )
             if loc_resp.status == 200:
                 location_data = await loc_resp.json()
-                _LOGGER.debug("NA RVS location response: %s", await loc_resp.text() if not location_data else location_data)
+                # Unwrap {"data": {...}} envelope if present
+                if isinstance(location_data, dict) and "data" in location_data:
+                    location_data = location_data["data"]
+                _LOGGER.debug("NA RVS location response: %s", location_data)
             else:
                 body_preview = await loc_resp.text()
                 _LOGGER.warning(
@@ -1516,7 +1603,7 @@ class Connection:
 
         # --- Status fetch ---
         status_data: dict | None = None
-        status_url = f"{base_api}/rvs/v1/vehicle/{vin}"
+        status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
         try:
             st_resp = await self._session.get(
                 url=status_url,
@@ -1538,7 +1625,10 @@ class Connection:
                     )
             if st_resp.status == 200:
                 status_data = await st_resp.json()
-                _LOGGER.debug("NA RVS status response: %s", status_data)
+                # Unwrap {"data": {...}} envelope if present
+                if isinstance(status_data, dict) and "data" in status_data:
+                    status_data = status_data["data"]
+                _LOGGER.debug("NA RVS status response (unwrapped): %s", status_data)
             else:
                 body_preview = await st_resp.text()
                 _LOGGER.warning(
@@ -2695,11 +2785,17 @@ class Connection:
         )
 
     def hash_spin(self, challenge, spin):
-        """Convert SPIN and challenge to hash."""
-        spinArray = bytearray.fromhex(spin)
-        byteChallenge = bytearray.fromhex(challenge)
-        spinArray.extend(byteChallenge)
-        return hashlib.sha512(spinArray).hexdigest()
+        """Compute SPIN hash for NA vehicle session authentication.
+
+        Algorithm confirmed from APK decompilation (f90/y0.java RemoteStartUseCase):
+        SHA-512(UTF-8("{challenge}.{spin}"))
+
+        The challenge is the hex string returned by GET ss/v1/user/{userId}/challenge.
+        The spin is the 4-digit security PIN as a string (e.g. "0560").
+        Both are concatenated with "." separator and hashed as UTF-8 text.
+        """
+        combined = f"{challenge}.{spin}"
+        return hashlib.sha512(combined.encode("utf-8")).hexdigest()
 
     async def validate_login(self) -> bool:
         """Check that we have a valid access token."""
