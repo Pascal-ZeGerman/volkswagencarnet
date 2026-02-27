@@ -74,8 +74,12 @@ class TestNAPosition:
         ts_str = pos.get("timestamp")
         assert ts_str is not None, "vehicle.position['timestamp'] is None — RVS may not include timestamp"
         try:
-            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-        except ValueError as exc:
+            # Server may return Unix epoch ms (int) or ISO string
+            if isinstance(ts_str, (int, float)):
+                ts = datetime.fromtimestamp(ts_str / 1000, tz=timezone.utc)
+            else:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except (ValueError, OSError) as exc:
             pytest.fail(f"Could not parse GPS timestamp {ts_str!r}: {exc}")
         age_days = (datetime.now(timezone.utc) - ts).days
         assert age_days <= 7, f"GPS timestamp {ts_str!r} is older than 7 days"
@@ -110,8 +114,12 @@ class TestNAPosition:
         ts_str = na_loc.get("eventTimeStamp")
         if ts_str is not None:
             try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            except ValueError as exc:
+                # Server may return Unix epoch ms (int) or ISO string
+                if isinstance(ts_str, (int, float)):
+                    ts = datetime.fromtimestamp(ts_str / 1000, tz=timezone.utc)
+                else:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, OSError) as exc:
                 pytest.fail(f"Could not parse RVS location timestamp {ts_str!r}: {exc}")
             age_days = (datetime.now(timezone.utc) - ts).days
             assert age_days <= 7, f"RVS location timestamp {ts_str!r} is older than 7 days"

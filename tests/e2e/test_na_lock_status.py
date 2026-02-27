@@ -108,8 +108,12 @@ class TestNALockStatus:
             )
         if ts_str is not None:
             try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            except ValueError as exc:
+                # Server may return Unix epoch ms (int) or ISO string
+                if isinstance(ts_str, (int, float)):
+                    ts = datetime.fromtimestamp(ts_str / 1000, tz=timezone.utc)
+                else:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, OSError) as exc:
                 pytest.fail(f"Could not parse RVS status timestamp {ts_str!r}: {exc}")
             age_days = (datetime.now(timezone.utc) - ts).days
             assert age_days <= 7, f"RVS status timestamp {ts_str!r} is older than 7 days"

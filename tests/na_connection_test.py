@@ -56,7 +56,8 @@ def _make_na_connection() -> Connection:
 
 FAKE_CHALLENGE = "1D02046F451D9ECCA3E4FB6B564958DF0495A069"
 FAKE_SPIN = "1234"
-FAKE_CHALLENGE_RESP = {"data": {"challenge": FAKE_CHALLENGE, "remainingTries": 6}}
+# PinResponse is flat: {"challenge": "<hex>", "remainingTries": N} — no "data" wrapper
+FAKE_CHALLENGE_RESP = {"challenge": FAKE_CHALLENGE, "remainingTries": 6}
 
 
 class NAVehicleSessionTest(IsolatedAsyncioTestCase):
@@ -78,23 +79,33 @@ class NAVehicleSessionTest(IsolatedAsyncioTestCase):
 
     @patch("volkswagencarnet.vw_connection.jwt.decode")
     async def test_create_session_fetches_challenge_and_includes_spinhash(self, mock_jwt):
-        """When spin is set, fetches challenge via GET then includes spinHash in session POST."""
+        """When spin is set: GET challenge with IDK Bearer + x-user-id, then POST with spinHash.
+
+        APK d20/i.java UserSession interceptor uses AzsSession (= IDK OIDC session) as Bearer
+        and adds x-user-id: {userId}. Challenge endpoint accepts IDK access_token + x-user-id.
+        """
         mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
         conn = _make_na_connection()
         conn._spin = FAKE_SPIN
+        # Challenge GET returns flat PinResponse: {"challenge": "<hex>", "remainingTries": N}
         conn._session.get = AsyncMock(return_value=_mock_resp(200, FAKE_CHALLENGE_RESP))
+        # Single POST returns a vehicle token
         conn._session.post = AsyncMock(
             return_value=_mock_resp(200, {"carnetVehicleToken": FAKE_VEHICLE_TOKEN})
         )
         result = await conn._create_na_vehicle_session(VIN)
         assert result == FAKE_VEHICLE_TOKEN
-        # Challenge GET must have been called with IDK auth header
+        # Challenge GET called once with IDK Bearer + x-user-id header
         assert conn._session.get.call_count == 1
-        challenge_call = conn._session.get.call_args
+        challenge_call = conn._session.get.call_args_list[0]
         challenge_url = challenge_call[0][0]
         assert f"/ss/v1/user/{USER_ID}/challenge" in challenge_url
-        assert challenge_call.kwargs["headers"]["Authorization"] == f"Bearer {FAKE_IDK_ACCESS_TOKEN}"
-        # spinHash must be non-null in session POST body
+        # Bearer is IDK access_token, x-user-id is userId
+        challenge_headers = challenge_call.kwargs.get("headers", {})
+        assert challenge_headers.get("Authorization") == f"Bearer {FAKE_IDK_ACCESS_TOKEN}"
+        assert challenge_headers.get("x-user-id") == USER_ID
+        # Single POST called with the computed spinHash (SHA-512 hex = 128 chars)
+        assert conn._session.post.call_count == 1
         post_body = conn._session.post.call_args.kwargs["json"]
         assert post_body["spinHash"] is not None
         assert isinstance(post_body["spinHash"], str)
@@ -118,13 +129,20 @@ class NAVehicleSessionTest(IsolatedAsyncioTestCase):
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
     async def test_create_session_returns_none_when_challenge_fetch_fails(self, _mock_jwt):
-        """Returns None when challenge GET fails (non-200)."""
+        """Returns None when challenge GET fails (non-200).
+
+        Flow: GET challenge (IDK Bearer + x-user-id) → fails → None. Session POST not called.
+        """
         conn = _make_na_connection()
         conn._spin = FAKE_SPIN
-        conn._session.get = AsyncMock(return_value=_mock_resp(500, text_data="Server Error"))
+        # Challenge GET fails (401)
+        conn._session.get = AsyncMock(return_value=_mock_resp(401, text_data="Unauthorized"))
+        conn._session.post = AsyncMock()
         result = await conn._create_na_vehicle_session(VIN)
         assert result is None
-        # Session POST must NOT be called after challenge failure
+        # Challenge GET must have been attempted exactly once
+        assert conn._session.get.call_count == 1
+        # Session POST must NOT have been called (no spinHash available)
         conn._session.post.assert_not_called()
 
     @patch("volkswagencarnet.vw_connection.jwt.decode")
