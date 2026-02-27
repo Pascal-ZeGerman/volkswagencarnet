@@ -345,6 +345,22 @@ class Connection:
                 )
                 vehicle_list = loaded_vehicles.get("data")
 
+            # Store NA-specific per-VIN metadata for session creation
+            if self._session_region == "NA" and vehicle_list:
+                for vehicle_data in vehicle_list:
+                    vin = vehicle_data.get("vin")
+                    if vin:
+                        self._na_tokens.setdefault(vin, {})["tsp_provider"] = vehicle_data.get("tspProvider", "ATC")
+                        vehicle_id = vehicle_data.get("vehicleId")
+                        if vehicle_id:
+                            self._na_tokens[vin]["vehicle_id"] = vehicle_id
+                        _LOGGER.debug(
+                            "NA: stored garage metadata for %s — tspProvider=%r, vehicleId=%r",
+                            vin,
+                            vehicle_data.get("tspProvider"),
+                            vehicle_id,
+                        )
+
             # Add Vehicle class object for all VIN-numbers from account
             if vehicle_list is not None:
                 _LOGGER.debug("Found vehicle(s) associated with account")
@@ -1222,11 +1238,17 @@ class Connection:
     async def _create_na_vehicle_session(self, vin: str) -> str | None:
         """Create and cache a carnetVehicleToken for the given VIN.
 
-        Probes ``tsp`` values in order ``["VWNA", "VW"]`` until the server
-        returns HTTP 200.  On the first attempt for each ``tsp`` value the IDK
-        access_token is sent as a Bearer Authorization header; if the server
-        responds 401 the same ``tsp`` is retried with NO Authorization header
-        (some NA environments reject the header).
+        Uses ``tsp_provider`` stored in ``self._na_tokens[vin]["tsp_provider"]``
+        during the garage parse in ``doLogin()``.  Valid TSP enum values are
+        ``"ATC"`` (Aeris Telecommunications Corporation), ``"WCT"``
+        (WirelessCar Technologies), and ``"Unknown"``.  ``"VWNA"`` and ``"VW"``
+        are NOT valid TSP enum values — both return HTTP 400.  Defaults to
+        ``"ATC"`` if no stored tsp_provider is found.
+
+        On the first attempt the IDK access_token is sent as a Bearer
+        Authorization header; if the server responds 401 the same ``tsp`` is
+        retried with NO Authorization header (some NA environments reject the
+        header).
 
         The resulting JWT is cached in
         ``self._na_tokens[vin]["vehicle_session"]`` with ``token``,
@@ -1239,8 +1261,8 @@ class Connection:
             vin: Vehicle Identification Number.
 
         Returns:
-            The carnetVehicleToken string on success, or ``None`` if all
-            ``tsp`` probe values are exhausted or the IDK id_token is missing.
+            The carnetVehicleToken string on success, or ``None`` if the
+            session POST fails or the IDK id_token is missing.
         """
         idk_entry = self._na_tokens.get("idk", {})
         idk_id_token = idk_entry.get("id_token", "")
@@ -1270,77 +1292,83 @@ class Connection:
         base_api = self._base_api
         session_url = f"{base_api}/ss/v1/user/{user_id}/vehicle/{vin}/session"
 
-        tsp_probe_sequence = ["VWNA", "VW"]
+        # Use tspProvider from garage response (stored during doLogin)
+        # Valid values: "ATC" (Aeris), "WCT" (WirelessCar), "Unknown"
+        # "VWNA" and "VW" are NOT valid TSP enum values — both return HTTP 400
+        tsp_value = self._na_tokens.get(vin, {}).get("tsp_provider", "ATC")
+        _LOGGER.debug("NA vehicle session: using tsp=%r for %s", tsp_value, vin)
+
+        body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": None}
+
+        # First attempt: send IDK access_token Bearer header
+        auth_headers = {
+            "Authorization": f"Bearer {idk_access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
         vehicle_token: str | None = None
 
-        for tsp_value in tsp_probe_sequence:
-            body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": None}
+        try:
+            resp = await self._session.post(
+                url=session_url,
+                json=body,
+                headers=auth_headers,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            status = resp.status
 
-            # First attempt: send IDK access_token Bearer header
-            auth_headers = {
-                "Authorization": f"Bearer {idk_access_token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-            try:
+            if status == 401:
+                # Retry same tsp without Authorization header
+                _LOGGER.debug(
+                    "NA vehicle session: 401 with auth header for tsp=%r, retrying without auth", tsp_value
+                )
+                no_auth_headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
                 resp = await self._session.post(
                     url=session_url,
                     json=body,
-                    headers=auth_headers,
+                    headers=no_auth_headers,
                     timeout=ClientTimeout(total=TIMEOUT.seconds),
                     allow_redirects=False,
                 )
                 status = resp.status
 
-                if status == 401:
-                    # Retry same tsp without Authorization header
-                    _LOGGER.debug(
-                        "NA vehicle session: 401 with auth header for tsp=%r, retrying without auth", tsp_value
-                    )
-                    no_auth_headers = {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    }
-                    resp = await self._session.post(
-                        url=session_url,
-                        json=body,
-                        headers=no_auth_headers,
-                        timeout=ClientTimeout(total=TIMEOUT.seconds),
-                        allow_redirects=False,
-                    )
-                    status = resp.status
-
-                if status == 200:
-                    data = await resp.json()
-                    vehicle_token = data.get("carnetVehicleToken")
-                    if vehicle_token:
-                        _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
-                        break
-                    else:
-                        _LOGGER.warning(
-                            "NA vehicle session: tsp=%r got 200 but no carnetVehicleToken in response", tsp_value
-                        )
-                        continue
-                elif status in (400, 422):
-                    _LOGGER.debug(
-                        "NA vehicle session: tsp=%r returned %d, trying next tsp", tsp_value, status
-                    )
-                    continue
+            if status == 200:
+                data = await resp.json()
+                # Log response structure to confirm carnetVehicleToken format (string vs. nested object)
+                _LOGGER.debug("NA vehicle session 200 response keys: %s", list(data.keys()))
+                raw_token = data.get("carnetVehicleToken")
+                # Handle both plain string and nested object {"token": "<jwt>"}
+                if isinstance(raw_token, dict):
+                    vehicle_token = raw_token.get("token") or raw_token.get("f49219a")
+                    _LOGGER.debug("NA vehicle session: carnetVehicleToken was a dict, extracted token")
                 else:
-                    body_text = await resp.text()
+                    vehicle_token = raw_token
+                if vehicle_token:
+                    _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
+                else:
                     _LOGGER.warning(
-                        "NA vehicle session: tsp=%r returned unexpected status %d: %s",
-                        tsp_value, status, body_text[:200],
+                        "NA vehicle session: tsp=%r got 200 but no carnetVehicleToken in response. "
+                        "Response keys: %s", tsp_value, list(data.keys())
                     )
-                    continue
+            else:
+                body_text = await resp.text()
+                _LOGGER.warning(
+                    "NA vehicle session: tsp=%r returned %d: %s",
+                    tsp_value, status, body_text[:300],
+                )
 
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                _LOGGER.warning("NA vehicle session: exception during tsp=%r probe: %s", tsp_value, exc)
-                continue
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("NA vehicle session: exception for tsp=%r: %s", tsp_value, exc)
 
         if not vehicle_token:
             _LOGGER.warning(
-                "NA: vehicle session creation failed for %s — all tsp values exhausted", vin
+                "NA: vehicle session creation failed for %s (tsp=%r)",
+                vin, tsp_value,
             )
             return None
 
