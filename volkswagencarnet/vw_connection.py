@@ -370,6 +370,12 @@ class Connection:
                 for vehicle in vehicle_list:
                     self._vehicles.append(Vehicle(self, vehicle.get("vin")))
             else:
+                if self._session_region == "NA":
+                    garage_url = f"{self._base_api}/account/v1/garage"
+                    raise APIError(
+                        f"NA garage endpoint returned no vehicle list: {garage_url!r}. "
+                        "Verify credentials, country='US', and that the account has registered vehicles."
+                    )
                 _LOGGER.warning("Failed to login to Volkswagen Connect API")
                 self._session_logged_in = False
                 return False
