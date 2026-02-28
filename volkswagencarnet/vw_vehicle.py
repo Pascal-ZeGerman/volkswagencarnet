@@ -1349,7 +1349,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_DAYS)
 
     @property
-    def oil_inspection_distance(self):
+    def oil_inspection_distance(self) -> int | None:
         """Return distance left for oil inspection."""
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_KM)
 
@@ -1397,7 +1397,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
     @property
-    def charging_state(self) -> bool:
+    def charging_state(self) -> str:
         """Return charging state."""
         charging_state = find_path(self.attrs, Paths.CHARGING_STATE)
         state_map = {
@@ -1688,7 +1688,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.BATTERY_SUPPORT)
 
     @property
-    def energy_flow(self):
+    def energy_flow(self) -> bool:
         # TODO untouched # pylint: disable=fixme
         """Return true if energy is flowing through charging port."""
         check = (
@@ -1814,7 +1814,7 @@ class Vehicle:
         return self.attrs.get("isMoving", False)
 
     @property
-    def vehicle_moving_last_updated(self) -> datetime:
+    def vehicle_moving_last_updated(self) -> datetime | str | None:
         """Return attribute last updated timestamp."""
         return self.position_last_updated
 
@@ -1824,14 +1824,14 @@ class Vehicle:
         return self.is_position_supported
 
     @property
-    def parking_time(self) -> datetime:
+    def parking_time(self) -> datetime | None:
         """Return timestamp of last parking time."""
         if is_valid_path(self.attrs, Paths.PARKING_TS):
             return find_path(self.attrs, Paths.PARKING_TS)
         return None
 
     @property
-    def parking_time_last_updated(self) -> datetime:
+    def parking_time_last_updated(self) -> datetime | str | None:
         """Return attribute last updated timestamp."""
         return self.position_last_updated
 
@@ -1842,7 +1842,7 @@ class Vehicle:
 
     # Vehicle fuel level and range
     @property
-    def electric_range(self) -> int:
+    def electric_range(self) -> int | None:
         """Return electric range."""
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC)
@@ -1864,7 +1864,7 @@ class Vehicle:
         )
 
     @property
-    def combustion_range(self) -> int:
+    def combustion_range(self) -> int | None:
         """Return combustion engine range."""
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_TOTAL)
@@ -1889,7 +1889,7 @@ class Vehicle:
         )
 
     @property
-    def fuel_range(self) -> int:
+    def fuel_range(self) -> int | None:
         """Return fuel engine range."""
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL)
@@ -1910,7 +1910,7 @@ class Vehicle:
         ) or is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_GASOLINE)
 
     @property
-    def gas_range(self) -> int:
+    def gas_range(self) -> int | None:
         """Return gas engine range."""
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG)
@@ -1927,7 +1927,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG)
 
     @property
-    def combined_range(self) -> int:
+    def combined_range(self) -> int | None:
         """Return combined range."""
         return find_path(self.attrs, Paths.MEASUREMENTS_RNG_TOTAL)
 
@@ -1946,7 +1946,7 @@ class Vehicle:
         return False
 
     @property
-    def battery_cruising_range(self) -> int:
+    def battery_cruising_range(self) -> int | None:
         """Return battery cruising range."""
         return find_path(self.attrs, Paths.BATTERY_RANGE_E)
 
@@ -1961,7 +1961,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.BATTERY_RANGE_E)
 
     @property
-    def fuel_level(self) -> int:
+    def fuel_level(self) -> int | None:
         """Return fuel level."""
         fuel_level_pct = None
         if (
@@ -1975,7 +1975,7 @@ class Vehicle:
         return fuel_level_pct
 
     @property
-    def fuel_level_last_updated(self) -> datetime:
+    def fuel_level_last_updated(self) -> datetime | str | None:
         """Return fuel level last updated."""
         fuel_level_lastupdated = ""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_TS):
@@ -1994,7 +1994,7 @@ class Vehicle:
         ) or is_valid_path(self.attrs, Paths.MEASUREMENTS_FUEL_LVL)
 
     @property
-    def gas_level(self) -> int:
+    def gas_level(self) -> int | None:
         """Return gas level."""
         gas_level_pct = None
         if (
@@ -2008,7 +2008,7 @@ class Vehicle:
         return gas_level_pct
 
     @property
-    def gas_level_last_updated(self) -> datetime:
+    def gas_level_last_updated(self) -> datetime | str | None:
         """Return gas level last updated."""
         gas_level_lastupdated = ""
         if (
@@ -2072,7 +2072,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
 
     @property
-    def climatisation_without_external_power(self):
+    def climatisation_without_external_power(self) -> bool | None:
         """Return state of climatisation from battery power."""
         return find_path(self.attrs, Paths.CLIMATISATION_WITHOUT_EXT_PWR)
 
@@ -2087,7 +2087,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_WITHOUT_EXT_PWR)
 
     @property
-    def auxiliary_air_conditioning(self):
+    def auxiliary_air_conditioning(self) -> bool | None:
         """Return state of auxiliary air conditioning."""
         return find_path(self.attrs, Paths.CLIMATISATION_AT_UNLOCK)
 
@@ -2102,7 +2102,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_AT_UNLOCK)
 
     @property
-    def automatic_window_heating(self):
+    def automatic_window_heating(self) -> bool | None:
         """Return state of automatic window heating."""
         return find_path(self.attrs, Paths.CLIMATISATION_WINDOW_HEATING)
 
@@ -2117,7 +2117,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_WINDOW_HEATING)
 
     @property
-    def zone_front_left(self):
+    def zone_front_left(self) -> bool | None:
         """Return state of zone front left."""
         return find_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_LEFT)
 
@@ -2132,7 +2132,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_LEFT)
 
     @property
-    def zone_front_right(self):
+    def zone_front_right(self) -> bool | None:
         """Return state of zone front left."""
         return find_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_RIGHT)
 
@@ -2251,7 +2251,7 @@ class Vehicle:
         return False
 
     @property
-    def auxiliary_climatisation_last_updated(self) -> datetime:
+    def auxiliary_climatisation_last_updated(self) -> datetime | str | None:
         """Return status of auxiliary climatisation last updated."""
         if is_valid_path(self.attrs, Paths.CLIMATISATION_AUX_TS):
             return find_path(self.attrs, Paths.CLIMATISATION_AUX_TS)
@@ -2287,7 +2287,7 @@ class Vehicle:
         return climatisation_state
 
     @property
-    def climatisation_state_last_updated(self) -> datetime:
+    def climatisation_state_last_updated(self) -> datetime | str | None:
         """Return state of climatisation last updated."""
         if is_valid_path(self.attrs, Paths.CLIMATISATION_AUX_TS):
             return find_path(self.attrs, Paths.CLIMATISATION_AUX_TS)
@@ -2460,7 +2460,7 @@ class Vehicle:
 
     # Windows
     @property
-    def windows_closed(self) -> bool:
+    def windows_closed(self) -> bool | None:
         """Return true if all supported windows are closed.
 
         :return:
@@ -2541,7 +2541,7 @@ class Vehicle:
             for d in doors
         )
 
-    def _get_trip_value(self, trip_type: str, key: str, default=None):
+    def _get_trip_value(self, trip_type: str, key: str, default: Any = None) -> Any:
         """Generic getter for trip statistics."""
         entry = self.attrs.get(trip_type, {}) or {}
         # Try direct key first (no logging)
@@ -2781,7 +2781,7 @@ class Vehicle:
 
     # Doors, hood and trunk
     @property
-    def hood_closed(self) -> bool:
+    def hood_closed(self) -> bool | None:
         return self._get_door_state("bonnet")
 
     @property
@@ -2820,7 +2820,7 @@ class Vehicle:
         return self._is_door_supported("frontRight")
 
     @property
-    def door_closed_left_back(self) -> bool:
+    def door_closed_left_back(self) -> bool | None:
         return self._get_door_state("rearLeft")
 
     @property
@@ -2833,7 +2833,7 @@ class Vehicle:
         return self._is_door_supported("rearLeft")
 
     @property
-    def door_closed_right_back(self) -> bool:
+    def door_closed_right_back(self) -> bool | None:
         return self._get_door_state("rearRight")
 
     @property
@@ -2846,7 +2846,7 @@ class Vehicle:
         return self._is_door_supported("rearRight")
 
     @property
-    def trunk_closed(self) -> bool:
+    def trunk_closed(self) -> bool | None:
         return self._get_door_state("trunk")
 
     @property
@@ -2860,22 +2860,22 @@ class Vehicle:
 
     # Departure timers
     @property
-    def departure_timer1(self):
+    def departure_timer1(self) -> bool:
         """Return timer #1 status."""
         return self.departure_timer_enabled(1)
 
     @property
-    def departure_timer2(self):
+    def departure_timer2(self) -> bool:
         """Return timer #2 status."""
         return self.departure_timer_enabled(2)
 
     @property
-    def departure_timer3(self):
+    def departure_timer3(self) -> bool:
         """Return timer #3 status."""
         return self.departure_timer_enabled(3)
 
     @property
-    def departure_timer1_last_updated(self) -> datetime:
+    def departure_timer1_last_updated(self) -> datetime | str | None:
         """Return last updated timestamp."""
         if is_valid_path(self.attrs, Paths.DEPARTURE_PROFILES_TS):
             return find_path(self.attrs, Paths.DEPARTURE_PROFILES_TS)
@@ -2886,12 +2886,12 @@ class Vehicle:
         return None
 
     @property
-    def departure_timer2_last_updated(self) -> datetime:
+    def departure_timer2_last_updated(self) -> datetime | str | None:
         """Return last updated timestamp."""
         return self.departure_timer1_last_updated
 
     @property
-    def departure_timer3_last_updated(self) -> datetime:
+    def departure_timer3_last_updated(self) -> datetime | str | None:
         """Return last updated timestamp."""
         return self.departure_timer1_last_updated
 
@@ -2912,7 +2912,10 @@ class Vehicle:
 
     def departure_timer_enabled(self, timer_id: str | int) -> bool:
         """Return if departure timer is enabled."""
-        return self.departure_timer(timer_id).get("enabled", False)
+        timer = self.departure_timer(timer_id)
+        if timer is None:
+            return False
+        return timer.get("enabled", False)
 
     def is_departure_timer_supported(self, timer_id: str | int) -> bool:
         """Return true if departure timer is supported."""
@@ -2921,6 +2924,8 @@ class Vehicle:
     def timer_attributes(self, timer_id: str | int) -> dict[str, Any]:
         """Return departure timer attributes."""
         timer = self.departure_timer(timer_id)
+        if timer is None:
+            return {}
         profile = self.departure_profile(timer.get("profileIDs", [0])[0])
         timer_type = None
         recurring_on = []
@@ -3044,12 +3049,12 @@ class Vehicle:
 
     # AC Departure timers
     @property
-    def ac_departure_timer1(self):
+    def ac_departure_timer1(self) -> bool:
         """Return ac timer #1 status."""
         return self.ac_departure_timer_enabled(1)
 
     @property
-    def ac_departure_timer2(self):
+    def ac_departure_timer2(self) -> bool:
         """Return ac timer #2 status."""
         return self.ac_departure_timer_enabled(2)
 
@@ -3075,7 +3080,10 @@ class Vehicle:
 
     def ac_departure_timer_enabled(self, timer_id: str | int) -> bool:
         """Return if departure timer is enabled."""
-        return self.ac_departure_timer(timer_id).get("enabled", False)
+        timer = self.ac_departure_timer(timer_id)
+        if timer is None:
+            return False
+        return timer.get("enabled", False)
 
     def is_ac_departure_timer_supported(self, timer_id: str | int) -> bool:
         """Return true if ac departure timer is supported."""
@@ -3093,6 +3101,8 @@ class Vehicle:
     def ac_timer_attributes(self, timer_id: str | int) -> dict[str, Any]:
         """Return ac departure timer attributes."""
         timer = self.ac_departure_timer(timer_id)
+        if timer is None:
+            return {}
         timer_type = None
         recurring_on = []
         start_time = None
@@ -3151,431 +3161,431 @@ class Vehicle:
 
     # Trip last data
     @property
-    def last_trip_average_speed(self):
+    def last_trip_average_speed(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property
-    def last_trip_average_speed_last_updated(self):
+    def last_trip_average_speed_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_speed_supported(self):
+    def is_last_trip_average_speed_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property
-    def last_trip_average_electric_engine_consumption(self):
+    def last_trip_average_electric_engine_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageElectricConsumption")
 
     @property
-    def last_trip_average_electric_engine_consumption_last_updated(self):
+    def last_trip_average_electric_engine_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_electric_engine_consumption_supported(self):
+    def is_last_trip_average_electric_engine_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageElectricConsumption")
 
     @property
-    def last_trip_average_fuel_consumption(self):
+    def last_trip_average_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageFuelConsumption")
 
     @property
-    def last_trip_average_fuel_consumption_last_updated(self):
+    def last_trip_average_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_fuel_consumption_supported(self):
+    def is_last_trip_average_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageFuelConsumption")
 
     @property
-    def last_trip_average_gas_consumption(self):
+    def last_trip_average_gas_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageGasConsumption")
 
     @property
-    def last_trip_average_gas_consumption_last_updated(self):
+    def last_trip_average_gas_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_gas_consumption_supported(self):
+    def is_last_trip_average_gas_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageGasConsumption")
 
     @property
-    def last_trip_average_auxillary_consumption(self):
+    def last_trip_average_auxillary_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageAuxConsumption")
 
     @property
-    def last_trip_average_auxillary_consumption_last_updated(self):
+    def last_trip_average_auxillary_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_auxillary_consumption_supported(self):
+    def is_last_trip_average_auxillary_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageAuxConsumption")
 
     @property
-    def last_trip_average_aux_consumer_consumption(self):
+    def last_trip_average_aux_consumer_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageAuxConsumerConsumption")
 
     @property
-    def last_trip_average_aux_consumer_consumption_last_updated(self):
+    def last_trip_average_aux_consumer_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_aux_consumer_consumption_supported(self):
+    def is_last_trip_average_aux_consumer_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_LAST, "averageAuxConsumerConsumption"
         )
 
     @property
-    def last_trip_duration(self):
+    def last_trip_duration(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "travelTime")
 
     @property
-    def last_trip_duration_last_updated(self):
+    def last_trip_duration_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_duration_supported(self):
+    def is_last_trip_duration_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "travelTime")
 
     @property
-    def last_trip_length(self):
+    def last_trip_length(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "mileage_km")
 
     @property
-    def last_trip_length_last_updated(self):
+    def last_trip_length_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_length_supported(self):
+    def is_last_trip_length_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "mileage_km")
 
     @property
-    def last_trip_average_recuperation(self):
+    def last_trip_average_recuperation(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "averageRecuperation")
 
     @property
-    def last_trip_average_recuperation_last_updated(self):
+    def last_trip_average_recuperation_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_average_recuperation_supported(self):
+    def is_last_trip_average_recuperation_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "averageRecuperation")
 
     @property
-    def last_trip_total_electric_consumption(self):
+    def last_trip_total_electric_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "totalElectricConsumption_kwh")
 
     @property
-    def last_trip_total_electric_consumption_last_updated(self):
+    def last_trip_total_electric_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_total_electric_consumption_supported(self):
+    def is_last_trip_total_electric_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_LAST, "totalElectricConsumption_kwh"
         )
 
     @property
-    def last_trip_total_fuel_consumption(self):
+    def last_trip_total_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "totalFuelConsumption_L")
 
     @property
-    def last_trip_total_fuel_consumption_last_updated(self):
+    def last_trip_total_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LAST, "tripEndTimestamp")
 
     @property
-    def is_last_trip_total_fuel_consumption_supported(self):
+    def is_last_trip_total_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LAST, "totalFuelConsumption_L")
 
     # Trip since last refuel data
     @property
-    def refuel_trip_average_speed(self):
+    def refuel_trip_average_speed(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageSpeed_kmph")
 
     @property
-    def refuel_trip_average_speed_last_updated(self):
+    def refuel_trip_average_speed_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_speed_supported(self):
+    def is_refuel_trip_average_speed_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "averageSpeed_kmph")
 
     @property
-    def refuel_trip_average_electric_engine_consumption(self):
+    def refuel_trip_average_electric_engine_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageElectricConsumption")
 
     @property
-    def refuel_trip_average_electric_engine_consumption_last_updated(self):
+    def refuel_trip_average_electric_engine_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_electric_engine_consumption_supported(self):
+    def is_refuel_trip_average_electric_engine_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_REFUEL, "averageElectricConsumption"
         )
 
     @property
-    def refuel_trip_average_fuel_consumption(self):
+    def refuel_trip_average_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageFuelConsumption")
 
     @property
-    def refuel_trip_average_fuel_consumption_last_updated(self):
+    def refuel_trip_average_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_fuel_consumption_supported(self):
+    def is_refuel_trip_average_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "averageFuelConsumption")
 
     @property
-    def refuel_trip_average_gas_consumption(self):
+    def refuel_trip_average_gas_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageGasConsumption")
 
     @property
-    def refuel_trip_average_gas_consumption_last_updated(self):
+    def refuel_trip_average_gas_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_gas_consumption_supported(self):
+    def is_refuel_trip_average_gas_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "averageGasConsumption")
 
     @property
-    def refuel_trip_average_auxillary_consumption(self):
+    def refuel_trip_average_auxillary_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageAuxConsumption")
 
     @property
-    def refuel_trip_average_auxillary_consumption_last_updated(self):
+    def refuel_trip_average_auxillary_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_auxillary_consumption_supported(self):
+    def is_refuel_trip_average_auxillary_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "averageAuxConsumption")
 
     @property
-    def refuel_trip_average_aux_consumer_consumption(self):
+    def refuel_trip_average_aux_consumer_consumption(self) -> Any:
         return self._get_trip_value(
             Services.TRIP_REFUEL, "averageAuxConsumerConsumption"
         )
 
     @property
-    def refuel_trip_average_aux_consumer_consumption_last_updated(self):
+    def refuel_trip_average_aux_consumer_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_aux_consumer_consumption_supported(self):
+    def is_refuel_trip_average_aux_consumer_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_REFUEL, "averageAuxConsumerConsumption"
         )
 
     @property
-    def refuel_trip_duration(self):
+    def refuel_trip_duration(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "travelTime")
 
     @property
-    def refuel_trip_duration_last_updated(self):
+    def refuel_trip_duration_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_duration_supported(self):
+    def is_refuel_trip_duration_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "travelTime")
 
     @property
-    def refuel_trip_length(self):
+    def refuel_trip_length(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "mileage_km")
 
     @property
-    def refuel_trip_length_last_updated(self):
+    def refuel_trip_length_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_length_supported(self):
+    def is_refuel_trip_length_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "mileage_km")
 
     @property
-    def refuel_trip_average_recuperation(self):
+    def refuel_trip_average_recuperation(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "averageRecuperation")
 
     @property
-    def refuel_trip_average_recuperation_last_updated(self):
+    def refuel_trip_average_recuperation_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_average_recuperation_supported(self):
+    def is_refuel_trip_average_recuperation_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "averageRecuperation")
 
     @property
-    def refuel_trip_total_electric_consumption(self):
+    def refuel_trip_total_electric_consumption(self) -> Any:
         return self._get_trip_value(
             Services.TRIP_REFUEL, "totalElectricConsumption_kwh"
         )
 
     @property
-    def refuel_trip_total_electric_consumption_last_updated(self):
+    def refuel_trip_total_electric_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_total_electric_consumption_supported(self):
+    def is_refuel_trip_total_electric_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_REFUEL, "totalElectricConsumption_kwh"
         )
 
     @property
-    def refuel_trip_total_fuel_consumption(self):
+    def refuel_trip_total_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "totalFuelConsumption_L")
 
     @property
-    def refuel_trip_total_fuel_consumption_last_updated(self):
+    def refuel_trip_total_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_REFUEL, "tripEndTimestamp")
 
     @property
-    def is_refuel_trip_total_fuel_consumption_supported(self):
+    def is_refuel_trip_total_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_REFUEL, "totalFuelConsumption_L")
 
     # Trip longterm data
     @property
-    def longterm_trip_average_speed(self):
+    def longterm_trip_average_speed(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "averageSpeed_kmph")
 
     @property
-    def longterm_trip_average_speed_last_updated(self):
+    def longterm_trip_average_speed_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_speed_supported(self):
+    def is_longterm_trip_average_speed_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "averageSpeed_kmph")
 
     @property
-    def longterm_trip_average_electric_engine_consumption(self):
+    def longterm_trip_average_electric_engine_consumption(self) -> Any:
         return self._get_trip_value(
             Services.TRIP_LONGTERM, "averageElectricConsumption"
         )
 
     @property
-    def longterm_trip_average_electric_engine_consumption_last_updated(self):
+    def longterm_trip_average_electric_engine_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_electric_engine_consumption_supported(self):
+    def is_longterm_trip_average_electric_engine_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_LONGTERM, "averageElectricConsumption"
         )
 
     @property
-    def longterm_trip_average_fuel_consumption(self):
+    def longterm_trip_average_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "averageFuelConsumption")
 
     @property
-    def longterm_trip_average_fuel_consumption_last_updated(self):
+    def longterm_trip_average_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_fuel_consumption_supported(self):
+    def is_longterm_trip_average_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "averageFuelConsumption")
 
     @property
-    def longterm_trip_average_gas_consumption(self):
+    def longterm_trip_average_gas_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "averageGasConsumption")
 
     @property
-    def longterm_trip_average_gas_consumption_last_updated(self):
+    def longterm_trip_average_gas_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_gas_consumption_supported(self):
+    def is_longterm_trip_average_gas_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "averageGasConsumption")
 
     @property
-    def longterm_trip_average_auxillary_consumption(self):
+    def longterm_trip_average_auxillary_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "averageAuxConsumption")
 
     @property
-    def longterm_trip_average_auxillary_consumption_last_updated(self):
+    def longterm_trip_average_auxillary_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_auxillary_consumption_supported(self):
+    def is_longterm_trip_average_auxillary_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "averageAuxConsumption")
 
     @property
-    def longterm_trip_average_aux_consumer_consumption(self):
+    def longterm_trip_average_aux_consumer_consumption(self) -> Any:
         return self._get_trip_value(
             Services.TRIP_LONGTERM, "averageAuxConsumerConsumption"
         )
 
     @property
-    def longterm_trip_average_aux_consumer_consumption_last_updated(self):
+    def longterm_trip_average_aux_consumer_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_aux_consumer_consumption_supported(self):
+    def is_longterm_trip_average_aux_consumer_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_LONGTERM, "averageAuxConsumerConsumption"
         )
 
     @property
-    def longterm_trip_duration(self):
+    def longterm_trip_duration(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "travelTime")
 
     @property
-    def longterm_trip_duration_last_updated(self):
+    def longterm_trip_duration_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_duration_supported(self):
+    def is_longterm_trip_duration_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "travelTime")
 
     @property
-    def longterm_trip_length(self):
+    def longterm_trip_length(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "mileage_km")
 
     @property
-    def longterm_trip_length_last_updated(self):
+    def longterm_trip_length_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_length_supported(self):
+    def is_longterm_trip_length_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "mileage_km")
 
     @property
-    def longterm_trip_average_recuperation(self):
+    def longterm_trip_average_recuperation(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "averageRecuperation")
 
     @property
-    def longterm_trip_average_recuperation_last_updated(self):
+    def longterm_trip_average_recuperation_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_average_recuperation_supported(self):
+    def is_longterm_trip_average_recuperation_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "averageRecuperation")
 
     @property
-    def longterm_trip_total_electric_consumption(self):
+    def longterm_trip_total_electric_consumption(self) -> Any:
         return self._get_trip_value(
             Services.TRIP_LONGTERM, "totalElectricConsumption_kwh"
         )
 
     @property
-    def longterm_trip_total_electric_consumption_last_updated(self):
+    def longterm_trip_total_electric_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_total_electric_consumption_supported(self):
+    def is_longterm_trip_total_electric_consumption_supported(self) -> bool:
         return self._is_trip_supported(
             Services.TRIP_LONGTERM, "totalElectricConsumption_kwh"
         )
 
     @property
-    def longterm_trip_total_fuel_consumption(self):
+    def longterm_trip_total_fuel_consumption(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "totalFuelConsumption_L")
 
     @property
-    def longterm_trip_total_fuel_consumption_last_updated(self):
+    def longterm_trip_total_fuel_consumption_last_updated(self) -> Any:
         return self._get_trip_value(Services.TRIP_LONGTERM, "tripEndTimestamp")
 
     @property
-    def is_longterm_trip_total_fuel_consumption_supported(self):
+    def is_longterm_trip_total_fuel_consumption_supported(self) -> bool:
         return self._is_trip_supported(Services.TRIP_LONGTERM, "totalFuelConsumption_L")
 
     @property
-    def honk_and_flash(self):
+    def honk_and_flash(self) -> Any:
         """Return state of automatic window heating."""
         return self._requests.get("honk_and_flash", {}).get("id", False)
 
@@ -3593,33 +3603,33 @@ class Vehicle:
 
     # Status of set data requests
     @property
-    def refresh_action_status(self):
+    def refresh_action_status(self) -> str | None:
         """Return latest status of data refresh request."""
         return self._requests.get("refresh", {}).get("status", "None")
 
     @property
-    def charger_action_status(self):
+    def charger_action_status(self) -> str | None:
         """Return latest status of charger request."""
         return self._requests.get("batterycharge", {}).get("status", "None")
 
     @property
-    def climater_action_status(self):
+    def climater_action_status(self) -> str | None:
         """Return latest status of climater request."""
         return self._requests.get("climatisation", {}).get("status", "None")
 
     @property
-    def lock_action_status(self):
+    def lock_action_status(self) -> str | None:
         """Return latest status of lock action request."""
         return self._requests.get("lock", {}).get("status", "None")
 
     @property
-    def honk_and_flash_action_status(self):
+    def honk_and_flash_action_status(self) -> str | None:
         """Return latest status of honk and flash request."""
         return self._requests.get("honk_and_flash", {}).get("status", "None")
 
     # Requests data
     @property
-    def refresh_data(self):
+    def refresh_data(self) -> Any:
         """Get state of data refresh."""
         return self._requests.get("refresh", {}).get("id", False)
 
@@ -3663,7 +3673,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_request_in_progress_supported(self):
+    def is_request_in_progress_supported(self) -> bool:
         """Request in progress is always supported."""
         return True
 
@@ -3706,28 +3716,28 @@ class Vehicle:
         return None
 
     @property
-    def is_request_results_supported(self):
+    def is_request_results_supported(self) -> bool:
         """Request results is supported if in progress is supported."""
         return self.is_request_in_progress_supported
 
     @property
-    def requests_results_last_updated(self):
+    def requests_results_last_updated(self) -> None:
         """Return last updated timestamp for attribute."""
         return None
 
     # Helper functions #
-    def __str__(self):
+    def __str__(self) -> str:
         """Return the vin."""
         return self.vin
 
     @property
-    def json(self):
+    def json(self) -> str:
         """Return vehicle data in JSON format.
 
         :return:
         """
 
-        def serialize(obj):
+        def serialize(obj: Any) -> Any:
             """Convert datetime instances back to JSON compatible format.
 
             :param obj:
@@ -3739,14 +3749,14 @@ class Vehicle:
             OrderedDict(sorted(self.attrs.items())), indent=4, default=serialize
         )
 
-    def is_primary_drive_electric(self):
+    def is_primary_drive_electric(self) -> bool:
         """Check if primary engine is electric."""
         return (
             find_path(self.attrs, Paths.MEASUREMENTS_FUEL_PRIMARY_ENGINE)
             == ENGINE_TYPE_ELECTRIC
         )
 
-    def is_secondary_drive_electric(self):
+    def is_secondary_drive_electric(self) -> bool:
         """Check if secondary engine is electric."""
         return (
             is_valid_path(self.attrs, Paths.MEASUREMENTS_FUEL_SECONDARY_ENGINE)
@@ -3754,7 +3764,7 @@ class Vehicle:
             == ENGINE_TYPE_ELECTRIC
         )
 
-    def is_primary_drive_combustion(self):
+    def is_primary_drive_combustion(self) -> bool:
         """Check if primary engine is combustion."""
         engine_type = ""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_TYPE):
@@ -3765,7 +3775,7 @@ class Vehicle:
 
         return engine_type in ENGINE_TYPE_COMBUSTION
 
-    def is_secondary_drive_combustion(self):
+    def is_secondary_drive_combustion(self) -> bool:
         """Check if secondary engine is combustion."""
         engine_type = ""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_SECONDARY_TYPE):
@@ -3778,7 +3788,7 @@ class Vehicle:
 
         return engine_type in ENGINE_TYPE_COMBUSTION
 
-    def is_primary_drive_gas(self):
+    def is_primary_drive_gas(self) -> bool:
         """Check if primary engine is gas."""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE):
             return find_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE) == ENGINE_TYPE_GAS
@@ -3790,7 +3800,7 @@ class Vehicle:
         return False
 
     @property
-    def is_car_type_electric(self):
+    def is_car_type_electric(self) -> bool:
         """Check if car type is electric."""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE):
             return (
@@ -3805,7 +3815,7 @@ class Vehicle:
         return False
 
     @property
-    def is_car_type_diesel(self):
+    def is_car_type_diesel(self) -> bool:
         """Check if car type is diesel."""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE):
             return (
@@ -3819,7 +3829,7 @@ class Vehicle:
         return False
 
     @property
-    def is_car_type_gasoline(self):
+    def is_car_type_gasoline(self) -> bool:
         """Check if car type is gasoline."""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE):
             return (
@@ -3834,7 +3844,7 @@ class Vehicle:
         return False
 
     @property
-    def is_car_type_hybrid(self):
+    def is_car_type_hybrid(self) -> bool:
         """Check if car type is hybrid."""
         if is_valid_path(self.attrs, Paths.FUEL_STATUS_CAR_TYPE):
             return (
@@ -3848,7 +3858,7 @@ class Vehicle:
         return False
 
     @property
-    def has_combustion_engine(self):
+    def has_combustion_engine(self) -> bool:
         """Return true if car has a combustion engine."""
         return (
             self.is_primary_drive_combustion() or self.is_secondary_drive_combustion()
@@ -3865,7 +3875,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_vehicles_status_supported(self):
+    def is_api_vehicles_status_supported(self) -> bool:
         """Vehicles API status is always supported."""
         return True
 
@@ -3882,7 +3892,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_capabilities_status_supported(self):
+    def is_api_capabilities_status_supported(self) -> bool:
         """Capabilities API status is always supported."""
         return True
 
@@ -3897,7 +3907,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_trips_status_supported(self):
+    def is_api_trips_status_supported(self) -> bool:
         """Check if Trips API status is supported."""
         if self._services.get(Services.TRIP_STATISTICS, {}).get("active", False):
             return True
@@ -3916,7 +3926,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_selectivestatus_status_supported(self):
+    def is_api_selectivestatus_status_supported(self) -> bool:
         """Selectivestatus API status is always supported."""
         return True
 
@@ -3933,7 +3943,7 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_parkingposition_status_supported(self):
+    def is_api_parkingposition_status_supported(self) -> bool:
         """Check if Parkingposition API status is supported."""
         if self._services.get(Services.PARKING_POSITION, {}).get("active", False):
             return True
@@ -3950,12 +3960,12 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_api_token_status_supported(self):
+    def is_api_token_status_supported(self) -> bool:
         """Parkingposition API status is always supported."""
         return True
 
     @property
-    def last_data_refresh(self) -> datetime:
+    def last_data_refresh(self) -> datetime | None:
         """Check when services were refreshed successfully for the last time."""
         last_data_refresh_path = "refreshTimestamp"
         if is_valid_path(self.attrs, last_data_refresh_path):
@@ -3968,6 +3978,6 @@ class Vehicle:
         return datetime.now(UTC)
 
     @property
-    def is_last_data_refresh_supported(self):
+    def is_last_data_refresh_supported(self) -> bool:
         """Last data refresh is always supported."""
         return True

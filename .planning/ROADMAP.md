@@ -127,7 +127,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 12.1. Fix NA Vehicle Session TSP (INSERTED) | v1.0 | 1/1 | Complete | 2026-02-27 |
 | 13. Display of Real Values + Manual UAT | v1.0 | 1/1 | Complete | 2026-02-27 |
 | 15. NA Error Handling | 2/2 | Complete    | 2026-02-28 | - |
-| 16. Type Hints | 1/3 | In Progress|  | - |
+| 16. Type Hints | 2/3 | In Progress|  | - |
 | 17. Logging | v1.1 | 0/? | Not started | - |
 | 18. Documentation | v1.1 | 0/? | Not started | - |
 | 19. Security + Code Cleanup | v1.1 | 0/? | Not started | - |
