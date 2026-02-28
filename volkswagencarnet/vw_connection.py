@@ -15,7 +15,7 @@ import re
 import secrets
 import time
 from urllib.parse import parse_qs, urljoin, urlparse
-from typing import Dict, Optional
+from typing import Any
 
 from aiohttp import ClientTimeout, client_exceptions
 from aiohttp.hdrs import METH_GET, METH_POST, METH_PUT
@@ -80,13 +80,13 @@ class Connection:
     # Init connection class
     def __init__(
         self,
-        session,
-        username,
-        password,
-        country=COUNTRY,
-        interval=timedelta(minutes=5),
+        session: Any,
+        username: str,
+        password: str,
+        country: str = COUNTRY,
+        interval: timedelta = timedelta(minutes=5),
         xclient_id: str | None = None,
-        on_xclient_id=None,
+        on_xclient_id: Any | None = None,
         spin: str | None = None,
     ) -> None:
         """Initialize."""
@@ -98,7 +98,7 @@ class Connection:
         self._session_first_update = False
         self._session_auth_username = username
         self._session_auth_password = password
-        self._session_tokens = {}
+        self._session_tokens: dict[str, Any] = {}
         self._session_country = country.upper()
         self._spin = spin
 
@@ -112,11 +112,13 @@ class Connection:
         # Set region-specific client ID for OAuth
         self._client_id = self._session_region_config.get("client_id", CLIENT_ID)
 
-        self._vehicles = []
+        self._vehicles: list[Vehicle] = []
 
         self._jarCookie = None
 
-        self._service_status = {}
+        self._service_status: dict[str, Any] = {}
+        self._pkce_verifier: str | None = None
+        self._pkce_challenge: str | None = None
         self._is_throttled: bool = False
         self.discovery_config: dict = {}
 
@@ -130,7 +132,7 @@ class Connection:
         # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
         self._na_token_endpoint: str | None = None
 
-    def _clear_cookies(self):
+    def _clear_cookies(self) -> None:
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
 
     def _generate_pkce_verifier(self) -> str:
@@ -303,7 +305,7 @@ class Connection:
         return await self._discover_market_config()
 
     # API Login
-    async def doLogin(self, tries: int = 1):
+    async def doLogin(self, tries: int = 1) -> bool:
         """Login method, clean login."""
         async with self._login_lock:
             _LOGGER.debug("Initiating new login")
@@ -385,7 +387,7 @@ class Connection:
             await self.update()
             return True
 
-    async def get_openid_config(self) -> Dict[str, str]:
+    async def get_openid_config(self) -> dict[str, str]:
         """Get OpenID config."""
         # NA: use hardcoded endpoints from region config (app does not fetch well-known)
         auth_ep = self._session_region_config.get("auth_endpoint")
@@ -494,14 +496,14 @@ class Connection:
             _LOGGER.warning("Error during fetching authorization page: %s", str(e))
             raise
 
-    def extract_state_token(self, page_content: str) -> Optional[str]:
+    def extract_state_token(self, page_content: str) -> str | None:
         """Extract state token from a page."""
         soup = BeautifulSoup(page_content, "html.parser")
         state_input = soup.select_one('input[name="state"]')
         if not state_input or not state_input.get("value"):
             _LOGGER.debug("State token not found.")
             return None
-        return state_input["value"]
+        return str(state_input["value"])
 
     def _extract_identitykit_form(self, page_html: str) -> dict:
         """Extract hidden fields from a VW IdentiKit login form.
@@ -517,9 +519,9 @@ class Connection:
         form = soup.select_one('form[id="emailPasswordForm"]')
         if form:
             # Server-rendered email step
-            def _val(selector):
+            def _val(selector: str) -> str | None:
                 el = form.select_one(selector)
-                return el["value"] if el and el.get("value") else None
+                return str(el["value"]) if el and el.get("value") else None
 
             return {
                 "csrf": _val('input[name="_csrf"]'),
@@ -565,7 +567,7 @@ class Connection:
         }
 
     async def post_form(
-        self, session, url: str, headers: dict, form_data: dict, redirect: bool = True
+        self, session: Any, url: str, headers: dict[str, str], form_data: dict[str, Any], redirect: bool = True
     ) -> str:
         """Post a form and check for success."""
         req = await session.post(
@@ -610,12 +612,12 @@ class Connection:
         # Normal success path
         return await req.text()
 
-    async def handle_login_with_password(self, session, url, auth_headers, form_data):
+    async def handle_login_with_password(self, session: Any, url: str, auth_headers: dict[str, str], form_data: dict[str, Any]) -> str:
         """Handle login with email and password."""
         return await self.post_form(session, url, auth_headers, form_data, False)
 
     async def follow_redirects(
-        self, session, pw_url: str, redirect_location: str
+        self, session: Any, pw_url: str, redirect_location: str
     ) -> str:
         """Handle redirects."""
         ref = urljoin(pw_url, redirect_location)
@@ -819,7 +821,7 @@ class Connection:
 
     async def _exchange_code_for_tokens(
         self, auth_code: str, token_endpoint: str
-    ) -> dict:
+    ) -> Any:
         """Exchange authorization code for access tokens.
 
         Args:
@@ -1328,7 +1330,7 @@ class Connection:
 
         vehicle_token: str | None = None
 
-        def _post_vehicle_session(spin_hash: str | None) -> "asyncio.coroutine":
+        def _post_vehicle_session(spin_hash: str | None) -> Any:
             """Helper returning the coroutine for a vehicle session POST."""
             body = {"idToken": idk_id_token, "tsp": tsp_value, "spinHash": spin_hash}
             auth_headers = {
@@ -1905,7 +1907,7 @@ class Connection:
             self._session_logged_in = False
             return False
 
-    async def _handle_action_result(self, response_raw):
+    async def _handle_action_result(self, response_raw: Any) -> Any:
         response = await response_raw.json(loads=json_loads)
         if not response:
             raise APIError("Invalid or no response from action endpoint")
@@ -1915,12 +1917,12 @@ class Connection:
         _LOGGER.debug("Request returned with request id: %s", request_id)
         return {"id": str(request_id)}
 
-    async def terminate(self):
+    async def terminate(self) -> None:
         """Log out from connect services."""
         _LOGGER.info("Initiating logout")
         await self.logout()
 
-    async def logout(self):
+    async def logout(self) -> None:
         """Logout, revoke tokens."""
         self._session_headers.pop("Authorization", None)
 
@@ -1934,8 +1936,8 @@ class Connection:
                 await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
 
     # HTTP methods to API
-    async def _request(self, method, url, return_raw=False, _retry_401: bool = False,
-                       _no_retry: bool = False, **kwargs):
+    async def _request(self, method: str, url: str, return_raw: bool = False, _retry_401: bool = False,
+                       _no_retry: bool = False, **kwargs: Any) -> Any:
         """Perform a query to the VW-Group API with retry on 429 and transient errors."""
         _LOGGER.debug('HTTP %s "%s"', method, url)
         if kwargs.get("json", None):
@@ -2065,7 +2067,7 @@ class Connection:
                 await self.update_service_status(url, 1000)
                 raise error from None
 
-    async def get(self, url, vin="", tries=0):
+    async def get(self, url: str, vin: str = "", tries: int = 0) -> Any:
         """Perform a get query."""
         try:
             return await self._request(METH_GET, url)
@@ -2095,7 +2097,7 @@ class Connection:
                 _LOGGER.error("Got unhandled error from server: %s", error.status)
             return {"status_code": error.status}
 
-    async def post(self, url, vin="", tries=0, return_raw=False, **data):
+    async def post(self, url: str, vin: str = "", tries: int = 0, return_raw: bool = False, **data: Any) -> Any:
         """Perform a post query."""
         if data:
             return await self._request(
@@ -2103,14 +2105,14 @@ class Connection:
             )
         return await self._request(METH_POST, url, return_raw=return_raw)
 
-    async def put(self, url, vin="", tries=0, return_raw=False, **data):
+    async def put(self, url: str, vin: str = "", tries: int = 0, return_raw: bool = False, **data: Any) -> Any:
         """Perform a put query."""
         if data:
             return await self._request(METH_PUT, url, return_raw=return_raw, **data)
         return await self._request(METH_PUT, url, return_raw=return_raw)
 
     # Update data for all Vehicles
-    async def update(self):
+    async def update(self) -> bool:
         """Update status."""
         if not self.logged_in:
             if not await self._login():
@@ -2136,7 +2138,7 @@ class Connection:
             _LOGGER.warning("Could not update information: %s", error)
         return False
 
-    async def getPendingRequests(self, vin):
+    async def getPendingRequests(self, vin: str) -> Any:
         """Get status information for pending requests."""
         if not await self.validate_tokens():
             return False
@@ -2155,7 +2157,7 @@ class Connection:
             )
         return False
 
-    async def getOperationList(self, vin):
+    async def getOperationList(self, vin: str) -> Any:
         """Collect operationlist for VIN, supported/licensed functions."""
         if not await self.validate_tokens():
             return False
@@ -2179,7 +2181,7 @@ class Connection:
             data = {"error": "unknown"}
         return data
 
-    async def getSelectiveStatus(self, vin, services):
+    async def getSelectiveStatus(self, vin: str, services: list[str]) -> Any:
         """Get status information for specified services."""
         if not await self.validate_tokens():
             return False
@@ -2204,7 +2206,7 @@ class Connection:
             _LOGGER.warning("Could not fetch selectivestatus, error: %s", error)
         return False
 
-    async def getVehicleData(self, vin):
+    async def getVehicleData(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
         if not await self.validate_tokens():
             return False
@@ -2221,7 +2223,7 @@ class Connection:
             _LOGGER.warning("Could not fetch vehicle data, error: %s", error)
         return False
 
-    async def getParkingPosition(self, vin):
+    async def getParkingPosition(self, vin: str) -> Any:
         """Get information about the parking position."""
         if not await self.validate_tokens():
             return False
@@ -2251,7 +2253,7 @@ class Connection:
             _LOGGER.warning("Could not fetch parkingposition, error: %s", error)
         return False
 
-    async def getTripLast(self, vin):
+    async def getTripLast(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
         if not await self.validate_tokens():
             return False
@@ -2273,7 +2275,7 @@ class Connection:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
         return False
 
-    async def getTripRefuel(self, vin):
+    async def getTripRefuel(self, vin: str) -> Any:
         """Get information about the trip since last refuel"""
         if not await self.validate_tokens():
             return False
@@ -2295,7 +2297,7 @@ class Connection:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
         return False
 
-    async def getTripLongterm(self, vin):
+    async def getTripLongterm(self, vin: str) -> Any:
         """Get information about the trip last longterm"""
         if not await self.validate_tokens():
             return False
@@ -2317,7 +2319,7 @@ class Connection:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
         return False
 
-    async def wakeUpVehicle(self, vin):
+    async def wakeUpVehicle(self, vin: str) -> Any:
         """Wake up vehicle to send updated data to VW Backend."""
         if not await self.validate_tokens():
             return False
@@ -2332,7 +2334,7 @@ class Connection:
             _LOGGER.warning("Could not refresh the data, error: %s", error)
         return False
 
-    async def get_request_status(self, vin, requestId, actionId=""):
+    async def get_request_status(self, vin: str, requestId: str, actionId: str = "") -> Any:
         """Return status of a request ID for a given section ID."""
         if self.logged_in is False:
             if not await self.doLogin():
@@ -2367,14 +2369,14 @@ class Connection:
             elif result == "fail_ignition_on":
                 status = "Failed because ignition is on"
             else:
-                status = result
+                status = str(result) if result is not None else "Unknown"
         except Exception as error:
             _LOGGER.warning("Failure during get request status: %s", error)
             raise RequestError(f"Failure during get request status: {error}") from error
         else:
             return status
 
-    async def check_spin_state(self):
+    async def check_spin_state(self) -> bool:
         """Determine SPIN state to prevent lockout due to wrong SPIN."""
         result = await self.get(f"{self._base_api}/vehicle/v1/spin/state")
         remainingTries = result.get("remainingTries", None)
@@ -2390,7 +2392,7 @@ class Connection:
 
         return True
 
-    async def setClimater(self, vin, data, action):
+    async def setClimater(self, vin: str, data: dict[str, Any], action: str) -> Any:
         """Execute climatisation actions."""
         action = "start" if action else "stop"
         try:
@@ -2403,7 +2405,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setClimater: {str(e)}") from e
 
-    async def setClimaterSettings(self, vin, data):
+    async def setClimaterSettings(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute climatisation settings."""
         try:
             response_raw = await self.put(
@@ -2415,7 +2417,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setClimaterSettings: {str(e)}") from e
 
-    async def setAuxiliary(self, vin, data, action):
+    async def setAuxiliary(self, vin: str, data: dict[str, Any], action: str) -> Any:
         """Execute auxiliary climatisation actions."""
         action = "start" if action else "stop"
         try:
@@ -2428,7 +2430,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setAuxiliary: {str(e)}") from e
 
-    async def setWindowHeater(self, vin, action):
+    async def setWindowHeater(self, vin: str, action: str) -> Any:
         """Execute window heating actions."""
         action = "start" if action else "stop"
         try:
@@ -2441,7 +2443,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setWindowHeater: {str(e)}") from e
 
-    async def setCharging(self, vin, action):
+    async def setCharging(self, vin: str, action: str) -> Any:
         """Execute charging actions."""
         action = "start" if action else "stop"
         try:
@@ -2454,7 +2456,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setCharging: {str(e)}") from e
 
-    async def setChargingSettings(self, vin, data):
+    async def setChargingSettings(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute charging actions."""
         try:
             response_raw = await self.put(
@@ -2466,7 +2468,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setChargingSettings: {str(e)}") from e
 
-    async def setChargingCareModeSettings(self, vin, data):
+    async def setChargingCareModeSettings(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute battery care mode actions."""
         try:
             response_raw = await self.put(
@@ -2480,7 +2482,7 @@ class Connection:
                 f"Unknown error during setChargingCareModeSettings: {str(e)}"
             ) from e
 
-    async def setReadinessBatterySupport(self, vin, data):
+    async def setReadinessBatterySupport(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute readiness battery support actions."""
         try:
             response_raw = await self.put(
@@ -2494,7 +2496,7 @@ class Connection:
                 f"Unknown error during setReadinessBatterySupport: {str(e)}"
             ) from e
 
-    async def setDepartureProfiles(self, vin, data):
+    async def setDepartureProfiles(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute departure timers actions."""
         try:
             response_raw = await self.put(
@@ -2508,7 +2510,7 @@ class Connection:
                 f"Unknown error during setDepartureProfiles: {str(e)}"
             ) from e
 
-    async def setClimatisationTimers(self, vin, data):
+    async def setClimatisationTimers(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute climatisation timers actions."""
         try:
             response_raw = await self.put(
@@ -2522,7 +2524,7 @@ class Connection:
                 f"Unknown error during setClimatisationTimers: {str(e)}"
             ) from e
 
-    async def setAuxiliaryHeatingTimers(self, vin, data):
+    async def setAuxiliaryHeatingTimers(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute auxiliary heating timers actions."""
         try:
             response_raw = await self.put(
@@ -2536,7 +2538,7 @@ class Connection:
                 f"Unknown error during setAuxiliaryHeatingTimers: {str(e)}"
             ) from e
 
-    async def setDepartureTimers(self, vin, data):
+    async def setDepartureTimers(self, vin: str, data: dict[str, Any]) -> Any:
         """Execute departure timers actions."""
         try:
             response_raw = await self.put(
@@ -2548,7 +2550,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setDepartureTimers: {str(e)}") from e
 
-    async def setLock(self, vin, lock, spin):
+    async def setLock(self, vin: str, lock: str, spin: str) -> Any:
         """Remote lock and unlock actions."""
         await self.check_spin_state()
         action = "lock" if lock else "unlock"
@@ -2562,7 +2564,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setLock: {str(e)}") from e
 
-    async def setHonkAndFlash(self, vin, position):
+    async def setHonkAndFlash(self, vin: str, position: dict[str, Any]) -> Any:
         """Remote Honk and Flash actions."""
         await self.check_spin_state()
         try:
@@ -2702,7 +2704,7 @@ class Connection:
                 return False
         return True
 
-    async def refresh_tokens(self):
+    async def refresh_tokens(self) -> bool:
         """Refresh tokens."""
         try:
             tHeaders = {
@@ -2750,7 +2752,7 @@ class Connection:
         else:
             return True
 
-    async def update_service_status(self, url, response_code):
+    async def update_service_status(self, url: str, response_code: int) -> None:
         """Update service status."""
         if response_code in [200, 204, 207]:
             status = "Up"
@@ -2780,19 +2782,19 @@ class Connection:
         else:
             _LOGGER.debug('Unhandled API URL: "%s"', url)
 
-    async def get_service_status(self):
+    async def get_service_status(self) -> dict[str, Any]:
         """Return list of service statuses."""
         _LOGGER.debug("Getting API status updates")
         return self._service_status
 
     # Class helpers #
     @property
-    def vehicles(self):
+    def vehicles(self) -> list[Vehicle]:
         """Return list of Vehicle objects."""
         return self._vehicles
 
     @property
-    def logged_in(self):
+    def logged_in(self) -> bool:
         """Return cached logged in state.
 
         Not actually checking anything.
@@ -2819,7 +2821,7 @@ class Connection:
         """
         return self._is_throttled
 
-    def vehicle(self, vin):
+    def vehicle(self, vin: str) -> Vehicle | None:
         """Return vehicle object for given vin."""
         return next(
             (
@@ -2830,7 +2832,7 @@ class Connection:
             None,
         )
 
-    def hash_spin(self, challenge, spin):
+    def hash_spin(self, challenge: str, spin: str) -> str:
         """Compute SPIN hash for NA vehicle session authentication.
 
         Algorithm confirmed from APK decompilation (f90/y0.java RemoteStartUseCase):
