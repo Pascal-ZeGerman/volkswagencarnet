@@ -2827,7 +2827,7 @@ class Connection:
             (
                 vehicle
                 for vehicle in self.vehicles
-                if vehicle.unique_id.lower() == vin.lower()
+                if vehicle.unique_id is not None and vehicle.unique_id.lower() == vin.lower()
             ),
             None,
         )
