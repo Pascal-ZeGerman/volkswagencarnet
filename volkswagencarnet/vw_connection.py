@@ -54,6 +54,7 @@ from .vw_utilities import json_loads
 from .vw_vehicle import Vehicle
 
 MAX_RETRIES_ON_RATE_LIMIT = 3
+RVS_MAX_RETRIES = 2  # Max retry attempts for transient 5xx on RVS endpoints
 
 VW_DOMAIN_ALLOWLIST = (
     ".vwgroup.io",       # identity.na.vwgroup.io, identity.vwgroup.io
@@ -1574,36 +1575,52 @@ class Connection:
         location_data: dict | None = None
         location_url = f"{base_api}/rvs/v1/location/vehicle/{vehicle_id}"
         try:
-            loc_resp = await self._session.get(
-                url=location_url,
-                headers=rvs_headers,
-                timeout=ClientTimeout(total=TIMEOUT.seconds),
-                allow_redirects=False,
-            )
-            if loc_resp.status == 401:
-                _LOGGER.debug("NA RVS location: 401 — refreshing vehicle session and retrying")
-                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
-                vehicle_token = await self._create_na_vehicle_session(vin)
-                if vehicle_token:
-                    rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
-                    loc_resp = await self._session.get(
-                        url=location_url,
-                        headers=rvs_headers,
-                        timeout=ClientTimeout(total=TIMEOUT.seconds),
-                        allow_redirects=False,
-                    )
-            if loc_resp.status == 200:
-                location_data = await loc_resp.json()
-                # Unwrap {"data": {...}} envelope if present
-                if isinstance(location_data, dict) and "data" in location_data:
-                    location_data = location_data["data"]
-                _LOGGER.debug("NA RVS location response: %s", location_data)
-            else:
-                body_preview = await loc_resp.text()
-                _LOGGER.warning(
-                    "NA RVS location fetch failed for %s: HTTP %d — %s",
-                    vin, loc_resp.status, body_preview[:200],
+            for _rvs_attempt in range(RVS_MAX_RETRIES + 1):
+                loc_resp = await self._session.get(
+                    url=location_url,
+                    headers=rvs_headers,
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                    allow_redirects=False,
                 )
+                if loc_resp.status == 401:
+                    _LOGGER.debug("NA RVS location: 401 — refreshing vehicle session and retrying")
+                    self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                    vehicle_token = await self._create_na_vehicle_session(vin)
+                    if vehicle_token:
+                        rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
+                        loc_resp = await self._session.get(
+                            url=location_url,
+                            headers=rvs_headers,
+                            timeout=ClientTimeout(total=TIMEOUT.seconds),
+                            allow_redirects=False,
+                        )
+                if loc_resp.status == 200:
+                    location_data = await loc_resp.json()
+                    # Unwrap {"data": {...}} envelope if present
+                    if isinstance(location_data, dict) and "data" in location_data:
+                        location_data = location_data["data"]
+                    _LOGGER.debug("NA RVS location response: %s", location_data)
+                    break  # success — exit retry loop
+                elif loc_resp.status >= 500:
+                    body_preview = await loc_resp.text()
+                    if _rvs_attempt < RVS_MAX_RETRIES:
+                        _LOGGER.warning(
+                            "NA RVS location: transient %d for %s (attempt %d/%d), retrying",
+                            loc_resp.status, vin, _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
+                        )
+                        await asyncio.sleep(1.0)
+                        continue  # retry
+                    _LOGGER.warning(
+                        "NA RVS location fetch failed for %s: HTTP %d — %s",
+                        vin, loc_resp.status, body_preview[:200],
+                    )
+                else:
+                    body_preview = await loc_resp.text()
+                    _LOGGER.warning(
+                        "NA RVS location fetch failed for %s: HTTP %d — %s",
+                        vin, loc_resp.status, body_preview[:200],
+                    )
+                    break  # non-5xx non-200 — do not retry
         except Exception as exc:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("NA RVS location fetch exception for %s: %s", vin, exc)
 
@@ -1611,36 +1628,52 @@ class Connection:
         status_data: dict | None = None
         status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
         try:
-            st_resp = await self._session.get(
-                url=status_url,
-                headers=rvs_headers,
-                timeout=ClientTimeout(total=TIMEOUT.seconds),
-                allow_redirects=False,
-            )
-            if st_resp.status == 401:
-                _LOGGER.debug("NA RVS status: 401 — refreshing vehicle session and retrying")
-                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
-                vehicle_token = await self._create_na_vehicle_session(vin)
-                if vehicle_token:
-                    rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
-                    st_resp = await self._session.get(
-                        url=status_url,
-                        headers=rvs_headers,
-                        timeout=ClientTimeout(total=TIMEOUT.seconds),
-                        allow_redirects=False,
-                    )
-            if st_resp.status == 200:
-                status_data = await st_resp.json()
-                # Unwrap {"data": {...}} envelope if present
-                if isinstance(status_data, dict) and "data" in status_data:
-                    status_data = status_data["data"]
-                _LOGGER.debug("NA RVS status response (unwrapped): %s", status_data)
-            else:
-                body_preview = await st_resp.text()
-                _LOGGER.warning(
-                    "NA RVS status fetch failed for %s: HTTP %d — %s",
-                    vin, st_resp.status, body_preview[:200],
+            for _rvs_attempt in range(RVS_MAX_RETRIES + 1):
+                st_resp = await self._session.get(
+                    url=status_url,
+                    headers=rvs_headers,
+                    timeout=ClientTimeout(total=TIMEOUT.seconds),
+                    allow_redirects=False,
                 )
+                if st_resp.status == 401:
+                    _LOGGER.debug("NA RVS status: 401 — refreshing vehicle session and retrying")
+                    self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                    vehicle_token = await self._create_na_vehicle_session(vin)
+                    if vehicle_token:
+                        rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
+                        st_resp = await self._session.get(
+                            url=status_url,
+                            headers=rvs_headers,
+                            timeout=ClientTimeout(total=TIMEOUT.seconds),
+                            allow_redirects=False,
+                        )
+                if st_resp.status == 200:
+                    status_data = await st_resp.json()
+                    # Unwrap {"data": {...}} envelope if present
+                    if isinstance(status_data, dict) and "data" in status_data:
+                        status_data = status_data["data"]
+                    _LOGGER.debug("NA RVS status response (unwrapped): %s", status_data)
+                    break  # success — exit retry loop
+                elif st_resp.status >= 500:
+                    body_preview = await st_resp.text()
+                    if _rvs_attempt < RVS_MAX_RETRIES:
+                        _LOGGER.warning(
+                            "NA RVS status: transient %d for %s (attempt %d/%d), retrying",
+                            st_resp.status, vin, _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
+                        )
+                        await asyncio.sleep(1.0)
+                        continue  # retry
+                    _LOGGER.warning(
+                        "NA RVS status fetch failed for %s: HTTP %d — %s",
+                        vin, st_resp.status, body_preview[:200],
+                    )
+                else:
+                    body_preview = await st_resp.text()
+                    _LOGGER.warning(
+                        "NA RVS status fetch failed for %s: HTTP %d — %s",
+                        vin, st_resp.status, body_preview[:200],
+                    )
+                    break  # non-5xx non-200 — do not retry
         except Exception as exc:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("NA RVS status fetch exception for %s: %s", vin, exc)
 

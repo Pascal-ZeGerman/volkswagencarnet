@@ -1,42 +1,42 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.1
+milestone_name: Phases
 status: unknown
-last_updated: "2026-02-27T17:21:54.463Z"
+last_updated: "2026-02-28T01:22:06.464Z"
 progress:
-  total_phases: 14
-  completed_phases: 14
-  total_plans: 23
-  completed_plans: 23
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-25)
+See: .planning/PROJECT.md (updated 2026-02-27)
 
-**Core value:** NA users can authenticate with VW CarNet and retrieve vehicle data for homelab integration without breaking existing EMEA functionality.
-**Current focus:** Milestone v1.5 — Full API Values (Phase 11 complete — NA vehicle session + RVS data fetch implemented; Phase 12 E2E validation ready)
+**Core value:** NA users can authenticate with VW CarNet and retrieve real vehicle data (GPS + lock status) for homelab integration without breaking existing EMEA functionality.
+**Current focus:** Milestone v1.1 — Make Production Ready (Phases 15-20)
 
 ## Current Position
 
-Phase: 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state (complete)
-Plan: 1 of 1 complete
-Status: Phase 13 Plan 01 complete — Demo script + UAT milestone evidence; 21 e2e passed, 156 unit passed, live GPS + lock confirmed
-Last activity: 2026-02-27 - Completed Phase 13 Plan 01: Demo script + UAT results (lat=40.677629, lng=-73.968527, door_locked=True confirmed from live vehicle)
+Phase: 15-na-error-handling (in progress)
+Plan: 1 of ? — 15-01 complete
+Status: 15-01 complete — NA exception propagation implemented
+Last activity: 2026-02-27 - Phase 15 Plan 01 complete (2 tasks, 156 tests pass)
 
-Progress: [██████████] 100%
+Progress: [#         ] 5%
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 10
+**Velocity (v1.0 history):**
+- Total plans completed: 23
 - Average duration: 3.2 min
-- Total execution time: 0.49 hours
+- Total execution time: ~1.2 hours
 
-**By Phase:**
+**By Phase (v1.0):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
@@ -48,18 +48,17 @@ Progress: [██████████] 100%
 | 08-fix-stale-unit-tests | 1 | 2 min | 2 min |
 | 09-requirements-wording-cleanup | 1 | 2 min | 2 min |
 | 10-na-vehicle-data-endpoint-research | 1 | 2 min | 2 min |
-| 11-na-vehicle-data-implementation | 1 | 8 min | 8 min |
+| 11-na-vehicle-data-implementation | 2 | 8 min | 8 min |
+| 12-full-api-values-e2e-validation | 1 | 2 min | 2 min |
+| 12.1-fix-na-vehicle-session-tsp | 1 | 3 min | 3 min |
+| 13-display-of-real-values-and-uat | 1 | 14 min | 14 min |
 
 **Recent Trend:**
-- Last 5 plans: 2 min, 2 min, 2 min, 2 min, 8 min
-- Trend: fast
+- Last 5 plans: 2 min, 2 min, 2 min, 3 min, 14 min
+- Trend: varies by task complexity
 
 *Updated after each plan completion*
-
-| Phase 11-na-vehicle-data-implementation P02 | 8 min | 3 tasks | 5 files |
-| Phase 12-full-api-values-e2e-validation P01 | 2 min | 3 tasks | 2 files |
-| Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow P01 | 3 | 2 tasks | 2 files |
-| Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state P01 | 14 | 2 tasks | 3 files |
+| Phase 15-na-error-handling P01 | 127 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -73,7 +72,6 @@ Recent decisions affecting current work:
 - [Phase 09-requirements-wording-cleanup]: _refresh_idk_token() docstring corrected — X-QMAuth NOT sent (server rejects with HTTP 400), PKCE code_verifier used instead
 - [Phase 08-fix-stale-unit-tests]: IDK refresh body must contain refresh_token, grant_type, code_verifier — X-QMAuth intentionally absent (HTTP 400)
 - [Phase 08-fix-stale-unit-tests]: NA doLogin fetches vehicle list via _request() to garage endpoint, not get() to vehicle/v2/vehicles
-- [Roadmap v1.5]: 3 phases (10-12) derived from 11 v1.5 requirements; APK research gates implementation gates E2E validation
 - [Phase 07-end-to-end-validation]: Soft-assert pattern for vehicle data — None values soft-skipped (unsupported), not failed
 - [Phase 07-end-to-end-validation]: expires_at key used for token expiry assertions (not 'expiry') — matches actual _na_tokens structure
 - [NA auth confirmed 2026-02-25]: IDK-only flow confirmed working; Brand/MBB not available on NA Car-Net (`/login/v1/volkswagen/token` → 404)
@@ -91,21 +89,23 @@ Recent decisions affecting current work:
 - [Phase 12-full-api-values-e2e-validation]: VW_TEST_EXPECTED_LOCK env var required (hard fail if not set) — prevents silent false-positive pass when env var forgotten
 - [Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow]: tspProvider from garage response stored in _na_tokens[vin]['tsp_provider'] during doLogin() — VWNA and VW are NOT valid TSP enum values (return HTTP 400), ATC is default
 - [Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow]: vehicleId UUID stored in _na_tokens[vin]['vehicle_id'] for potential future use if session URL needs UUID instead of VIN
-- [Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state]: Demo script VW_SPIN env var documented as required for vehicle data; connection uses proven CookieJar + Connection(country='US', spin=spin) pattern
-- [Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state]: UAT confirmed live values: lat=40.677629, lng=-73.968527, door_locked=True for VIN 3VV4X7B27RM030662 — milestone v1.5 complete
+- [Phase 13-display-of-real-values-from-api-and-manual-uat]: Demo script VW_SPIN env var documented as required for vehicle data; connection uses proven CookieJar + Connection(country='US', spin=spin) pattern
+- [Phase 13-display-of-real-values-from-api-and-manual-uat]: UAT confirmed live values: lat=40.677629, lng=-73.968527, door_locked=True for VIN 3VV4X7B27RM030662 — milestone v1.0 complete
+- [Phase 15-na-error-handling]: _login_na() AuthenticationError/RedirectError now re-raise instead of returning False
+- [Phase 15-na-error-handling]: doLogin() NA garage 404 path raises APIError with endpoint URL and country='US' guidance
 
 ### Roadmap Evolution
 
-- Phase 12.1 inserted after Phase 12: Fix NA vehicle session TSP values and SPIN challenge-response flow (URGENT — discovered via UAT)
-- Phase 13 added: Display of real values from API and manual UAT. Needs to be current location, and lock state
+- v1.0: Phases 1-13 shipped 2026-02-27
+- v1.1: Phases 15-20 planned 2026-02-27 (phase 14 intentionally skipped to avoid confusion with v1.0 phase count of 14)
 
 ### Pending Todos
 
-None yet.
+None yet for v1.1.
 
 ### Blockers/Concerns
 
-- `x-mobile-session-id` field name TBD — not yet confirmed from live session response; does not affect GPS or lock data retrieval
+- `x-mobile-session-id` field name TBD — not yet confirmed from live session response; CLEAN-03 addresses this in Phase 19
 
 ### Quick Tasks Completed
 
@@ -116,5 +116,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 13-01-PLAN.md (Demo script + UAT milestone evidence; 21 e2e passed, 156 unit passed, live values confirmed — milestone v1.5 COMPLETE)
+Stopped at: v1.1 roadmap created — 6 phases (15-20), 25 requirements mapped, ready for /gsd:plan-phase 15
 Resume file: None

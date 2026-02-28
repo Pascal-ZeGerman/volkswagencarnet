@@ -258,15 +258,22 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         result = await conn._get_na_vehicle_data(VIN)
         assert result is None
 
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
-    async def test_get_na_vehicle_data_returns_partial_on_location_failure(self, _mock_jwt):
-        """Returns {'na_location': None, 'na_status': {...}} when location endpoint fails."""
+    async def test_get_na_vehicle_data_returns_partial_on_location_failure(self, _mock_jwt, _mock_sleep):
+        """Returns {'na_location': None, 'na_status': {...}} when location endpoint always 500s.
+
+        With RVS_MAX_RETRIES=2, the location fetch makes 3 total attempts (1 initial + 2 retries)
+        before giving up. The status fetch then succeeds on first try.
+        """
         status_fixture = _load_fixture("rvs_status.json")
         conn = _make_na_connection()
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
         conn._session.get = AsyncMock(side_effect=[
-            _mock_resp(500, text_data="Internal Server Error"),  # location fails
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 1 → retry
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 2 → retry
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 3 → give up
             _mock_resp(200, json_data=status_fixture),           # status succeeds
         ])
         result = await conn._get_na_vehicle_data(VIN)
@@ -274,16 +281,23 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         assert result["na_location"] is None
         assert result["na_status"] == status_fixture
 
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
-    async def test_get_na_vehicle_data_returns_partial_on_status_failure(self, _mock_jwt):
-        """Returns {'na_location': {...}, 'na_status': None} when status endpoint fails."""
+    async def test_get_na_vehicle_data_returns_partial_on_status_failure(self, _mock_jwt, _mock_sleep):
+        """Returns {'na_location': {...}, 'na_status': None} when status endpoint always 500s.
+
+        With RVS_MAX_RETRIES=2, the status fetch makes 3 total attempts (1 initial + 2 retries)
+        before giving up.
+        """
         location_fixture = _load_fixture("rvs_location.json")
         conn = _make_na_connection()
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
         conn._session.get = AsyncMock(side_effect=[
             _mock_resp(200, json_data=location_fixture),        # location succeeds
-            _mock_resp(500, text_data="Internal Server Error"), # status fails
+            _mock_resp(500, text_data="Internal Server Error"), # status attempt 1 → retry
+            _mock_resp(500, text_data="Internal Server Error"), # status attempt 2 → retry
+            _mock_resp(500, text_data="Internal Server Error"), # status attempt 3 → give up
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
