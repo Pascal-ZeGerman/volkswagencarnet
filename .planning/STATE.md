@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: unknown
-last_updated: "2026-02-28T01:22:06.464Z"
+last_updated: "2026-02-28T04:04:59.039Z"
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 1
+  total_phases: 2
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 3
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 15-na-error-handling (in progress)
-Plan: 1 of ? — 15-01 complete
-Status: 15-01 complete — NA exception propagation implemented
-Last activity: 2026-02-27 - Phase 15 Plan 01 complete (2 tasks, 156 tests pass)
+Phase: 16-type-hints (in progress)
+Plan: 1 of 3 complete — 16-01 complete
+Status: 16-01 complete — vw_connection.py fully annotated, 0 mypy errors
+Last activity: 2026-02-27 - Phase 16 Plan 01 complete (2 tasks, 3 files, 35 tests pass)
 
 Progress: [#         ] 5%
 
@@ -59,6 +59,8 @@ Progress: [#         ] 5%
 
 *Updated after each plan completion*
 | Phase 15-na-error-handling P01 | 127 | 2 tasks | 2 files |
+| Phase 15-na-error-handling P02 | 177 | 2 tasks | 3 files |
+| Phase 16-type-hints P01 | 12 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -93,6 +95,9 @@ Recent decisions affecting current work:
 - [Phase 13-display-of-real-values-from-api-and-manual-uat]: UAT confirmed live values: lat=40.677629, lng=-73.968527, door_locked=True for VIN 3VV4X7B27RM030662 — milestone v1.0 complete
 - [Phase 15-na-error-handling]: _login_na() AuthenticationError/RedirectError now re-raise instead of returning False
 - [Phase 15-na-error-handling]: doLogin() NA garage 404 path raises APIError with endpoint URL and country='US' guidance
+- [Phase 15-na-error-handling]: RVS_MAX_RETRIES = 2: 1 initial + 2 retries = 3 total attempts for 5xx transient errors
+- [Phase 15-na-error-handling]: Non-5xx non-200 RVS responses break immediately without retry (403/404 not transient)
+- [Phase 16-type-hints]: vw_connection.py typed with X|None syntax and Any for aiohttp types; disallow_untyped_defs scoped per-file in setup.cfg
 
 ### Roadmap Evolution
 

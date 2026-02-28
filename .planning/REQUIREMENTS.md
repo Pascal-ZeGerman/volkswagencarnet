@@ -11,12 +11,12 @@ Requirements for the "make production ready" milestone. Focuses on code quality,
 
 - [x] **ERR-01**: NA API failures (garage 404, RVS 5xx, vehicle session creation failure) surface descriptive exceptions with context instead of silently returning `None`
 - [x] **ERR-02**: Connection exception messages include actionable guidance (e.g., "NA login failed: verify country='US' and credentials are correct")
-- [ ] **ERR-03**: Transient 5xx errors during NA data fetch retry automatically (up to 2 attempts) before returning `None`, complementing existing 429 retry logic
+- [x] **ERR-03**: Transient 5xx errors during NA data fetch retry automatically (up to 2 attempts) before returning `None`, complementing existing 429 retry logic
 
 ### Type Hints
 
-- [ ] **TYPE-01**: All public `Connection` methods (`doLogin`, `get`, `post`, `put`, `update`, `validate_tokens`) have return type annotations
-- [ ] **TYPE-02**: NA-specific private methods (`_login_na`, `_create_na_vehicle_session`, `_get_na_vehicle_data`, `_refresh_idk_token`, `_classify_endpoint`) have complete parameter and return type signatures
+- [x] **TYPE-01**: All public `Connection` methods (`doLogin`, `get`, `post`, `put`, `update`, `validate_tokens`) have return type annotations
+- [x] **TYPE-02**: NA-specific private methods (`_login_na`, `_create_na_vehicle_session`, `_get_na_vehicle_data`, `_refresh_idk_token`, `_classify_endpoint`) have complete parameter and return type signatures
 - [ ] **TYPE-03**: Vehicle public properties (`position`, `doors_locked`, `vin`, `na_position`, `na_doors_locked`) have return type annotations matching their actual return types
 
 ### Logging
@@ -88,9 +88,9 @@ Deferred — promote when API research confirms availability.
 |-------------|-------|--------|
 | ERR-01 | Phase 15 | Complete |
 | ERR-02 | Phase 15 | Complete |
-| ERR-03 | Phase 15 | Pending |
-| TYPE-01 | Phase 16 | Pending |
-| TYPE-02 | Phase 16 | Pending |
+| ERR-03 | Phase 15 | Complete |
+| TYPE-01 | Phase 16 | Complete |
+| TYPE-02 | Phase 16 | Complete |
 | TYPE-03 | Phase 16 | Pending |
 | LOG-01 | Phase 17 | Pending |
 | LOG-02 | Phase 17 | Pending |

@@ -2392,7 +2392,7 @@ class Connection:
 
         return True
 
-    async def setClimater(self, vin: str, data: dict[str, Any], action: str) -> Any:
+    async def setClimater(self, vin: str, data: dict[str, Any], action: bool | str) -> Any:
         """Execute climatisation actions."""
         action = "start" if action else "stop"
         try:
@@ -2417,7 +2417,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setClimaterSettings: {str(e)}") from e
 
-    async def setAuxiliary(self, vin: str, data: dict[str, Any], action: str) -> Any:
+    async def setAuxiliary(self, vin: str, data: dict[str, Any], action: bool | str) -> Any:
         """Execute auxiliary climatisation actions."""
         action = "start" if action else "stop"
         try:
@@ -2430,7 +2430,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setAuxiliary: {str(e)}") from e
 
-    async def setWindowHeater(self, vin: str, action: str) -> Any:
+    async def setWindowHeater(self, vin: str, action: bool | str) -> Any:
         """Execute window heating actions."""
         action = "start" if action else "stop"
         try:
@@ -2443,7 +2443,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setWindowHeater: {str(e)}") from e
 
-    async def setCharging(self, vin: str, action: str) -> Any:
+    async def setCharging(self, vin: str, action: bool | str) -> Any:
         """Execute charging actions."""
         action = "start" if action else "stop"
         try:
@@ -2550,7 +2550,7 @@ class Connection:
         except Exception as e:
             raise APIError(f"Unknown error during setDepartureTimers: {str(e)}") from e
 
-    async def setLock(self, vin: str, lock: str, spin: str) -> Any:
+    async def setLock(self, vin: str, lock: bool | str, spin: str) -> Any:
         """Remote lock and unlock actions."""
         await self.check_spin_state()
         action = "lock" if lock else "unlock"

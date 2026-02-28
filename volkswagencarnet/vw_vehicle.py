@@ -7,8 +7,11 @@ import asyncio
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta, date
 from json import dumps as to_json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import logging
+
+if TYPE_CHECKING:
+    from .vw_connection import Connection
 
 from aiohttp import ClientTimeout
 
@@ -42,7 +45,7 @@ DEFAULT_TARGET_TEMP = 24
 class Vehicle:
     """Vehicle contains the state of sensors and methods for interacting with the car."""
 
-    def __init__(self, conn, url) -> None:
+    def __init__(self, conn: Connection | None, url: str | None) -> None:
         """Initialize the Vehicle with default values."""
         self._connection = conn
         self._url = url
@@ -54,8 +57,8 @@ class Vehicle:
             self._homeregion = "https://msg.volkswagen.de"
         self._home_region_discovered: bool = False  # session cache guard for lazy discovery
         self._discovered = False
-        self._states = {}
-        self._requests: dict[str, object] = {
+        self._states: dict[str, Any] = {}
+        self._requests: dict[str, Any] = {
             "departuretimer": {"status": "", "timestamp": datetime.now(UTC)},
             "batterycharge": {"status": "", "timestamp": datetime.now(UTC)},
             "climatisation": {"status": "", "timestamp": datetime.now(UTC)},
@@ -66,7 +69,7 @@ class Vehicle:
         }
 
         # API Endpoints that might be enabled for car (that we support)
-        self._services: dict[str, dict[str, object]] = {
+        self._services: dict[str, Any] = {
             Services.ACCESS: {"active": False},
             Services.BATTERY_CHARGING_CARE: {"active": False},
             Services.BATTERY_SUPPORT: {"active": False},
@@ -100,7 +103,7 @@ class Vehicle:
         return False
 
     async def _handle_response(
-        self, response, topic: str, error_msg: str | None = None
+        self, response: Any, topic: str, error_msg: str | None = None
     ) -> bool:
         """Handle errors in response and get requests remaining."""
         if not response:
@@ -220,6 +223,9 @@ class Vehicle:
 
         _LOGGER.debug("Attempting discovery of supported API endpoints for vehicle")
 
+        if self._connection is None:
+            self._discovered = True
+            return
         capabilities_response = await self._connection.getOperationList(self.vin)
         parameters_list = capabilities_response.get("parameters", {})
         capabilities_list = capabilities_response.get("capabilities", {})
@@ -241,7 +247,7 @@ class Vehicle:
                 continue
 
             service_name = service.get("id", "Unknown Service")
-            data = {}
+            data: dict[str, Any] = {}
 
             if service.get("isEnabled", False):
                 data["active"] = True
@@ -335,57 +341,73 @@ class Vehicle:
     # Data collection functions
     async def get_selectivestatus(self, services: list[str]) -> None:
         """Fetch selective status for specified services."""
+        if self._connection is None:
+            return
         data = await self._connection.getSelectiveStatus(self.vin, services)
         if data:
             self._states.update(data)
 
-    async def get_vehicle(self):
+    async def get_vehicle(self) -> None:
         """Fetch car masterdata."""
+        if self._connection is None:
+            return
         data = await self._connection.getVehicleData(self.vin)
         if data:
             self._states.update(data)
 
-    async def get_parkingposition(self):
+    async def get_parkingposition(self) -> None:
         """Fetch parking position if supported."""
+        if self._connection is None:
+            return
         if self._services.get(Services.PARKING_POSITION, {}).get("active", False):
             data = await self._connection.getParkingPosition(self.vin)
             if data:
                 self._states.update(data)
 
-    async def get_trip_last(self):
+    async def get_trip_last(self) -> None:
         """Fetch last trip statistics if supported."""
+        if self._connection is None:
+            return
         if self._services.get(Services.TRIP_STATISTICS, {}).get("active", False):
             data = await self._connection.getTripLast(self.vin)
             if data:
                 self._states.update(data)
 
-    async def get_trip_refuel(self):
+    async def get_trip_refuel(self) -> None:
         """Fetch trip since refuel statistics if supported."""
+        if self._connection is None:
+            return
         if self._services.get(Services.TRIP_STATISTICS, {}).get("active", False):
             data = await self._connection.getTripRefuel(self.vin)
             if data:
                 self._states.update(data)
 
-    async def get_trip_longterm(self):
+    async def get_trip_longterm(self) -> None:
         """Fetch trip since refuel statistics if supported."""
+        if self._connection is None:
+            return
         if self._services.get(Services.TRIP_STATISTICS, {}).get("active", False):
             data = await self._connection.getTripLongterm(self.vin)
             if data:
                 self._states.update(data)
 
-    async def get_service_status(self):
+    async def get_service_status(self) -> None:
         """Fetch service status."""
+        if self._connection is None:
+            return
         data = await self._connection.get_service_status()
         if data:
             self._states.update({Services.SERVICE_STATUS: data})
 
-    async def wait_for_request(self, request, retry_count=18):
+    async def wait_for_request(self, request: Any, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
         retry_count -= 1
         if retry_count == 0:
             _LOGGER.info("Timeout while waiting for result of %s", request.requestId)
             return "Timeout"
         try:
+            if self._connection is None:
+                return "Exception"
             status = await self._connection.get_request_status(self.vin, request)
             _LOGGER.debug("Request ID %s: %s", request, status)
             self._requests["state"] = status
@@ -400,7 +422,7 @@ class Vehicle:
         else:
             return status
 
-    async def wait_for_data_refresh(self, retry_count=18):
+    async def wait_for_data_refresh(self, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
         retry_count -= 1
         if retry_count == 0:
@@ -423,12 +445,13 @@ class Vehicle:
 
     # Data set functions
     # Charging (BATTERYCHARGE)
-    async def set_charger(self, action) -> bool:
+    async def set_charger(self, action: str) -> bool:
         """Turn on/off charging."""
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
                 raise Exception(f'Charging action "{action}" is not supported.')
+            assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setCharging(self.vin, (action == "start"))
             return await self._handle_response(
@@ -439,7 +462,7 @@ class Vehicle:
         _LOGGER.error("No charging support")
         raise Exception("No charging support.")
 
-    async def set_charging_settings(self, setting, value):
+    async def set_charging_settings(self, setting: str, value: Any) -> bool:
         """Set charging settings."""
         if (
             self.is_charge_max_ac_setting_supported
@@ -495,6 +518,7 @@ class Vehicle:
                     if setting == "max_charge_amperage"
                     else self.charge_max_ac_ampere
                 )
+            assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingSettings(self.vin, data)
             return await self._handle_response(
@@ -505,13 +529,14 @@ class Vehicle:
         _LOGGER.error("Charging settings are not supported")
         raise Exception("Charging settings are not supported.")
 
-    async def set_charging_care_settings(self, value):
+    async def set_charging_care_settings(self, value: Any) -> bool:
         """Set charging care settings."""
         if self.is_battery_care_mode_supported:
             if value not in ["activated", "deactivated"]:
                 _LOGGER.error('Charging care mode "%s" is not supported', value)
                 raise Exception(f'Charging care mode "{value}" is not supported.')
             data = {"batteryCareMode": value}
+            assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingCareModeSettings(
                 self.vin, data
@@ -524,13 +549,14 @@ class Vehicle:
         _LOGGER.error("Charging care settings are not supported")
         raise Exception("Charging care settings are not supported.")
 
-    async def set_readiness_battery_support(self, value):
+    async def set_readiness_battery_support(self, value: Any) -> bool:
         """Set readiness battery support settings."""
         if self.is_optimised_battery_use_supported:
             if value not in [True, False]:
                 _LOGGER.error('Battery support mode "%s" is not supported', value)
                 raise Exception(f'Battery support mode "{value}" is not supported.')
             data = {"batterySupportEnabled": value}
+            assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setReadinessBatterySupport(self.vin, data)
             return await self._handle_response(
@@ -542,7 +568,7 @@ class Vehicle:
         raise Exception("Battery support settings are not supported.")
 
     # Climatisation electric/auxiliary/windows (CLIMATISATION)
-    async def set_climatisation_settings(self, setting, value):
+    async def set_climatisation_settings(self, setting: str, value: Any) -> bool:
         """Set climatisation settings."""
         if (
             self.is_climatisation_target_temperature_supported
@@ -606,6 +632,7 @@ class Vehicle:
                         if setting == "zone_front_right"
                         else self.zone_front_right
                     )
+                assert self._connection is not None
                 self._requests["latest"] = "Climatisation"
                 response = await self._connection.setClimaterSettings(self.vin, data)
                 return await self._handle_response(
@@ -618,12 +645,13 @@ class Vehicle:
         _LOGGER.error("Climatisation settings are not supported")
         raise Exception("Climatisation settings are not supported.")
 
-    async def set_window_heating(self, action="stop"):
+    async def set_window_heating(self, action: str = "stop") -> bool:
         """Turn on/off window heater."""
         if self.is_window_heater_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Window heater action "%s" is not supported', action)
                 raise Exception(f'Window heater action "{action}" is not supported.')
+            assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setWindowHeater(
                 self.vin, (action == "start")
@@ -636,7 +664,7 @@ class Vehicle:
         _LOGGER.error("No climatisation support")
         raise Exception("No climatisation support.")
 
-    async def set_climatisation(self, action="stop"):
+    async def set_climatisation(self, action: str = "stop") -> bool:
         """Turn on/off climatisation with electric heater."""
         if self.is_electric_climatisation_supported:
             if action == "start":
@@ -661,6 +689,7 @@ class Vehicle:
             else:
                 _LOGGER.error("Invalid climatisation action: %s", action)
                 raise Exception(f"Invalid climatisation action: {action}")
+            assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setClimater(
                 self.vin, data, (action == "start")
@@ -673,9 +702,10 @@ class Vehicle:
         _LOGGER.error("No climatisation support")
         raise Exception("No climatisation support.")
 
-    async def set_auxiliary_climatisation(self, action, spin):
+    async def set_auxiliary_climatisation(self, action: str, spin: str) -> bool:
         """Turn on/off climatisation with auxiliary heater."""
         if self.is_auxiliary_climatisation_supported:
+            data: dict[str, Any] = {}
             if action == "start":
                 data = {"spin": spin}
                 if self.is_auxiliary_duration_supported:
@@ -685,6 +715,7 @@ class Vehicle:
             else:
                 _LOGGER.error("Invalid auxiliary heater action: %s", action)
                 raise Exception(f"Invalid auxiliary heater action: {action}")
+            assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setAuxiliary(
                 self.vin, data, (action == "start")
@@ -697,12 +728,13 @@ class Vehicle:
         _LOGGER.error("No climatisation support")
         raise Exception("No climatisation support.")
 
-    async def set_departure_timer(self, timer_id, spin, enable) -> bool:
+    async def set_departure_timer(self, timer_id: int, spin: str, enable: bool) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if not isinstance(enable, bool):
                 _LOGGER.error("Charging departure timers setting is not supported")
                 raise Exception("Charging departure timers setting is not supported.")
+            assert self._connection is not None
             data = None
             response = None
             if is_valid_path(
@@ -739,12 +771,13 @@ class Vehicle:
         _LOGGER.error("Departure timers are not supported")
         raise Exception("Departure timers are not supported.")
 
-    async def update_departure_timer(self, timer_id, spin, timer_data) -> bool:
+    async def update_departure_timer(self, timer_id: int, spin: str, timer_data: dict[str, Any]) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if timer_data is None:
                 _LOGGER.error("Charging departure timers setting is not supported")
                 raise Exception("Charging departure timers setting is not supported.")
+            assert self._connection is not None
             data = None
             response = None
             if is_valid_path(
@@ -781,7 +814,7 @@ class Vehicle:
         _LOGGER.error("Departure timers are not supported")
         raise Exception("Departure timers are not supported.")
 
-    async def set_ac_departure_timer(self, timer_id, enable) -> bool:
+    async def set_ac_departure_timer(self, timer_id: int, enable: bool) -> bool:
         """Turn on/off ac departure timer."""
         if self.is_ac_departure_timer_supported(timer_id):
             if not isinstance(enable, bool):
@@ -791,6 +824,7 @@ class Vehicle:
                 raise Exception(
                     "Charging climatisation departure timers setting is not supported."
                 )
+            assert self._connection is not None
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
             for index, timer in enumerate(timers):
                 if timer.get("id", 0) == timer_id:
@@ -805,7 +839,7 @@ class Vehicle:
         _LOGGER.error("Climatisation departure timers are not supported")
         raise Exception("Climatisation departure timers are not supported.")
 
-    async def update_ac_departure_timer(self, timer_id, timer_data) -> bool:
+    async def update_ac_departure_timer(self, timer_id: int, timer_data: dict[str, Any]) -> bool:
         """Turn on/off ac departure timer."""
         if self.is_ac_departure_timer_supported(timer_id):
             if timer_data is None:
@@ -815,6 +849,7 @@ class Vehicle:
                 raise Exception(
                     "Charging climatisation departure timers setting is not supported."
                 )
+            assert self._connection is not None
             data = None
             response = None
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
@@ -832,7 +867,7 @@ class Vehicle:
         raise Exception("Climatisation departure timers are not supported.")
 
     # Lock (RLU)
-    async def set_lock(self, action, spin):
+    async def set_lock(self, action: str, spin: str) -> bool:
         """Remote lock and unlock actions."""
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             _LOGGER.info("Remote lock/unlock is not supported")
@@ -843,6 +878,7 @@ class Vehicle:
             _LOGGER.error("Invalid lock action: %s", action)
             raise Exception(f"Invalid lock action: {action}")
 
+        assert self._connection is not None
         try:
             self._requests["latest"] = "Lock"
             response = await self._connection.setLock(
@@ -862,7 +898,7 @@ class Vehicle:
         raise Exception("Lock action failed")
 
     # Lock (RLU)
-    async def set_honk_and_flash(self):
+    async def set_honk_and_flash(self) -> bool:
         """Remote honk and flash actions."""
         if not self._services.get(Services.HONK_AND_FLASH, {}).get("active", False):
             _LOGGER.info("Remote honk and flash is not supported")
@@ -870,6 +906,7 @@ class Vehicle:
         if self._in_progress("honk_and_flash", unknown_offset=-5):
             return False
 
+        assert self._connection is not None
         try:
             self._requests["latest"] = "HonkAndFlash"
             response = await self._connection.setHonkAndFlash(self.vin, self.position)
@@ -887,10 +924,11 @@ class Vehicle:
         raise Exception("Honk and flash action failed")
 
     # Refresh vehicle data (VSR)
-    async def set_refresh(self):
+    async def set_refresh(self) -> bool:
         """Wake up vehicle and update status data."""
         if self._in_progress("refresh", unknown_offset=-5):
             return False
+        assert self._connection is not None
         try:
             self._requests["latest"] = "Refresh"
             response = await self._connection.wakeUpVehicle(self.vin)
@@ -929,7 +967,7 @@ class Vehicle:
     # Vehicle class helpers #
     # Vehicle info
     @property
-    def attrs(self):
+    def attrs(self) -> dict[str, Any]:
         """Return all attributes.
 
         :return:
@@ -956,17 +994,17 @@ class Vehicle:
         """Check if access to service has expired."""
         try:
             now = datetime.now(UTC)
-            if self._services.get(service, {}).get("expiration", False):
-                expiration = self._services.get(service, {}).get("expiration", False)
-                if not expiration:
-                    expiration = datetime.now(UTC) + timedelta(days=1)
-            else:
+            expiration: datetime | bool = self._services.get(service, {}).get("expiration", False)
+            if not expiration:
                 _LOGGER.debug(
                     "Could not determine end of access for service %s, assuming it is valid",
                     service,
                 )
                 expiration = datetime.now(UTC) + timedelta(days=1)
-            expiration = expiration.replace(tzinfo=None)
+            if isinstance(expiration, datetime):
+                expiration = expiration.replace(tzinfo=None)
+            else:
+                expiration = datetime.now(UTC) + timedelta(days=1)
             if now >= expiration:
                 _LOGGER.warning("Access to %s has expired!", service)
                 self._discovered = False
@@ -980,7 +1018,7 @@ class Vehicle:
         else:
             return False
 
-    def dashboard(self, **config: Any):
+    def dashboard(self, **config: Any) -> Any:
         """Return dashboard with specified configuration.
 
         :param config:
@@ -996,15 +1034,16 @@ class Vehicle:
 
         :return:
         """
+        assert self._url is not None, "Vehicle URL (VIN) is not set"
         return self._url
 
     @property
-    def unique_id(self) -> str:
+    def unique_id(self) -> str | None:
         """Return unique id for the vehicle (vin).
 
         :return:
         """
-        return self.vin
+        return self._url
 
     @property
     def home_region_url(self) -> str:
@@ -1070,7 +1109,7 @@ class Vehicle:
         return self.attrs.get("vehicle", {}).get("modelYear", False) is not False
 
     @property
-    def model_image(self) -> str:
+    def model_image(self) -> str | None:
         # Not implemented
         """Return vehicle model image."""
         return self.attrs.get("imageUrl")
@@ -1133,7 +1172,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.READINESS_IS_ACTIVE)
 
     @property
-    def connection_state_battery_power_level(self) -> str:
+    def connection_state_battery_power_level(self) -> str | None:
         """Return batteryPowerLevel status."""
         battery_power_level = find_path(self.attrs, Paths.READINESS_BATTERY_POWER_LEVEL)
         if battery_power_level:
@@ -1204,7 +1243,7 @@ class Vehicle:
 
     # Connection status
     @property
-    def last_connected(self) -> datetime:
+    def last_connected(self) -> datetime | None:
         """Return when vehicle was last connected to connect servers in local time."""
         # this field is only a dirty hack, because there is no overarching information for the car anymore,
         # only information per service, so we just use the one for fuelStatus.rangeStatus when car is ideling
@@ -1222,9 +1261,10 @@ class Vehicle:
                     .replace(tzinfo=UTC)
                 )
             return self.distance_last_updated
+        return None
 
     @property
-    def last_connected_last_updated(self) -> datetime:
+    def last_connected_last_updated(self) -> datetime | None:
         """Return attribute last updated timestamp."""
         if self.is_battery_level_supported and self.charging:
             return self.battery_level_last_updated
@@ -1238,6 +1278,7 @@ class Vehicle:
                     .replace(tzinfo=UTC)
                 )
             return self.distance_last_updated
+        return None
 
     @property
     def is_last_connected_supported(self) -> bool:
@@ -1261,7 +1302,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
-    def service_inspection(self):
+    def service_inspection(self) -> Any:
         """Return time left for service inspection."""
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_DAYS)
 
@@ -1276,7 +1317,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_DAYS)
 
     @property
-    def service_inspection_distance(self):
+    def service_inspection_distance(self) -> Any:
         """Return distance left for service inspection."""
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_KM)
 
@@ -1291,7 +1332,7 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_KM)
 
     @property
-    def oil_inspection(self):
+    def oil_inspection(self) -> Any:
         """Return time left for oil inspection."""
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_DAYS)
 
