@@ -211,7 +211,7 @@ Plans:
 **Goal:** A library consumer can run a demo script to display real GPS coordinates and lock status from their NA vehicle, and all e2e tests pass with SPIN credentials confirming the full NA data pipeline works end-to-end
 **Requirements**: UAT-01, UAT-02
 **Depends on:** Phase 12.1
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 13-01-PLAN.md — Create examples/demo_na_vehicle.py (standalone display script); run all e2e tests with SPIN credentials and record UAT results in 13-UAT-RESULTS.md
@@ -236,4 +236,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 11. NA Vehicle Data Implementation | 2/2 | Complete    | 2026-02-26 |
 | 12. Full API Values E2E Validation | 1/1 | Complete    | 2026-02-26 |
 | 12.1. Fix NA Vehicle Session TSP Values (INSERTED) | 1/1 | Complete    | 2026-02-27 |
-| 13. Display of Real Values + Manual UAT | 0/1 | In Progress | |
+| 13. Display of Real Values + Manual UAT | 1/1 | Complete   | 2026-02-27 |

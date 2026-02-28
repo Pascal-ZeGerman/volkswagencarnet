@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T17:51:08.129Z"
+last_updated: "2026-02-27T17:21:54.463Z"
 progress:
-  total_phases: 12
-  completed_phases: 11
-  total_plans: 20
-  completed_plans: 20
+  total_phases: 14
+  completed_phases: 14
+  total_plans: 23
+  completed_plans: 23
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 11-na-vehicle-data-implementation (complete)
-Plan: 2 of 2 complete
-Status: Phase 11 complete — NA property dispatch (_na_position, _na_door_locked), RVS fixtures, 16 unit tests; 139 tests pass
-Last activity: 2026-02-26 - Completed Phase 11 Plan 2: NA vehicle property helpers + unit tests (vw_vehicle.py + tests/na_vehicle_data_test.py)
+Phase: 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state (complete)
+Plan: 1 of 1 complete
+Status: Phase 13 Plan 01 complete — Demo script + UAT milestone evidence; 21 e2e passed, 156 unit passed, live GPS + lock confirmed
+Last activity: 2026-02-27 - Completed Phase 13 Plan 01: Demo script + UAT results (lat=40.677629, lng=-73.968527, door_locked=True confirmed from live vehicle)
 
 Progress: [██████████] 100%
 
@@ -57,6 +57,9 @@ Progress: [██████████] 100%
 *Updated after each plan completion*
 
 | Phase 11-na-vehicle-data-implementation P02 | 8 min | 3 tasks | 5 files |
+| Phase 12-full-api-values-e2e-validation P01 | 2 min | 3 tasks | 2 files |
+| Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow P01 | 3 | 2 tasks | 2 files |
+| Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state P01 | 14 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -84,6 +87,17 @@ Recent decisions affecting current work:
 - [Phase 11-na-vehicle-data-implementation]: RVS partial data returned even if one endpoint fails — None only when vehicle session creation fails entirely
 - [Phase 11-na-vehicle-data-implementation]: NA branch guard checks _session_region == 'NA' before dispatching to _na_* helpers — safe for Vehicle(None, vin) construction
 - [Phase 11-na-vehicle-data-implementation]: compat test updated to inject na_status fixture for NA door_locked test — NA vehicles use na_status, not EMEA selectivestatus, for lock state
+- [Phase 12-full-api-values-e2e-validation]: Double-coverage pattern — E2E tests assert both vehicle property (abstraction) AND raw _states[key] (data pipeline) for GPS and lock status
+- [Phase 12-full-api-values-e2e-validation]: VW_TEST_EXPECTED_LOCK env var required (hard fail if not set) — prevents silent false-positive pass when env var forgotten
+- [Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow]: tspProvider from garage response stored in _na_tokens[vin]['tsp_provider'] during doLogin() — VWNA and VW are NOT valid TSP enum values (return HTTP 400), ATC is default
+- [Phase 12.1-fix-na-vehicle-session-tsp-values-and-spin-challenge-response-flow]: vehicleId UUID stored in _na_tokens[vin]['vehicle_id'] for potential future use if session URL needs UUID instead of VIN
+- [Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state]: Demo script VW_SPIN env var documented as required for vehicle data; connection uses proven CookieJar + Connection(country='US', spin=spin) pattern
+- [Phase 13-display-of-real-values-from-api-and-manual-uat-needs-to-be-current-location-and-lock-state]: UAT confirmed live values: lat=40.677629, lng=-73.968527, door_locked=True for VIN 3VV4X7B27RM030662 — milestone v1.5 complete
+
+### Roadmap Evolution
+
+- Phase 12.1 inserted after Phase 12: Fix NA vehicle session TSP values and SPIN challenge-response flow (URGENT — discovered via UAT)
+- Phase 13 added: Display of real values from API and manual UAT. Needs to be current location, and lock state
 
 ### Pending Todos
 
@@ -91,8 +105,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- `tsp` enum value and auth header behavior for POST ss/v1/.../session unconfirmed until Phase 12 E2E runs live — probe logic in place
-- `x-mobile-session-id` field name TBD — Phase 12 DEBUG logs will reveal correct field from live session response
+- `x-mobile-session-id` field name TBD — not yet confirmed from live session response; does not affect GPS or lock data retrieval
 
 ### Quick Tasks Completed
 
@@ -102,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Completed 11-02-PLAN.md (NA vehicle property dispatch + _na_position()/_na_door_locked() helpers + 16 unit tests in tests/na_vehicle_data_test.py)
+Last session: 2026-02-27
+Stopped at: Completed 13-01-PLAN.md (Demo script + UAT milestone evidence; 21 e2e passed, 156 unit passed, live values confirmed — milestone v1.5 COMPLETE)
 Resume file: None

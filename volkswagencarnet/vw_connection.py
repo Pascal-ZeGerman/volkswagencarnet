@@ -1760,16 +1760,23 @@ class Connection:
             self._session_logged_in = True
             return True
 
-        except (AuthenticationError, RequestError, RedirectError) as error:
-            _LOGGER.error("NA authentication error during login: %s", error)
+        except (AuthenticationError, RedirectError):
+            # Authentication failures already carry actionable messages — propagate to caller
             self._session_logged_in = False
-            return False
+            raise
+        except RequestError as error:
+            self._session_logged_in = False
+            raise AuthenticationError(
+                f"NA login failed: {error}. Verify country='US' and that credentials are correct."
+            ) from error
+        except KeyError as error:
+            self._session_logged_in = False
+            raise AuthenticationError(
+                f"NA login failed — unexpected API response structure: {error}. "
+                "This may indicate a VW API change."
+            ) from error
         except client_exceptions.ClientError as error:
             _LOGGER.error("NA network error during login: %s", error)
-            self._session_logged_in = False
-            return False
-        except KeyError as error:
-            _LOGGER.error("NA missing required data during login: %s", error)
             self._session_logged_in = False
             return False
         except Exception as error:

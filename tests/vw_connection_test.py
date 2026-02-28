@@ -133,7 +133,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
         assert conn._session_region == "NA"
 
     async def test_na_login_bad_credentials(self):
-        """Test that bad credentials cause login to return False without raising."""
+        """Test that bad credentials cause _login_na() to raise AuthenticationError (not return False)."""
         conn = self._make_na_conn()
 
         openid_config = {
@@ -149,10 +149,11 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
                 "_get_authorization_code_na",
                 side_effect=AuthenticationError("Wrong username or password"),
             ),
+            pytest.raises(AuthenticationError, match="Wrong username or password"),
         ):
-            result = await conn._login_na()
+            await conn._login_na()
 
-        assert result is False
+        assert conn._session_logged_in is False
         assert "identity" not in conn._session_tokens
 
     async def test_na_login_token_exchange_failure(self):
@@ -177,7 +178,7 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
         assert result is False
 
     async def test_na_login_redirect_extraction_failure(self):
-        """Test that a redirect failure during login returns False."""
+        """Test that a redirect failure during NA login raises RedirectError (not returns False)."""
         conn = self._make_na_conn()
 
         openid_config = {
@@ -193,10 +194,11 @@ class NAOAuthLoginTest(IsolatedAsyncioTestCase):
                 "_get_authorization_code_na",
                 side_effect=RedirectError("Too many redirects"),
             ),
+            pytest.raises(RedirectError, match="Too many redirects"),
         ):
-            result = await conn._login_na()
+            await conn._login_na()
 
-        assert result is False
+        assert conn._session_logged_in is False
 
     async def test_na_login_network_error(self):
         """Test that a network error during login returns False without raising."""
