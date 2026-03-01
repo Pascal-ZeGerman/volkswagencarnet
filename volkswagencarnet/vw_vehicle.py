@@ -1726,7 +1726,22 @@ class Vehicle:
     # Vehicle location states
     @property
     def position(self) -> dict[str, str | float | None]:
-        """Return position."""
+        """Return the vehicle's last known GPS position.
+
+        For EMEA vehicles, reads from the ``parkingposition`` or
+        ``storedVehicleDataResponse`` state populated by the selectivestatus API.
+
+        For NA vehicles (country='US'/'CA'), reads from the ``na_location``
+        state populated by the RVS (Remote Vehicle Status) location endpoint.
+
+        Returns:
+            Dict with keys ``lat`` (float or None), ``lng`` (float or None),
+            and ``timestamp`` (str or None).
+
+        Example:
+            >>> pos = vehicle.position
+            >>> print(f"Lat: {pos['lat']}, Lng: {pos['lng']}")
+        """
         # NA region: read from na_location state populated by RVS endpoint
         if self._connection is not None and self._connection._session_region == "NA":
             return self._na_position()
@@ -2676,7 +2691,17 @@ class Vehicle:
 
     @property
     def door_locked(self) -> bool:
-        """Return true if all doors are locked."""
+        """Return whether all doors are locked.
+
+        For EMEA vehicles, reads the lock status from the selectivestatus
+        ``accessStatus`` path.
+
+        For NA vehicles (country='US'/'CA'), reads from the ``na_status``
+        state populated by the RVS (Remote Vehicle Status) endpoint.
+
+        Returns:
+            True if all doors are locked, False otherwise.
+        """
         # NA region: read from na_status state populated by RVS endpoint
         if self._connection is not None and self._connection._session_region == "NA":
             return self._na_door_locked()
