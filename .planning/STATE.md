@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: unknown
-last_updated: "2026-02-28T04:27:46.200Z"
+last_updated: "2026-02-28T04:32:16.088Z"
 progress:
   total_phases: 2
   completed_phases: 2
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 16-type-hints (complete)
-Plan: 3 of 3 complete — 16-03 complete
-Status: Phase 16 complete — vw_vehicle.py and vw_connection.py fully annotated, 0 mypy errors, TYPE-01/02/03 all satisfied
-Last activity: 2026-02-28 - Phase 16 Plan 03 complete (2 tasks, 2 files, 158 tests pass)
+Phase: 17-logging (complete)
+Plan: 2 of 2 complete — 17-02 complete
+Status: Phase 17 Plan 02 complete — ~12 DEBUG logs for NA auth + vehicle data flows, redact() used throughout, LOG-01/02/04 satisfied, 164 tests pass
+Last activity: 2026-03-01 - Phase 17 Plan 02 complete (2 tasks, 1 file, 164 tests pass)
 
-Progress: [##        ] 10%
+Progress: [###       ] 15%
 
 ## Performance Metrics
 
@@ -63,6 +63,8 @@ Progress: [##        ] 10%
 | Phase 16-type-hints P01 | 12 | 2 tasks | 3 files |
 | Phase 16-type-hints P02 | 12 | 2 tasks | 2 files |
 | Phase 16-type-hints P03 | 25 | 2 tasks | 2 files |
+| Phase 17-logging P01 | 2 | 2 tasks | 3 files |
+| Phase 17-logging P02 | 3 | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -104,6 +106,11 @@ Recent decisions affecting current work:
 - [Phase 16-type-hints P02]: Connection action methods (setCharging/setClimater/setAuxiliary/setWindowHeater/setLock) accept bool | str for action param — code uses bool expressions (action == "start")
 - [Phase 16-type-hints P02]: assert self._connection is not None pattern in action methods rather than if/return guards
 - [Phase 16-type-hints]: windows_closed returns bool|None; departure_timer_enabled/ac_departure_timer_enabled use None guard returning False; vehicle() unique_id None guard added
+- [Phase 17-logging P01]: redact() uses value[:8]+"..." — first 8 chars identifies token prefix while hiding the secret; handles None/"" with single `if not value` guard returning "(none)"
+- [Phase 17-logging P01]: NullHandler added to root package logger 'volkswagencarnet' in __init__.py per Python logging best practices for library authors
+- [Phase 17-logging P02]: _exchange_code_for_tokens refactored — bare return json_loads(resp_text) replaced with tokens_data variable + DEBUG log + return, avoiding double parse
+- [Phase 17-logging P02]: redact(vin) used for VINs in all new log calls — VINs are 17 chars, first 8 shown is sufficient for correlation without exposing full VIN
+- [Phase 17-logging P02]: RVS URL logs outside retry loop; per-attempt HTTP status logs inside loop — best coverage without duplication
 
 ### Roadmap Evolution
 
@@ -126,6 +133,6 @@ None yet for v1.1.
 
 ## Session Continuity
 
-Last session: 2026-02-28
-Stopped at: Completed 16-type-hints 16-03-PLAN.md — vw_vehicle.py properties annotated, phase 16 complete
+Last session: 2026-03-01
+Stopped at: Completed 17-logging 17-02-PLAN.md — ~12 DEBUG logs for NA auth + vehicle data flows, LOG-01/02/04 satisfied
 Resume file: None

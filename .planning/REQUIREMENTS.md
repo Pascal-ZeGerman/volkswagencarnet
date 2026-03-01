@@ -21,10 +21,10 @@ Requirements for the "make production ready" milestone. Focuses on code quality,
 
 ### Logging
 
-- [ ] **LOG-01**: NA auth flow (code extraction, PKCE challenge, token exchange steps) emits `DEBUG`-level progress logs with enough context to diagnose a failed login
-- [ ] **LOG-02**: NA data fetches (vehicle session creation, RVS location call, RVS status call) log at `DEBUG` level with VIN context on each step
-- [ ] **LOG-03**: Full token values and passwords are never written to any log level — token strings truncated to first 8 characters in debug output (`eyJa...`)
-- [ ] **LOG-04**: Token refresh events (IDK, Brand, MBB) log at `INFO` level identifying which token type was refreshed
+- [x] **LOG-01**: NA auth flow (code extraction, PKCE challenge, token exchange steps) emits `DEBUG`-level progress logs with enough context to diagnose a failed login
+- [x] **LOG-02**: NA data fetches (vehicle session creation, RVS location call, RVS status call) log at `DEBUG` level with VIN context on each step
+- [x] **LOG-03**: Full token values and passwords are never written to any log level — token strings truncated to first 8 characters in debug output (`eyJa...`)
+- [x] **LOG-04**: Token refresh events (IDK, Brand, MBB) log at `INFO` level identifying which token type was refreshed
 
 ### Documentation
 
@@ -92,10 +92,10 @@ Deferred — promote when API research confirms availability.
 | TYPE-01 | Phase 16 | Complete |
 | TYPE-02 | Phase 16 | Complete |
 | TYPE-03 | Phase 16 | Complete |
-| LOG-01 | Phase 17 | Pending |
-| LOG-02 | Phase 17 | Pending |
-| LOG-03 | Phase 17 | Pending |
-| LOG-04 | Phase 17 | Pending |
+| LOG-01 | Phase 17 | Complete |
+| LOG-02 | Phase 17 | Complete |
+| LOG-03 | Phase 17 | Complete |
+| LOG-04 | Phase 17 | Complete |
 | DOC-01 | Phase 18 | Pending |
 | DOC-02 | Phase 18 | Pending |
 | DOC-03 | Phase 18 | Pending |

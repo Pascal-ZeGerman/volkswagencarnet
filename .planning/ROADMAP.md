@@ -33,7 +33,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [x] **Phase 15: NA Error Handling** — Surface descriptive exceptions for NA API failures; auto-retry transient 5xx errors (completed 2026-02-28)
 - [x] **Phase 16: Type Hints** — Annotate public Connection methods, NA private methods, and Vehicle public properties (completed 2026-02-28)
-- [ ] **Phase 17: Logging** — Structured debug logs for NA auth + data flows; credential redaction; INFO-level token refresh events
+- [x] **Phase 17: Logging** — Structured debug logs for NA auth + data flows; credential redaction; INFO-level token refresh events (completed 2026-03-01)
 - [ ] **Phase 18: Documentation** — README NA section + Connection/Vehicle/refresh docstrings
 - [ ] **Phase 19: Security + Code Cleanup** — detect-secrets clean baseline, in-memory token confirmation, TODO resolution
 - [ ] **Phase 20: Performance + Test Coverage** — RVS TTL cache, lazy NA init, NA error path unit tests, full regression pass
@@ -71,7 +71,10 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   2. Each NA vehicle data fetch (vehicle session creation, RVS location, RVS status) emits a DEBUG line that includes the VIN
   3. Grepping all log output at any level for a full token value (>16 chars of a real JWT) finds zero matches — tokens are truncated to 8 chars followed by "..."
   4. A token refresh event (IDK, Brand, or MBB) produces an INFO-level log line that names which token type was refreshed
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 17-01-PLAN.md — Add redact() utility + NullHandler + unit tests
+- [ ] 17-02-PLAN.md — Add NA auth and data fetch debug logs to vw_connection.py
 
 ### Phase 18: Documentation
 **Goal**: README and public API docstrings fully document NA usage and non-obvious implementation decisions
@@ -127,8 +130,8 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 12.1. Fix NA Vehicle Session TSP (INSERTED) | v1.0 | 1/1 | Complete | 2026-02-27 |
 | 13. Display of Real Values + Manual UAT | v1.0 | 1/1 | Complete | 2026-02-27 |
 | 15. NA Error Handling | 2/2 | Complete    | 2026-02-28 | - |
-| 16. Type Hints | 3/3 | Complete   | 2026-02-28 | - |
-| 17. Logging | v1.1 | 0/? | Not started | - |
+| 16. Type Hints | 3/3 | Complete    | 2026-02-28 | - |
+| 17. Logging | 2/2 | Complete   | 2026-03-01 | - |
 | 18. Documentation | v1.1 | 0/? | Not started | - |
 | 19. Security + Code Cleanup | v1.1 | 0/? | Not started | - |
 | 20. Performance + Test Coverage | v1.1 | 0/? | Not started | - |
