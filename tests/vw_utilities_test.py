@@ -11,6 +11,7 @@ from volkswagencarnet.vw_utilities import (
     json_loads,
     make_url,
     obj_parser,
+    redact,
 )
 
 
@@ -114,3 +115,35 @@ class UtilitiesTest(TestCase):
         """Test placeholder replacements."""
         assert make_url("foo/{bar}/baz{baz}", bar=2, baz="") == "foo/2/baz"
         assert make_url("foo/{baz}/$bar", bar=2, baz="asd") == "foo/asd/2"
+
+
+class RedactTest(TestCase):
+    """Tests for the redact() credential-redaction utility."""
+
+    def test_redact_normal_token(self):
+        """Full JWT is truncated to 8 chars + ellipsis."""
+        token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.somePayload"
+        assert redact(token) == "eyJhbGci..."
+
+    def test_redact_none_returns_placeholder(self):
+        """None input returns '(none)' — never crashes."""
+        assert redact(None) == "(none)"
+
+    def test_redact_empty_string_returns_placeholder(self):
+        """Empty string returns '(none)'."""
+        assert redact("") == "(none)"
+
+    def test_redact_short_string(self):
+        """Strings shorter than 8 chars return all chars + ellipsis."""
+        assert redact("abc") == "abc..."
+
+    def test_redact_exactly_8_chars(self):
+        """8-char string returns all 8 chars + ellipsis."""
+        assert redact("12345678") == "12345678..."
+
+    def test_redact_long_token_never_in_full(self):
+        """40-char token is never fully present in output."""
+        token = "A" * 40
+        result = redact(token)
+        assert len(result) == 11  # 8 chars + "..."
+        assert token not in result
