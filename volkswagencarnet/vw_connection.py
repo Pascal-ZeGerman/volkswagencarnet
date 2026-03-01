@@ -89,7 +89,28 @@ class Connection:
         on_xclient_id: Any | None = None,
         spin: str | None = None,
     ) -> None:
-        """Initialize."""
+        """Initialize a Connection to VW Connect services.
+
+        Supports both EMEA (Europe) and North America regions. The region is
+        auto-detected from the ``country`` parameter: US and CA route to NA
+        endpoints; all other country codes use EMEA (default).
+
+        Args:
+            session: An aiohttp ClientSession for HTTP requests.
+            username: VW account email address.
+            password: VW account password.
+            country: ISO 3166-1 alpha-2 country code. Defaults to 'DE'.
+                Use 'US' or 'CA' for North America Car-Net.
+            interval: Minimum interval between update cycles. Defaults to 5 minutes.
+            xclient_id: Optional X-Client-Id header override.
+            on_xclient_id: Optional callback invoked when X-Client-Id changes.
+            spin: Security PIN for operations that require it (lock/unlock, honk & flash).
+
+        Example:
+            >>> async with ClientSession() as session:
+            ...     conn = Connection(session, "user@example.com", "pass", country="US")
+            ...     await conn.doLogin()
+        """
         self._session = session
         self._session_headers = HEADERS_SESSION.copy()
         self._session_auth_headers = HEADERS_AUTH.copy()
@@ -191,10 +212,10 @@ class Connection:
     def _classify_endpoint(self, url: str) -> str:
         """Classify an API URL to determine which NA token type to use.
 
-        Token routing rules (per 2026 traffic analysis):
-        - IDK token: Cariad BFF URLs (self._base_api prefix)
-        - MBB token: MBB OAuth service (mbboauth-1d.prd.ece.vwg-connect.com)
-        - Brand token: Brand token paths (/login/v1/volkswagen/token or /login/v1/vw/token)
+        Token routing rules:
+        - IDK token: Cariad BFF URLs (self._base_api prefix).
+        - MBB token: MBB OAuth service (mbboauth-1d.prd.ece.vwg-connect.com).
+        - Brand token: Brand token paths (/login/v1/volkswagen/token or /login/v1/vw/token).
 
         For EMEA connections, always returns 'idk' (single-token model).
 
@@ -202,11 +223,11 @@ class Connection:
             url: The full URL being requested.
 
         Returns:
-            One of: 'idk', 'mbb', 'brand'
+            One of: 'idk', 'mbb', 'brand'.
 
         Raises:
             ValueError: If url does not match any known NA endpoint pattern.
-                        This is a programmer error — fail loudly.
+                This is a programmer error — fail loudly.
         """
         if self._session_region != "NA":
             return "idk"  # EMEA always uses the single IDK/access_token
@@ -306,7 +327,31 @@ class Connection:
 
     # API Login
     async def doLogin(self, tries: int = 1) -> bool:
-        """Login method, clean login."""
+        """Authenticate with VW Connect and discover vehicles.
+
+        Performs the full OAuth2 authorization code flow:
+        - EMEA: standard flow with IDK + Brand + MBB token exchange.
+        - NA (country='US'/'CA'): PKCE-based flow producing a single IDK token.
+          NA Car-Net does not support Brand or MBB tokens (auth level: IDK-only).
+
+        After successful authentication, populates ``self.vehicles`` with
+        discovered Vehicle objects.
+
+        Args:
+            tries: Number of login attempts before giving up. Defaults to 1.
+
+        Returns:
+            True if login succeeded and at least one vehicle was discovered,
+            False otherwise.
+
+        Raises:
+            AuthenticationError: If credentials are invalid or the OAuth flow fails.
+            APIError: If the vehicle garage endpoint returns an unexpected error.
+
+        Example:
+            >>> if await connection.doLogin():
+            ...     print(f"Found {len(connection.vehicles)} vehicles")
+        """
         async with self._login_lock:
             _LOGGER.debug("Initiating new login")
 
@@ -835,17 +880,21 @@ class Connection:
     async def _exchange_code_for_tokens(
         self, auth_code: str, token_endpoint: str
     ) -> Any:
-        """Exchange authorization code for access tokens.
+        """Exchange an OAuth2 authorization code for access tokens.
+
+        For NA PKCE flow, sends the code_verifier instead of a client_secret.
+        For EMEA, sends the standard client_id and redirect_uri.
 
         Args:
-            auth_code: Authorization code from login flow
-            token_endpoint: Token endpoint URL
+            auth_code: The authorization code obtained from the OAuth redirect.
+            token_endpoint: The token endpoint URL for the exchange.
 
         Returns:
-            Dictionary containing tokens
+            Parsed JSON response containing access_token, refresh_token,
+            id_token, and expiry fields. Returns None if the exchange fails.
 
         Raises:
-            AuthenticationError: If token exchange fails
+            AuthenticationError: If the token endpoint returns an error response.
         """
         token_body = {
             "client_id": self._client_id,  # Use region-specific client ID
@@ -1088,19 +1137,25 @@ class Connection:
         return data
 
     async def _refresh_idk_token(self) -> None:
-        """Refresh the IDK access_token using the stored IDK refresh_token.
+        """Refresh the IDK access token using the stored refresh token.
 
-        Does NOT send X-QMAuth header (server rejects it with HTTP 400 — confirmed from
-        traffic capture; public PKCE client 59992128_MYVW_ANDROID omits it by design).
-        Updates self._na_tokens['idk'], self._session_tokens['identity'],
-        and self._session_headers['Authorization'].
-        After successful IDK refresh, immediately cascades to _refresh_brand_token()
-        because Brand token is derived from the IDK access_token.
+        The refresh request includes the original PKCE ``code_verifier`` from
+        the initial login. This is a non-standard OAuth extension required by
+        the NA AZS server; omitting it causes the server to demand a
+        ``client_secret`` that does not exist for this public client.
 
-        Retries up to 3 times with 2-second delay between attempts.
+        The ``X-QMAuth`` header is intentionally NOT sent, as the server
+        rejects it with HTTP 400 for this public PKCE client.
+
+        After a successful refresh, updates ``self._na_tokens['idk']``,
+        ``self._session_tokens['identity']``, and the Authorization header.
+
+        Returns:
+            None.
 
         Raises:
-            AuthenticationError: If all retry attempts fail.
+            AuthenticationError: If no refresh token is stored, the token
+                endpoint is not set, or all retry attempts (up to 3) fail.
         """
         idk_entry = self._na_tokens.get("idk", {})
         refresh_token = idk_entry.get("refresh_token")
@@ -1546,8 +1601,7 @@ class Connection:
         invalidated and ``_create_na_vehicle_session`` is called once more
         before a single retry.
 
-        Raw response bodies are logged at DEBUG level so Phase 12 can confirm
-        the exact field names (including ``x-mobile-session-id``).
+        Raw response bodies are logged at DEBUG level for diagnostics.
 
         Token values (vehicle token, IDK tokens) are NEVER logged.
 
@@ -1729,18 +1783,25 @@ class Connection:
         }
 
     async def _login_na(self) -> bool:
-        """NA-specific login flow using b-h-s.spr.us00.p.con-veh.net OIDC endpoints.
+        """Perform the NA-specific OAuth2 + PKCE login flow.
 
-        Obtains IDK access_token and refresh_token via OAuth authorization
-        code flow with PKCE. Auth and token endpoints are on the base API.
-        Client: 59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID (public, no secret).
+        Uses the b-h-s base API OIDC endpoints with client ID
+        59992128_MYVW_ANDROID (public client, no secret). Obtains an IDK
+        access token and refresh token via authorization code exchange.
 
-        NOTE: IDK-only BFF access hypothesis (whether the IDK token alone is
-        sufficient for /vehicle/v1/vehicles without a Brand token) is validated
-        in Phase 3 via test fixture scenarios, not via a live probe here.
+        The flow:
+        1. Generate PKCE code_verifier and code_challenge.
+        2. GET authorize endpoint to obtain the login form.
+        3. POST credentials to the identity provider form action.
+        4. Follow redirects to extract the authorization code.
+        5. Exchange code for tokens at the base API token endpoint.
 
         Returns:
-            True if login successful, False otherwise
+            True if login succeeded and tokens were stored, False otherwise.
+
+        Raises:
+            AuthenticationError: If credential submission or code extraction fails.
+            RedirectError: If the OAuth redirect chain produces an unexpected URL.
         """
         try:
             # Clear cookies and reset headers (same as _login())
