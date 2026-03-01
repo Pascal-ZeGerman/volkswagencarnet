@@ -50,7 +50,7 @@ from .vw_exceptions import (
     TermsAndConditionsError,
 )
 
-from .vw_utilities import json_loads
+from .vw_utilities import json_loads, redact
 from .vw_vehicle import Vehicle
 
 MAX_RETRIES_ON_RATE_LIMIT = 3
@@ -721,6 +721,10 @@ class Connection:
     async def _get_authorization_code_na(self, openid_config: dict) -> str:
         """NA-specific authorization code flow using VW IdentiKit two-step login."""
         authorization_endpoint = openid_config["authorization_endpoint"]
+        _LOGGER.debug(
+            "NA auth: fetching authorization page endpoint=%s",
+            authorization_endpoint,
+        )
         # Login forms are served by the identity server (identity.na.vwgroup.io),
         # not by the base API (b-h-s.spr.us00.p.con-veh.net).
         identity_base = self._session_region_config.get(
@@ -749,6 +753,10 @@ class Connection:
         redirect_loc = await self.post_form(
             self._session, identifier_url, self._session_auth_headers, email_payload, redirect=False
         )
+        _LOGGER.debug(
+            "NA auth: email form submitted redirect=%s",
+            (redirect_loc or "")[:60],
+        )
         if not redirect_loc:
             raise AuthenticationError("No redirect received after email submission")
 
@@ -762,6 +770,7 @@ class Connection:
                     f"Password page returned HTTP {resp.status} — check credentials or service availability"
                 )
             password_page = await resp.text()
+        _LOGGER.debug("NA auth: password page fetched status=%s", resp.status)
 
         # ── Step 5: parse IdentiKit password form ─────────────────────────────
         form_data2 = self._extract_identitykit_form(password_page)
@@ -789,6 +798,10 @@ class Connection:
         }
         redirect_loc2 = await self.post_form(
             self._session, authenticate_url, self._session_auth_headers, password_payload, redirect=False
+        )
+        _LOGGER.debug(
+            "NA auth: password form submitted redirect=%s",
+            (redirect_loc2 or "")[:60],
         )
         if not redirect_loc2:
             raise AuthenticationError("No redirect received after password submission — check credentials")
@@ -875,7 +888,13 @@ class Connection:
                 f"Token exchange failed with HTTP {resp.status}: {resp_text[:200]}"
             )
 
-        return json_loads(resp_text)
+        tokens_data = json_loads(resp_text)
+        _LOGGER.debug(
+            "NA token exchange: status=%s has_access_token=%s",
+            resp.status,
+            "access_token" in tokens_data,
+        )
+        return tokens_data
 
     async def _register_mbb_client(self) -> str:
         """Register as MBB OAuth client and return xclientId.
@@ -1708,17 +1727,30 @@ class Connection:
             # NA uses PKCE: code_verifier replaces client_secret at token exchange
             self._pkce_verifier = self._generate_pkce_verifier()
             self._pkce_challenge = self._generate_pkce_challenge(self._pkce_verifier)
+            _LOGGER.debug(
+                "NA login: PKCE challenge created verifier=%s challenge=%s",
+                redact(self._pkce_verifier),
+                redact(self._pkce_challenge),
+            )
 
             # Get OpenID config (routes to identity.na.vwgroup.io for NA)
             openid_config = await self.get_openid_config()
             token_endpoint = openid_config["token_endpoint"]
             self._na_token_endpoint = token_endpoint  # persist for Phase 4 IDK refresh
+            _LOGGER.debug(
+                "NA login: OpenID config fetched token_endpoint=%s",
+                openid_config.get("token_endpoint", "?"),
+            )
 
             # Get authorization code via IdentiKit two-step flow
             auth_code = await self._get_authorization_code_na(openid_config)
 
             # Exchange code for tokens (X-QMAuth header injected inside for NA)
             tokens = await self._exchange_code_for_tokens(auth_code, token_endpoint)
+            _LOGGER.debug(
+                "NA login: token exchange complete access_token=%s",
+                redact(tokens.get("access_token")),
+            )
 
             # Validate token structure
             required_keys = ["access_token", "id_token", "token_type"]
