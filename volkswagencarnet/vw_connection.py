@@ -1615,7 +1615,7 @@ class Connection:
         """
         # Ensure IDK token is valid before proceeding
         if not await self.validate_tokens():
-            _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", vin)
+            _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", redact(vin))
             return None
 
         _LOGGER.debug("NA vehicle data: fetching data for vin=%s", redact(vin))
@@ -1695,23 +1695,23 @@ class Connection:
                     if _rvs_attempt < RVS_MAX_RETRIES:
                         _LOGGER.warning(
                             "NA RVS location: transient %d for %s (attempt %d/%d), retrying",
-                            loc_resp.status, vin, _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
+                            loc_resp.status, redact(vin), _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
                         )
                         await asyncio.sleep(1.0)
                         continue  # retry
                     _LOGGER.warning(
                         "NA RVS location fetch failed for %s: HTTP %d — %s",
-                        vin, loc_resp.status, body_preview[:200],
+                        redact(vin), loc_resp.status, body_preview[:200],
                     )
                 else:
                     body_preview = await loc_resp.text()
                     _LOGGER.warning(
                         "NA RVS location fetch failed for %s: HTTP %d — %s",
-                        vin, loc_resp.status, body_preview[:200],
+                        redact(vin), loc_resp.status, body_preview[:200],
                     )
                     break  # non-5xx non-200 — do not retry
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning("NA RVS location fetch exception for %s: %s", vin, exc)
+            _LOGGER.warning("NA RVS location fetch exception for %s: %s", redact(vin), exc)
 
         # --- Status fetch ---
         status_data: dict | None = None
@@ -1758,23 +1758,23 @@ class Connection:
                     if _rvs_attempt < RVS_MAX_RETRIES:
                         _LOGGER.warning(
                             "NA RVS status: transient %d for %s (attempt %d/%d), retrying",
-                            st_resp.status, vin, _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
+                            st_resp.status, redact(vin), _rvs_attempt + 1, RVS_MAX_RETRIES + 1,
                         )
                         await asyncio.sleep(1.0)
                         continue  # retry
                     _LOGGER.warning(
                         "NA RVS status fetch failed for %s: HTTP %d — %s",
-                        vin, st_resp.status, body_preview[:200],
+                        redact(vin), st_resp.status, body_preview[:200],
                     )
                 else:
                     body_preview = await st_resp.text()
                     _LOGGER.warning(
                         "NA RVS status fetch failed for %s: HTTP %d — %s",
-                        vin, st_resp.status, body_preview[:200],
+                        redact(vin), st_resp.status, body_preview[:200],
                     )
                     break  # non-5xx non-200 — do not retry
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning("NA RVS status fetch exception for %s: %s", vin, exc)
+            _LOGGER.warning("NA RVS status fetch exception for %s: %s", redact(vin), exc)
 
         # Return partial data even if one endpoint failed
         return {
@@ -1801,6 +1801,9 @@ class Connection:
 
         Raises:
             AuthenticationError: If credential submission or code extraction fails.
+                Wraps ``RequestError`` (network/HTTP failures) and ``KeyError``
+                (missing response fields) with actionable guidance —
+                e.g. "verify country='US' and credentials are correct".
             RedirectError: If the OAuth redirect chain produces an unexpected URL.
         """
         try:
