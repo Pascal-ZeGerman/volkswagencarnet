@@ -1312,6 +1312,7 @@ class Connection:
         idk_entry = self._na_tokens.get("idk", {})
         idk_id_token = idk_entry.get("id_token", "")
         idk_access_token = idk_entry.get("access_token", "")
+        _LOGGER.debug("NA vehicle session: creating session for vin=%s", redact(vin))
 
         if not idk_id_token:
             _LOGGER.warning("NA: cannot create vehicle session for %s — IDK id_token missing", vin)
@@ -1332,6 +1333,7 @@ class Connection:
         # Check cache — return cached token if not expiring within 5 minutes
         cached = self._na_tokens.get(vin, {}).get("vehicle_session")
         if cached and cached.get("expires_at", 0) > time.time() + 300:
+            _LOGGER.debug("NA vehicle session: cache hit for vin=%s", redact(vin))
             return cached["token"]
 
         base_api = self._base_api
@@ -1408,6 +1410,7 @@ class Connection:
                     else:
                         tok = raw_token
                     if tok:
+                        _LOGGER.debug("NA vehicle session: token obtained for vin=%s", redact(vin))
                         _LOGGER.info("NA vehicle session created with tsp='%s'", tsp_value)
                         return tok
                     _LOGGER.warning(
@@ -1561,6 +1564,7 @@ class Connection:
             _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", vin)
             return None
 
+        _LOGGER.debug("NA vehicle data: fetching data for vin=%s", redact(vin))
         vehicle_token = await self._create_na_vehicle_session(vin)
         if vehicle_token is None:
             return None
@@ -1595,6 +1599,11 @@ class Connection:
         # --- Location fetch ---
         location_data: dict | None = None
         location_url = f"{base_api}/rvs/v1/location/vehicle/{vehicle_id}"
+        _LOGGER.debug(
+            "NA vehicle data: fetching RVS location for vin=%s url=%s",
+            redact(vin),
+            location_url,
+        )
         try:
             for _rvs_attempt in range(RVS_MAX_RETRIES + 1):
                 loc_resp = await self._session.get(
@@ -1602,6 +1611,11 @@ class Connection:
                     headers=rvs_headers,
                     timeout=ClientTimeout(total=TIMEOUT.seconds),
                     allow_redirects=False,
+                )
+                _LOGGER.debug(
+                    "NA vehicle data: RVS location status=%s for vin=%s",
+                    loc_resp.status,
+                    redact(vin),
                 )
                 if loc_resp.status == 401:
                     _LOGGER.debug("NA RVS location: 401 — refreshing vehicle session and retrying")
@@ -1648,6 +1662,11 @@ class Connection:
         # --- Status fetch ---
         status_data: dict | None = None
         status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
+        _LOGGER.debug(
+            "NA vehicle data: fetching RVS status for vin=%s url=%s",
+            redact(vin),
+            status_url,
+        )
         try:
             for _rvs_attempt in range(RVS_MAX_RETRIES + 1):
                 st_resp = await self._session.get(
@@ -1655,6 +1674,11 @@ class Connection:
                     headers=rvs_headers,
                     timeout=ClientTimeout(total=TIMEOUT.seconds),
                     allow_redirects=False,
+                )
+                _LOGGER.debug(
+                    "NA vehicle data: RVS status status=%s for vin=%s",
+                    st_resp.status,
+                    redact(vin),
                 )
                 if st_resp.status == 401:
                     _LOGGER.debug("NA RVS status: 401 — refreshing vehicle session and retrying")
