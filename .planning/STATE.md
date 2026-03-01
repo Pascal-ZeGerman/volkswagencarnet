@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: unknown
-last_updated: "2026-02-28T04:04:59.039Z"
+last_updated: "2026-02-28T04:27:46.200Z"
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 5
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 16-type-hints (in progress)
-Plan: 2 of 3 complete — 16-02 complete
-Status: 16-02 complete — vw_vehicle.py lines 1-1299 annotated, 0 mypy errors in range
-Last activity: 2026-02-28 - Phase 16 Plan 02 complete (2 tasks, 2 files, 158 tests pass)
+Phase: 16-type-hints (complete)
+Plan: 3 of 3 complete — 16-03 complete
+Status: Phase 16 complete — vw_vehicle.py and vw_connection.py fully annotated, 0 mypy errors, TYPE-01/02/03 all satisfied
+Last activity: 2026-02-28 - Phase 16 Plan 03 complete (2 tasks, 2 files, 158 tests pass)
 
 Progress: [##        ] 10%
 
@@ -62,6 +62,7 @@ Progress: [##        ] 10%
 | Phase 15-na-error-handling P02 | 177 | 2 tasks | 3 files |
 | Phase 16-type-hints P01 | 12 | 2 tasks | 3 files |
 | Phase 16-type-hints P02 | 12 | 2 tasks | 2 files |
+| Phase 16-type-hints P03 | 25 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,7 @@ Recent decisions affecting current work:
 - [Phase 16-type-hints P02]: vin property asserts self._url is not None and returns str — all action methods rely on non-None VIN
 - [Phase 16-type-hints P02]: Connection action methods (setCharging/setClimater/setAuxiliary/setWindowHeater/setLock) accept bool | str for action param — code uses bool expressions (action == "start")
 - [Phase 16-type-hints P02]: assert self._connection is not None pattern in action methods rather than if/return guards
+- [Phase 16-type-hints]: windows_closed returns bool|None; departure_timer_enabled/ac_departure_timer_enabled use None guard returning False; vehicle() unique_id None guard added
 
 ### Roadmap Evolution
 
@@ -125,5 +127,5 @@ None yet for v1.1.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 16-type-hints 16-02-PLAN.md — vw_vehicle.py methods lines 1-1299 annotated
+Stopped at: Completed 16-type-hints 16-03-PLAN.md — vw_vehicle.py properties annotated, phase 16 complete
 Resume file: None

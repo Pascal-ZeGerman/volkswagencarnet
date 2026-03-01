@@ -17,7 +17,7 @@ Requirements for the "make production ready" milestone. Focuses on code quality,
 
 - [x] **TYPE-01**: All public `Connection` methods (`doLogin`, `get`, `post`, `put`, `update`, `validate_tokens`) have return type annotations
 - [x] **TYPE-02**: NA-specific private methods (`_login_na`, `_create_na_vehicle_session`, `_get_na_vehicle_data`, `_refresh_idk_token`, `_classify_endpoint`) have complete parameter and return type signatures
-- [ ] **TYPE-03**: Vehicle public properties (`position`, `doors_locked`, `vin`, `na_position`, `na_doors_locked`) have return type annotations matching their actual return types
+- [x] **TYPE-03**: Vehicle public properties (`position`, `doors_locked`, `vin`, `na_position`, `na_doors_locked`) have return type annotations matching their actual return types
 
 ### Logging
 
@@ -91,7 +91,7 @@ Deferred — promote when API research confirms availability.
 | ERR-03 | Phase 15 | Complete |
 | TYPE-01 | Phase 16 | Complete |
 | TYPE-02 | Phase 16 | Complete |
-| TYPE-03 | Phase 16 | Pending |
+| TYPE-03 | Phase 16 | Complete |
 | LOG-01 | Phase 17 | Pending |
 | LOG-02 | Phase 17 | Pending |
 | LOG-03 | Phase 17 | Pending |
