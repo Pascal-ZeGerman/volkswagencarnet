@@ -1495,6 +1495,7 @@ class Connection:
             #     - Authorization: Bearer {idk_access_token}   ← azsSession.token.access_token
             #     - x-user-id: {userId}
             #     - x-mobile-session-id: {sessionId}
+            #       ^ TBD: field name from APK analysis, not confirmed from live traffic
             #     - x-app-version: 2025.12.10-8414
             #   The challenge endpoint (ss/v1/user/{userId}/challenge) accepts IDK access_token as
             #   Bearer when the x-user-id header is also present.
@@ -1642,6 +1643,8 @@ class Connection:
         }
 
         # Add x-mobile-session-id if cached from prior session response
+        # TBD: field name "x-mobile-session-id" derived from APK analysis (d20/i.java),
+        # not yet confirmed from live HTTP traffic capture. See CLEAN-03.
         session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
         if session_id:
             rvs_headers["x-mobile-session-id"] = session_id

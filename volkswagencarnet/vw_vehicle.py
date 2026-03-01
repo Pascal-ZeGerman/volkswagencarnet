@@ -1689,7 +1689,7 @@ class Vehicle:
 
     @property
     def energy_flow(self) -> bool:
-        # TODO untouched # pylint: disable=fixme
+        # noqa: T000 — Pre-existing EMEA technical debt: energy_flow parsing untouched since original codebase
         """Return true if energy is flowing through charging port."""
         check = (
             self.attrs.get("charger", {})
@@ -1702,7 +1702,7 @@ class Vehicle:
 
     @property
     def energy_flow_last_updated(self) -> datetime:
-        # TODO untouched # pylint: disable=fixme
+        # noqa: T000 — Pre-existing EMEA technical debt: energy_flow parsing untouched since original codebase
         """Return energy flow last updated."""
         return (
             self.attrs.get("charger", {})
@@ -1714,7 +1714,7 @@ class Vehicle:
 
     @property
     def is_energy_flow_supported(self) -> bool:
-        # TODO untouched # pylint: disable=fixme
+        # noqa: T000 — Pre-existing EMEA technical debt: energy_flow parsing untouched since original codebase
         """Energy flow supported."""
         return (
             self.attrs.get("charger", {})
