@@ -25,14 +25,18 @@ import jwt
 from .vw_const import (
     ANDROID_PACKAGE_NAME,
     APP_URI,
+    APP_VERSION,
+    APP_VERSION_SHORT,
     BASE_API,
     BRAND,
     CLIENT_ID,
     CLIENT_SCOPE,
     CLIENT_TOKEN_TYPES,
     COUNTRY,
+    COUNTRY_TO_LOCALE,
     HEADERS_AUTH,
     HEADERS_SESSION,
+    MAX_REDIRECT_DEPTH,
     MBB_BRAND_CONFIG,
     USER_AGENT,
     XQMAUTH_PREFIX,
@@ -481,12 +485,7 @@ class Connection:
             # The US API requires these to identify the "legal entity"
             if self._session_country:
                 # ui_locales uses language-region format (e.g., "en-US" not "us-US")
-                country_to_locale = {
-                    "US": "en-US",
-                    "CA": "en-CA",
-                    "GB": "en-GB",
-                }
-                oauth_params["ui_locales"] = country_to_locale.get(
+                oauth_params["ui_locales"] = COUNTRY_TO_LOCALE.get(
                     self._session_country,
                     f"{self._session_country.lower()}-{self._session_country}",
                 )
@@ -665,12 +664,11 @@ class Connection:
     ) -> str:
         """Handle redirects."""
         ref = urljoin(pw_url, redirect_location)
-        MAX_REDIRECT_DEPTH = 10
-        max_depth = MAX_REDIRECT_DEPTH
+        depth = MAX_REDIRECT_DEPTH
         stop_uri = self._session_region_config.get("redirect_uri", APP_URI)
         _LOGGER.debug("follow_redirects: stop_uri=%s start_ref=%s", stop_uri, ref)
         while not ref.startswith(stop_uri):
-            if max_depth == 0:
+            if depth == 0:
                 raise RedirectError(
                     f"Too many redirects during login flow (max depth: {MAX_REDIRECT_DEPTH}). "
                     "This might indicate an authentication loop."
@@ -705,7 +703,7 @@ class Connection:
                 _LOGGER.warning("Failed to find next redirect location")
                 raise RedirectError("Failed to find next redirect location")
             ref = urljoin(ref, location)
-            max_depth -= 1
+            depth -= 1
         return ref
 
     async def _get_authorization_code(self, openid_config: dict) -> str:
@@ -963,7 +961,7 @@ class Connection:
             "platform": "google",
             "client_brand": "Volkswagen",
             "appName": "myVW",
-            "appVersion": "3.51.1",
+            "appVersion": APP_VERSION_SHORT,
             "appId": ANDROID_PACKAGE_NAME,
         }
         reg_headers = {**self._session_auth_headers, "Content-Type": "application/json"}
@@ -1495,7 +1493,7 @@ class Connection:
             #     - x-user-id: {userId}
             #     - x-mobile-session-id: {sessionId}
             #       ^ TBD: field name from APK analysis, not confirmed from live traffic
-            #     - x-app-version: 2025.12.10-8414
+            #     - x-app-version: APP_VERSION
             #   The challenge endpoint (ss/v1/user/{userId}/challenge) accepts IDK access_token as
             #   Bearer when the x-user-id header is also present.
             #   PinResponse is flat: {"challenge": "<hex>", "remainingTries": N} — no "data" wrapper.
@@ -1513,7 +1511,7 @@ class Connection:
                         "Authorization": f"Bearer {idk_access_token}",
                         "x-user-id": user_id,
                         "x-user-agent": "mobile-android",
-                        "x-app-version": "2025.12.10-8414",
+                        "x-app-version": APP_VERSION,
                         "Accept": "application/json",
                     },
                     timeout=ClientTimeout(total=TIMEOUT.seconds),
@@ -1643,7 +1641,7 @@ class Connection:
         rvs_headers: dict = {
             "Authorization": f"Bearer {vehicle_token}",
             "x-user-id": user_id,
-            "x-app-version": "2025.12.10-8414",
+            "x-app-version": APP_VERSION,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }

@@ -52,10 +52,14 @@ XQMAUTH_SECRET = bytes(
 XQMAUTH_PREFIX = "v1:01da27b0:"
 CLIENT_TOKEN_TYPES = "code"
 
-USER_AGENT = "Volkswagen/3.51.1-android/14"
+APP_VERSION = "2025.12.10-8414"  # x-app-version header value (from APK manifest)
+APP_VERSION_SHORT = "3.51.1"  # Short version for User-Agent and MBB registration
+USER_AGENT = f"Volkswagen/{APP_VERSION_SHORT}-android/14"
 APP_URI = "weconnect://authenticated"
 ANDROID_PACKAGE_NAME = "com.volkswagen.weconnect"
 MBB_BRAND_CONFIG = "myvw"  # VW brand identifier for Brand/MBB token exchanges
+MAX_REDIRECT_DEPTH = 10  # Maximum redirects during OAuth login flow
+COUNTRY_TO_LOCALE = {"US": "en-US", "CA": "en-CA", "GB": "en-GB"}
 
 # Used when fetching data
 HEADERS_SESSION = {
