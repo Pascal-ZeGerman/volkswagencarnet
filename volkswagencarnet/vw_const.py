@@ -7,7 +7,7 @@ COUNTRY = "DE"
 # Data used in communication
 CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
 CLIENT_ID_US = (
-    "b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com"  # North America (2026)
+    "59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID"  # North America (confirmed from APK 2026)
 )
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
 
@@ -88,20 +88,24 @@ REGION_CONFIGS = {
         "base_api": "https://b-h-s.spr.us00.p.con-veh.net",  # Confirmed working 2026
         "homeregion": None,  # Discovered during login
         "client_id": CLIENT_ID_US,
-        "identity_endpoint": "https://identity.na.vwgroup.io",  # OAuth/OIDC provider (2026)
-        "scope": "openid email",  # Minimal scope used by app (2026)
-        "redirect_uri": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/oauth/callback",  # HTTPS callback (2026)
-        "use_pkce": False,  # App does NOT use PKCE despite server support (2026)
+        # Auth/token flow (confirmed from APK decompilation + traffic analysis 2026):
+        # - authorize URL is built from base_api (b-h-s...) in the app's WebView
+        # - base_api/oidc/v1/authorize redirects → identity.na.vwgroup.io login form
+        # - form POSTs must go to identity.na.vwgroup.io (relative form action paths live there)
+        # - token exchange goes to base_api/oidc/v1/token as public PKCE client (no client_secret)
+        "identity_endpoint": "https://identity.na.vwgroup.io",  # form POST base URL (relative paths)
+        "auth_endpoint": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/authorize",  # redirects to identity
+        "token_endpoint": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/token",  # public PKCE client
+        "scope": "openid",  # Confirmed from LoginFragment.java: addQueryParameter("scope", "openid")
+        "redirect_uri": "kombi:///login",  # Confirmed from LoginFragment.java (custom URI scheme)
+        "use_pkce": True,  # PKCE required: AzsChallenge holds code_verifier + code_challenge
         "mbb_oauth_base_url": "https://mbboauth-1d.prd.ece.vwg-connect.com/mbbcoauth",
         "brand_token_path": "/login/v1/volkswagen/token",
-        "base_api_candidates": [
-            "https://b-h-s.spr.us00.p.con-veh.net",  # Legacy endpoint (confirmed 2026)
-            "https://na.bff.cariad.digital",
-            "https://us.bff.cariad.digital",
-            "https://northamerica.bff.cariad.digital",
-            "https://usac.bff.cariad.digital",
-            "https://americas.bff.cariad.digital",
-        ],
+        # base_api_candidates left empty: b-h-s.spr.us00.p.con-veh.net does not respond to
+        # /login/v1/idk/openid-configuration (the discovery endpoint), so discovery would
+        # wrongly pick na.bff.cariad.digital which lacks the vehicle API. Hardcoded base_api
+        # is the confirmed correct endpoint from APK decompilation 2026.
+        "base_api_candidates": [],
         "homeregion_candidates": [
             "https://msg.vw.com",
             "https://msg.volkswagen.com",

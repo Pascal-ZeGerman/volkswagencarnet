@@ -162,7 +162,7 @@ The library uses OAuth2 with authorization code flow:
 **Regional OAuth Differences:**
 - **EMEA (EU)**: Standard OAuth2 authorization code flow
 - **North America (US/CA)**: Standard OAuth2 authorization code flow (2026)
-  - PKCE is supported but NOT used by official app
+  - PKCE is **required**: `code_verifier` replaces `client_secret` at token exchange (client is confidential without PKCE)
   - Identity provider: `identity.na.vwgroup.io` (separate from base API)
   - Redirect URI: HTTPS callback to base API endpoint
   - Minimal scope: `openid email`
@@ -251,7 +251,7 @@ If US authentication fails with current credentials:
 - OAuth credentials may be outdated (last confirmed: 2021)
 - Traffic capture from 2026 revealed:
   - Client ID: `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com`
-  - PKCE is optional/unused despite server support
+  - PKCE is **required** for token exchange (without it, server demands client_secret which is unavailable)
   - Redirect URI uses HTTPS callback, not custom scheme
   - Scope simplified to `openid email`
   - Identity endpoint separate from base API (`identity.na.vwgroup.io`)

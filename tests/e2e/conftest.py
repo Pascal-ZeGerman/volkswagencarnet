@@ -24,7 +24,7 @@ _PASSWORD = os.environ.get("VW_TEST_PASSWORD")
 _SPIN = os.environ.get("VW_TEST_SPIN")  # optional 4-digit Security PIN
 
 if not _USERNAME or not _PASSWORD:
-    raise EnvironmentError(
+    raise OSError(
         "E2E tests require real VW credentials.\n"
         "Set VW_TEST_USERNAME and VW_TEST_PASSWORD to run live tests.\n"
         "  export VW_TEST_USERNAME='your-email@example.com'\n"
