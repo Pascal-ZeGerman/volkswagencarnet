@@ -6,11 +6,11 @@ from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-from aiohttp import client_exceptions
+from aiohttp import ClientSession, client_exceptions
 import pytest
 from volkswagencarnet import vw_connection
 from volkswagencarnet.vw_connection import Connection
-from volkswagencarnet.vw_exceptions import AuthenticationError, RedirectError
+from volkswagencarnet.vw_exceptions import APIError, AuthenticationError, RedirectError, RequestError
 
 
 class TwoVehiclesConnection(Connection):
@@ -870,3 +870,731 @@ class NATokenLifecycleTest(IsolatedAsyncioTestCase):
         # Inline 401 retry guard only activates for NA (session_region == "NA")
         # EMEA path does not attempt token refresh — raise_for_status raises ClientResponseError
         assert mock_session_request.call_count == 1  # no retry for EMEA
+
+
+# ---------------------------------------------------------------------------
+# Phase 23-01: Comprehensive Connection tests
+# ---------------------------------------------------------------------------
+
+VIN = "WVWTEST1234567890"
+BASE_API = "https://emea.bff.cariad.digital"
+
+
+def _make_connection(country="DE", **overrides):
+    """Create a Connection with mocked session for testing."""
+    session = AsyncMock(spec=ClientSession)
+    session._cookie_jar = MagicMock()
+    session._cookie_jar._cookies = {}
+    conn = Connection(session, "test@example.com", "password123", country=country)
+    conn._base_api = BASE_API
+    for k, v in overrides.items():
+        setattr(conn, k, v)
+    return conn
+
+
+def _mock_action_response():
+    """Create a mock raw response that _handle_action_result can parse."""
+    mock_resp = AsyncMock()
+    mock_resp.json = AsyncMock(return_value={"data": {"requestID": "req-123"}})
+    return mock_resp
+
+
+# ---------------------------------------------------------------------------
+# EMEA OAuth Flow Tests
+# ---------------------------------------------------------------------------
+class TestEmeaOAuthFlow:
+    """Test EMEA OAuth login flow components."""
+
+    @pytest.mark.asyncio
+    async def test_get_openid_config_returns_endpoints(self):
+        """Mock session.get to return openid config, verify returned dict has auth and token endpoints."""
+        conn = _make_connection()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={
+            "authorization_endpoint": "https://identity.vwgroup.io/oidc/v1/authorize",
+            "token_endpoint": "https://emea.bff.cariad.digital/login/v1/idk/token",
+            "issuer": "https://identity.vwgroup.io",
+        })
+        conn._session.get = AsyncMock(return_value=mock_resp)
+        result = await conn.get_openid_config()
+        assert "authorization_endpoint" in result
+        assert "token_endpoint" in result
+
+    @pytest.mark.asyncio
+    async def test_login_emea_full_flow(self):
+        """Test EMEA login via _login() dispatching to EMEA path with mocked sub-methods."""
+        conn = _make_connection()
+        openid_config = {
+            "authorization_endpoint": "https://identity.vwgroup.io/oidc/v1/authorize",
+            "token_endpoint": "https://emea.bff.cariad.digital/login/v1/idk/token",
+            "issuer": "https://identity.vwgroup.io",
+        }
+        token_response = {
+            "access_token": "emea_at",
+            "id_token": "emea_id",
+            "refresh_token": "emea_rt",
+            "token_type": "Bearer",
+        }
+        with (
+            patch.object(conn, "get_openid_config", return_value=openid_config),
+            patch.object(conn, "_get_authorization_code", return_value="emea_code_123"),
+            patch.object(conn, "_exchange_code_for_tokens", return_value=token_response),
+        ):
+            result = await conn._login()
+
+        assert result is True
+        assert conn._session_tokens["identity"]["access_token"] == "emea_at"
+        assert conn._session_region == "EMEA"
+
+    @pytest.mark.asyncio
+    async def test_login_emea_invalid_credentials(self):
+        """Mock auth that raises AuthenticationError, verify _login returns False."""
+        conn = _make_connection()
+        openid_config = {
+            "authorization_endpoint": "https://identity.vwgroup.io/oidc/v1/authorize",
+            "token_endpoint": "https://emea.bff.cariad.digital/login/v1/idk/token",
+            "issuer": "https://identity.vwgroup.io",
+        }
+        with (
+            patch.object(conn, "get_openid_config", return_value=openid_config),
+            patch.object(
+                conn,
+                "_get_authorization_code",
+                side_effect=AuthenticationError("Invalid credentials"),
+            ),
+        ):
+            result = await conn._login()
+
+        # _login() catches AuthenticationError and returns False
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_exchange_code_for_tokens_success(self):
+        """Mock token endpoint POST, verify tokens parsed correctly."""
+        conn = _make_connection()
+        conn._na_token_endpoint = None  # EMEA path
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value='{"access_token":"test_at","refresh_token":"test_rt","id_token":"test_id","token_type":"Bearer","expires_in":3600}')
+
+        mock_post = AsyncMock(return_value=mock_resp)
+        with patch.object(conn._session, "post", mock_post):
+            result = await conn._exchange_code_for_tokens(
+                "test_code",
+                "https://emea.bff.cariad.digital/login/v1/idk/token",
+            )
+
+        assert result["access_token"] == "test_at"
+        assert result["refresh_token"] == "test_rt"
+
+    @pytest.mark.asyncio
+    async def test_exchange_code_for_tokens_error(self):
+        """Mock token endpoint returning 400, verify AuthenticationError raised."""
+        conn = _make_connection()
+        conn._na_token_endpoint = None  # EMEA path
+        mock_resp = AsyncMock()
+        mock_resp.status = 400
+        mock_resp.text = AsyncMock(return_value='{"error":"invalid_grant"}')
+
+        mock_post = AsyncMock(return_value=mock_resp)
+        with patch.object(conn._session, "post", mock_post):
+            with pytest.raises(AuthenticationError, match="Token exchange failed"):
+                await conn._exchange_code_for_tokens(
+                    "bad_code",
+                    "https://emea.bff.cariad.digital/login/v1/idk/token",
+                )
+
+
+# ---------------------------------------------------------------------------
+# Token Management Tests
+# ---------------------------------------------------------------------------
+class TestTokenManagement:
+    """Test token validation and refresh paths for both regions."""
+
+    @pytest.mark.asyncio
+    async def test_validate_tokens_emea_fresh_tokens_no_refresh(self):
+        """Set EMEA tokens with long expiry, verify no refresh call."""
+        import jwt as pyjwt
+
+        conn = _make_connection()
+        # Create fake JWT tokens with far-future expiry
+        future_exp = int(time.time()) + 7200
+        fake_payload = {"exp": future_exp, "sub": "test"}
+        # Use a simple unsigned token for testing
+        fake_token = pyjwt.encode(fake_payload, "secret", algorithm="HS256")
+        conn._session_tokens["identity"] = {
+            "access_token": fake_token,
+            "id_token": fake_token,
+            "refresh_token": "rt",
+        }
+
+        mock_refresh = AsyncMock(return_value=True)
+        with patch.object(conn, "refresh_tokens", mock_refresh):
+            result = await conn.validate_tokens()
+
+        assert result is True
+        mock_refresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_validate_tokens_emea_expired_triggers_refresh(self):
+        """Set near-expired EMEA tokens, verify refresh is called."""
+        import jwt as pyjwt
+
+        conn = _make_connection()
+        # Create tokens that expire in the past
+        past_exp = int(time.time()) - 100
+        fake_payload = {"exp": past_exp, "sub": "test"}
+        fake_token = pyjwt.encode(fake_payload, "secret", algorithm="HS256")
+        conn._session_tokens["identity"] = {
+            "access_token": fake_token,
+            "id_token": fake_token,
+            "refresh_token": "rt",
+        }
+
+        mock_refresh = AsyncMock(return_value=True)
+        with patch.object(conn, "refresh_tokens", mock_refresh):
+            result = await conn.validate_tokens()
+
+        assert result is True
+        mock_refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_tokens_na_refreshes_idk_only(self):
+        """For NA connection, verify only IDK refresh (no Brand/MBB) when idk_only."""
+        conn = _make_connection(country="US")
+        now = time.time()
+        conn._na_tokens = {
+            "idk": {
+                "access_token": "idk_at",
+                "refresh_token": "idk_rt",
+                "id_token": "idk_id",
+                "expires_at": now + 500,  # within 15-min window
+                "issued_at": now,
+            },
+        }
+        conn._na_auth_level = "idk_only"
+
+        mock_idk_refresh = AsyncMock()
+        mock_brand_refresh = AsyncMock()
+        mock_mbb_refresh = AsyncMock()
+
+        with (
+            patch.object(conn, "_refresh_idk_token", mock_idk_refresh),
+            patch.object(conn, "_refresh_brand_token", mock_brand_refresh),
+            patch.object(conn, "_refresh_mbb_from_refresh_token", mock_mbb_refresh),
+        ):
+            result = await conn.validate_tokens()
+
+        assert result is True
+        mock_idk_refresh.assert_called_once()
+        mock_brand_refresh.assert_not_called()
+        mock_mbb_refresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_triggers_full_relogin(self):
+        """Mock refresh failure for EMEA, verify doLogin() would be needed."""
+        import jwt as pyjwt
+
+        conn = _make_connection()
+        past_exp = int(time.time()) - 100
+        fake_payload = {"exp": past_exp, "sub": "test"}
+        fake_token = pyjwt.encode(fake_payload, "secret", algorithm="HS256")
+        conn._session_tokens["identity"] = {
+            "access_token": fake_token,
+            "id_token": fake_token,
+            "refresh_token": "rt",
+        }
+
+        mock_refresh = AsyncMock(return_value=False)
+        with patch.object(conn, "refresh_tokens", mock_refresh):
+            result = await conn.validate_tokens()
+
+        # When refresh fails, validate_tokens returns False (caller should re-login)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Action Methods Tests
+# ---------------------------------------------------------------------------
+class TestActionMethods:
+    """Test every Connection action method."""
+
+    @pytest.mark.asyncio
+    async def test_setCharging_start(self):
+        """Test setCharging with start action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setCharging(VIN, action="start")
+        assert result is not None
+        assert result.get("id") == "req-123"
+        conn.post.assert_called_once()
+        call_url = conn.post.call_args[0][0]
+        assert "charging/start" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setCharging_stop(self):
+        """Test setCharging with stop action (falsy)."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setCharging(VIN, action=False)
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "charging/stop" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setClimater_start(self):
+        """Test setClimater with start action and data."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        data = {"targetTemperature_C": 22}
+        result = await conn.setClimater(VIN, data=data, action="start")
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "climatisation/start" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setClimater_stop(self):
+        """Test setClimater with stop action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setClimater(VIN, data={}, action=False)
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "climatisation/stop" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setClimaterSettings(self):
+        """Test setClimaterSettings sends PUT to correct endpoint."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"targetTemperature_C": 20}
+        result = await conn.setClimaterSettings(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "climatisation/settings" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setClimatisationTimers(self):
+        """Test setClimatisationTimers sends PUT to timers endpoint."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"timers": []}
+        result = await conn.setClimatisationTimers(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "climatisation/timers" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setAuxiliary_start(self):
+        """Test setAuxiliary with start action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setAuxiliary(VIN, data={}, action="start")
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "auxiliaryheating/start" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setAuxiliary_stop(self):
+        """Test setAuxiliary with stop action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setAuxiliary(VIN, data={}, action=False)
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "auxiliaryheating/stop" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setAuxiliaryHeatingTimers(self):
+        """Test setAuxiliaryHeatingTimers sends PUT to timers endpoint."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"timers": []}
+        result = await conn.setAuxiliaryHeatingTimers(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "auxiliaryheating/timers" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setWindowHeater_start(self):
+        """Test setWindowHeater with start action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setWindowHeater(VIN, action="start")
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "windowheating/start" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setWindowHeater_stop(self):
+        """Test setWindowHeater with stop action."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        result = await conn.setWindowHeater(VIN, action=False)
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "windowheating/stop" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setLock_lock(self):
+        """Test setLock with lock=True."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        conn.check_spin_state = AsyncMock(return_value=True)
+        result = await conn.setLock(VIN, lock=True, spin="1234")
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "access/lock" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setLock_unlock(self):
+        """Test setLock with lock=False."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        conn.check_spin_state = AsyncMock(return_value=True)
+        result = await conn.setLock(VIN, lock=False, spin="1234")
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "access/unlock" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setHonkAndFlash(self):
+        """Test setHonkAndFlash sends correct position data."""
+        conn = _make_connection()
+        conn.post = AsyncMock(return_value=_mock_action_response())
+        conn.check_spin_state = AsyncMock(return_value=True)
+        position = {"lat": 52.520, "lng": 13.405}
+        result = await conn.setHonkAndFlash(VIN, position=position)
+        assert result is not None
+        call_url = conn.post.call_args[0][0]
+        assert "honkandflash" in call_url
+        # Verify position data is in the json payload
+        call_kwargs = conn.post.call_args[1]
+        json_data = call_kwargs.get("json", {})
+        assert json_data["userPosition"]["latitude"] == 52.520
+        assert json_data["userPosition"]["longitude"] == 13.405
+
+    @pytest.mark.asyncio
+    async def test_setChargingSettings(self):
+        """Test setChargingSettings sends PUT to charging settings."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"maxChargeCurrentAC": "maximum"}
+        result = await conn.setChargingSettings(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "charging/settings" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setChargingCareModeSettings(self):
+        """Test setChargingCareModeSettings sends PUT to care settings."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"batteryCareMode": "activated"}
+        result = await conn.setChargingCareModeSettings(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "charging/care/settings" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setReadinessBatterySupport(self):
+        """Test setReadinessBatterySupport sends PUT to batterysupport."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"batterySupportEnabled": True}
+        result = await conn.setReadinessBatterySupport(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "readiness/batterysupport" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setDepartureProfiles(self):
+        """Test setDepartureProfiles sends PUT to departure profiles."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"profiles": []}
+        result = await conn.setDepartureProfiles(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "departure/profiles" in call_url
+
+    @pytest.mark.asyncio
+    async def test_setDepartureTimers(self):
+        """Test setDepartureTimers sends PUT to departure timers."""
+        conn = _make_connection()
+        conn.put = AsyncMock(return_value=_mock_action_response())
+        data = {"timers": []}
+        result = await conn.setDepartureTimers(VIN, data=data)
+        assert result is not None
+        call_url = conn.put.call_args[0][0]
+        assert "departure/timers" in call_url
+
+    @pytest.mark.asyncio
+    async def test_action_method_raises_api_error_on_exception(self):
+        """Test that action methods wrap exceptions in APIError."""
+        conn = _make_connection()
+        conn.post = AsyncMock(side_effect=Exception("network failure"))
+        with pytest.raises(APIError, match="setCharging"):
+            await conn.setCharging(VIN, action="start")
+
+
+# ---------------------------------------------------------------------------
+# Data Fetch Methods Tests
+# ---------------------------------------------------------------------------
+class TestDataFetchMethods:
+    """Test all data fetch methods."""
+
+    @pytest.mark.asyncio
+    async def test_getSelectiveStatus_returns_data(self):
+        """Test getSelectiveStatus returns service data."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "charging": {"chargingState": "readyForCharging"},
+            "climatisation": {"climatisationState": "off"},
+        })
+        result = await conn.getSelectiveStatus(VIN, services=["charging", "climatisation"])
+        assert result is not None
+        assert "refreshTimestamp" in result
+        assert "charging" in result
+
+    @pytest.mark.asyncio
+    async def test_getSelectiveStatus_returns_false_on_invalid_tokens(self):
+        """Test getSelectiveStatus returns False when token validation fails."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=False)
+        result = await conn.getSelectiveStatus(VIN, services=["charging"])
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_getVehicleData_returns_data(self):
+        """Test getVehicleData returns vehicle data for matching VIN."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": [
+                {"vin": VIN, "nickname": "My Car", "model": "ID.4"},
+                {"vin": "OTHER_VIN", "nickname": "Other Car"},
+            ]
+        })
+        result = await conn.getVehicleData(VIN)
+        assert result is not None
+        assert result["vehicle"]["vin"] == VIN
+
+    @pytest.mark.asyncio
+    async def test_getVehicleData_returns_false_for_unknown_vin(self):
+        """Test getVehicleData returns False for VIN not in response."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": [{"vin": "OTHER_VIN", "nickname": "Other Car"}]
+        })
+        result = await conn.getVehicleData(VIN)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_getParkingPosition_returns_data(self):
+        """Test getParkingPosition returns position data."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": {"lat": 52.520, "lng": 13.405}
+        })
+        result = await conn.getParkingPosition(VIN)
+        assert result is not None
+        assert result["isMoving"] is False
+        assert result["parkingposition"]["lat"] == 52.520
+
+    @pytest.mark.asyncio
+    async def test_getParkingPosition_204_is_moving(self):
+        """Test getParkingPosition returns isMoving=True on 204."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={"status_code": 204})
+        result = await conn.getParkingPosition(VIN)
+        assert result is not None
+        assert result["isMoving"] is True
+
+    @pytest.mark.asyncio
+    async def test_getTripLast_returns_data(self):
+        """Test getTripLast returns trip data."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": {"tripId": "123", "averageSpeed_kmph": 45}
+        })
+        result = await conn.getTripLast(VIN)
+        assert result is not None
+        assert "trip_last" in result
+
+    @pytest.mark.asyncio
+    async def test_getTripRefuel_returns_data(self):
+        """Test getTripRefuel returns trip since last refuel."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": {"tripId": "456", "fuelConsumption_lper100km": 6.5}
+        })
+        result = await conn.getTripRefuel(VIN)
+        assert result is not None
+        assert "trip_refuel" in result
+
+    @pytest.mark.asyncio
+    async def test_getTripLongterm_returns_data(self):
+        """Test getTripLongterm returns longterm trip data."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": {"tripId": "789", "totalDistance_km": 15000}
+        })
+        result = await conn.getTripLongterm(VIN)
+        assert result is not None
+        assert "trip_longterm" in result
+
+    @pytest.mark.asyncio
+    async def test_getPendingRequests_returns_data(self):
+        """Test getPendingRequests returns pending request data."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "data": [{"id": "req-1", "status": "in_progress"}]
+        })
+        result = await conn.getPendingRequests(VIN)
+        assert result is not None
+        assert "refreshTimestamp" in result
+
+    @pytest.mark.asyncio
+    async def test_getOperationList_returns_data(self):
+        """Test getOperationList returns capabilities."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={
+            "capabilities": [
+                {"id": "charging", "status": [200]},
+                {"id": "climatisation", "status": [200]},
+            ]
+        })
+        result = await conn.getOperationList(VIN)
+        assert result is not None
+        assert "capabilities" in result
+
+    @pytest.mark.asyncio
+    async def test_getOperationList_handles_status_code_error(self):
+        """Test getOperationList handles error status code."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={"status_code": 404})
+        result = await conn.getOperationList(VIN)
+        assert result is not None
+        assert result.get("status_code") == 404
+
+    @pytest.mark.asyncio
+    async def test_get_request_status_returns_status(self):
+        """Test get_request_status translates pending request status."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.getPendingRequests = AsyncMock(return_value={
+            "data": [
+                {"id": "req-abc", "status": "request_successful"},
+                {"id": "req-other", "status": "in_progress"},
+            ]
+        })
+        result = await conn.get_request_status(VIN, requestId="req-abc")
+        assert result == "Success"
+
+    @pytest.mark.asyncio
+    async def test_get_request_status_in_progress(self):
+        """Test get_request_status returns In Progress."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.getPendingRequests = AsyncMock(return_value={
+            "data": [{"id": "req-1", "status": "in_progress"}]
+        })
+        result = await conn.get_request_status(VIN, requestId="req-1")
+        assert result == "In Progress"
+
+    @pytest.mark.asyncio
+    async def test_get_request_status_failed(self):
+        """Test get_request_status returns Failed."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.getPendingRequests = AsyncMock(return_value={
+            "data": [{"id": "req-1", "status": "request_fail"}]
+        })
+        result = await conn.get_request_status(VIN, requestId="req-1")
+        assert result == "Failed"
+
+    @pytest.mark.asyncio
+    async def test_get_request_status_unknown_id_returns_unknown(self):
+        """Test get_request_status returns Unknown for unmatched request ID."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.getPendingRequests = AsyncMock(return_value={
+            "data": [{"id": "req-other", "status": "successful"}]
+        })
+        result = await conn.get_request_status(VIN, requestId="req-nonexistent")
+        assert result == "Unknown"
+
+    @pytest.mark.asyncio
+    async def test_data_fetch_returns_false_on_exception(self):
+        """Test that data fetch methods return False on exceptions."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(side_effect=Exception("network error"))
+        result = await conn.getTripLast(VIN)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Service Status Tests
+# ---------------------------------------------------------------------------
+class TestServiceStatus:
+    """Test service status tracking."""
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_stores_up(self):
+        """Test that 200 response sets service status to Up."""
+        conn = _make_connection()
+        await conn.update_service_status("vehicle/v2/vehicles", 200)
+        assert conn._service_status["vehicles"] == "Up"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_stores_unauthorized(self):
+        """Test that 401 response sets service status to Unauthorized."""
+        conn = _make_connection()
+        await conn.update_service_status("selectivestatus", 401)
+        assert conn._service_status["selectivestatus"] == "Unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_stores_rate_limited(self):
+        """Test that 429 response sets service status to Rate limited."""
+        conn = _make_connection()
+        await conn.update_service_status("token", 429)
+        assert conn._service_status["token"] == "Rate limited"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_stores_down(self):
+        """Test that 500 response sets service status to Down."""
+        conn = _make_connection()
+        await conn.update_service_status("parkingposition", 500)
+        assert conn._service_status["parkingposition"] == "Down"
+
+    @pytest.mark.asyncio
+    async def test_get_service_status_returns_stored(self):
+        """Test get_service_status returns full status dict."""
+        conn = _make_connection()
+        await conn.update_service_status("token", 200)
+        result = await conn.get_service_status()
+        assert result["token"] == "Up"
+
+    @pytest.mark.asyncio
+    async def test_get_service_status_default_empty(self):
+        """Test get_service_status returns default dict for fresh connection."""
+        conn = _make_connection()
+        result = await conn.get_service_status()
+        assert isinstance(result, dict)
