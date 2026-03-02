@@ -12,6 +12,7 @@ from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from volkswagencarnet.vw_connection import Connection
+from volkswagencarnet.vw_exceptions import AuthenticationError
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses" / "na_vehicle"
 
@@ -418,3 +419,76 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
         assert result is not None
         # New HTTP calls were made (cache was stale)
         assert conn._session.get.call_count == 2
+
+
+class NAErrorPathTest(IsolatedAsyncioTestCase):
+    """Tests for NA error paths: token exchange failure, garage 404, RVS 5xx."""
+
+    async def test_token_exchange_failure_raises_auth_error(self):
+        """_exchange_code_for_tokens raises AuthenticationError on HTTP 400."""
+        conn = _make_na_connection()
+        conn._pkce_verifier = "test-verifier"
+        conn._session_auth_headers = {}
+        conn._session_region_config = {"redirect_uri": "kombi:///login"}
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(400, text_data='{"error":"invalid_grant"}')
+        )
+        with self.assertRaises(AuthenticationError) as ctx:
+            await conn._exchange_code_for_tokens("bad-code", "https://example.com/token")
+        assert "400" in str(ctx.exception)
+
+    async def test_validate_tokens_false_causes_get_na_vehicle_data_to_return_none(self):
+        """When validate_tokens() returns False, _get_na_vehicle_data exits early with None."""
+        conn = _make_na_connection()
+        conn.validate_tokens = AsyncMock(return_value=False)
+        conn._create_na_vehicle_session = AsyncMock()
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is None
+        # _create_na_vehicle_session should NOT be called (early exit)
+        conn._create_na_vehicle_session.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_5xx_on_both_endpoints_returns_none_values(self, _mock_jwt, _mock_sleep):
+        """RVS 5xx on both location and status returns dict with None values, no exception.
+
+        With RVS_MAX_RETRIES=2: 3 attempts per endpoint = 6 total GET calls.
+        """
+        conn = _make_na_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 1
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 2
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 3
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 1
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 2
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 3
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result == {"na_location": None, "na_status": None}
+        # 6 total GET calls (3 location retries + 3 status retries)
+        assert conn._session.get.call_count == 6
+
+
+class NATokenValidationTest(IsolatedAsyncioTestCase):
+    """Tests for NA token validation and IDK refresh failure paths."""
+
+    async def test_idk_refresh_failure_triggers_relogin_via_validate_tokens(self):
+        """Expired IDK + _refresh_idk_token raising AuthenticationError -> _validate_na_tokens returns False."""
+        conn = _make_na_connection()
+        # Set IDK token as expired
+        conn._na_tokens["idk"]["expires_at"] = time.time() - 100
+        conn._na_tokens["idk"]["issued_at"] = time.time() - 3700
+        conn._refresh_idk_token = AsyncMock(side_effect=AuthenticationError("refresh failed"))
+        result = await conn._validate_na_tokens()
+        assert result is False
+        conn._refresh_idk_token.assert_called_once()
+
+    async def test_validate_na_tokens_returns_false_on_empty_na_tokens(self):
+        """_validate_na_tokens() returns False when _na_tokens is empty."""
+        conn = _make_na_connection()
+        conn._na_tokens = {}
+        result = await conn._validate_na_tokens()
+        assert result is False
