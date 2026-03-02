@@ -772,6 +772,90 @@ class TestSpecializedSubclasses:
         vehicle.set_window_heating.assert_called_with("start")
 
 
+class TestDepartureTimers:
+    """Test DepartureTimer and ACDepartureTimer subclasses."""
+
+    def test_departure_timer_init(self):
+        from volkswagencarnet.vw_dashboard import DepartureTimer
+        dt = DepartureTimer(1)
+        assert dt.attr == "departure_timer1"
+        assert dt.name == "Departure Timer 1"
+        assert dt._id == 1
+
+    def test_departure_timer_configurate_spin(self):
+        from volkswagencarnet.vw_dashboard import DepartureTimer
+        dt = DepartureTimer(2)
+        dt.configurate(spin="4321")
+        assert dt.spin == "4321"
+
+    def test_departure_timer_assumed_state_false(self):
+        from volkswagencarnet.vw_dashboard import DepartureTimer
+        dt = DepartureTimer(1)
+        assert dt.assumed_state is False
+
+    def test_departure_timer_attributes_empty_when_none(self):
+        from volkswagencarnet.vw_dashboard import DepartureTimer
+        vehicle = MagicMock(spec=Vehicle)
+        vehicle.timer_attributes = MagicMock(return_value=None)
+        dt = DepartureTimer(1)
+        dt.vehicle = vehicle
+        assert dt.attributes == {}
+
+    def test_ac_departure_timer_init(self):
+        from volkswagencarnet.vw_dashboard import ACDepartureTimer
+        adt = ACDepartureTimer(2)
+        assert adt.attr == "ac_departure_timer2"
+        assert adt.name == "AC Departure Timer 2"
+
+    def test_ac_departure_timer_assumed_state_false(self):
+        from volkswagencarnet.vw_dashboard import ACDepartureTimer
+        adt = ACDepartureTimer(1)
+        assert adt.assumed_state is False
+
+    def test_ac_departure_timer_attributes_empty_when_none(self):
+        from volkswagencarnet.vw_dashboard import ACDepartureTimer
+        vehicle = MagicMock(spec=Vehicle)
+        vehicle.ac_timer_attributes = MagicMock(return_value=None)
+        adt = ACDepartureTimer(1)
+        adt.vehicle = vehicle
+        assert adt.attributes == {}
+
+
+class TestRequestResults:
+    """Test RequestResults sensor."""
+
+    def test_request_results_state_unknown(self):
+        from volkswagencarnet.vw_dashboard import RequestResults
+        vehicle = MagicMock(spec=Vehicle)
+        type(vehicle).request_results = PropertyMock(return_value={})
+        rr = RequestResults()
+        rr.vehicle = vehicle
+        assert rr.state == "Unknown"
+
+    def test_request_results_state_with_value(self):
+        from volkswagencarnet.vw_dashboard import RequestResults
+        vehicle = MagicMock(spec=Vehicle)
+        type(vehicle).request_results = PropertyMock(return_value={"state": "Success"})
+        rr = RequestResults()
+        rr.vehicle = vehicle
+        assert rr.state == "Success"
+
+    def test_request_results_attributes(self):
+        from volkswagencarnet.vw_dashboard import RequestResults
+        vehicle = MagicMock(spec=Vehicle)
+        type(vehicle).request_results = PropertyMock(return_value={"state": "Ok", "info": "data"})
+        rr = RequestResults()
+        rr.vehicle = vehicle
+        attrs = rr.attributes
+        assert attrs["state"] == "Ok"
+        assert attrs["info"] == "data"
+
+    def test_request_results_assumed_state_false(self):
+        from volkswagencarnet.vw_dashboard import RequestResults
+        rr = RequestResults()
+        assert rr.assumed_state is False
+
+
 class TestEdgeCases:
     """Edge cases and boundary conditions."""
 
