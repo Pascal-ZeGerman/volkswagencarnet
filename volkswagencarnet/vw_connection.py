@@ -494,7 +494,7 @@ class Connection:
                 )
 
             # Add PKCE parameters if generated (required for NA region)
-            if hasattr(self, "_pkce_challenge") and self._pkce_challenge:
+            if self._pkce_challenge:
                 oauth_params["code_challenge"] = self._pkce_challenge
                 oauth_params["code_challenge_method"] = "S256"
                 _LOGGER.debug("Added PKCE challenge to authorization request")
@@ -903,7 +903,7 @@ class Connection:
         }
 
         # Add PKCE code_verifier if available (required for NA region)
-        if hasattr(self, "_pkce_verifier") and self._pkce_verifier:
+        if self._pkce_verifier:
             token_body["code_verifier"] = self._pkce_verifier
             _LOGGER.debug("Added PKCE verifier to token exchange")
 
@@ -1457,6 +1457,8 @@ class Connection:
                         raw_token = data.get("carnetVehicleToken")
                     # Handle both plain string and nested object {"token": "<jwt>"}
                     if isinstance(raw_token, dict):
+                        # "f49219a" is an obfuscated field name from APK decompilation
+                        # (ProGuard-minified key) — fallback when "token" key is renamed
                         tok = raw_token.get("token") or raw_token.get("f49219a")
                         _LOGGER.debug("NA vehicle session: carnetVehicleToken was a dict, extracted token")
                     else:
@@ -1790,8 +1792,7 @@ class Connection:
             "na_location": location_data,
             "na_status": status_data,
         }
-        if result is not None:
-            self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
+        self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
         return result
 
     async def _login_na(self) -> bool:
