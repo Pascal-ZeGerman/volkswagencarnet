@@ -324,3 +324,97 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         assert result["na_status"] == status_fixture
         # Session was refreshed: _create_na_vehicle_session called twice
         assert conn._create_na_vehicle_session.call_count == 2
+
+
+class NARVSCacheTest(IsolatedAsyncioTestCase):
+    """Tests for RVS TTL cache behavior in Connection._get_na_vehicle_data()."""
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_prevents_second_api_call(self, _mock_jwt):
+        """Two consecutive calls within TTL: second returns cached data with zero extra HTTP calls."""
+        location_fixture = _load_fixture("rvs_location.json")
+        status_fixture = _load_fixture("rvs_status.json")
+        conn = _make_na_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result1 = await conn._get_na_vehicle_data(VIN)
+        call_count_after_first = conn._session.get.call_count
+        result2 = await conn._get_na_vehicle_data(VIN)
+        # Second call should NOT have made additional HTTP requests
+        assert conn._session.get.call_count == call_count_after_first
+        # Both results must be identical
+        assert result1 == result2
+        assert result1 is not None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_expires_after_ttl(self, _mock_jwt):
+        """Cache entry past TTL triggers new HTTP requests on second call."""
+        location_fixture = _load_fixture("rvs_location.json")
+        status_fixture = _load_fixture("rvs_status.json")
+        conn = _make_na_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        await conn._get_na_vehicle_data(VIN)
+        call_count_after_first = conn._session.get.call_count
+        # Age the cache entry past the TTL (default 30s)
+        conn._na_rvs_cache[VIN]["fetched_at"] = time.time() - 31
+        await conn._get_na_vehicle_data(VIN)
+        # New HTTP calls should have been made
+        assert conn._session.get.call_count > call_count_after_first
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_cleared_on_401(self, _mock_jwt):
+        """401 on location fetch clears the RVS cache."""
+        location_fixture = _load_fixture("rvs_location.json")
+        status_fixture = _load_fixture("rvs_status.json")
+        conn = _make_na_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
+        # Pre-populate cache
+        conn._na_rvs_cache[VIN] = {
+            "data": {"na_location": location_fixture, "na_status": status_fixture},
+            "fetched_at": time.time() - 31,  # expired so it won't short-circuit
+        }
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(401),                              # location → 401, clears cache
+            _mock_resp(200, json_data=location_fixture),  # location retry → success
+            _mock_resp(200, json_data=status_fixture),    # status → success
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        # During 401 handling, cache was cleared; then re-populated with fresh data
+        assert conn._na_rvs_cache.get(VIN) is not None
+        assert conn._na_rvs_cache[VIN]["data"]["na_location"] == location_fixture
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_respects_custom_ttl(self, _mock_jwt):
+        """Custom TTL of 5s: cache aged 6s triggers new fetch."""
+        location_fixture = _load_fixture("rvs_location.json")
+        status_fixture = _load_fixture("rvs_status.json")
+        conn = _make_na_connection()
+        conn._rvs_cache_ttl = 5
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=FAKE_VEHICLE_TOKEN)
+        # Pre-populate cache with expired entry (6s > 5s TTL)
+        conn._na_rvs_cache[VIN] = {
+            "data": {"na_location": location_fixture, "na_status": status_fixture},
+            "fetched_at": time.time() - 6,
+        }
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        # New HTTP calls were made (cache was stale)
+        assert conn._session.get.call_count == 2
