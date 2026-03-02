@@ -67,7 +67,7 @@ VW_DOMAIN_ALLOWLIST = (
     ".vw.us",            # msg.vw.us (NA homeregion candidate)
 )
 
-_LOGGER = logging.getLogger(__name__)  # pylint: disable=unreachable
+_LOGGER = logging.getLogger(__name__)
 
 TIMEOUT = timedelta(seconds=30)
 JWT_ALGORITHMS = ["RS256"]
@@ -323,13 +323,6 @@ class Connection:
         self._service_status["discovery"] = "Failed"
         return False
 
-    async def _discover_endpoints(self) -> bool:
-        """Thin alias for _discover_market_config() for backward compatibility.
-
-        Deprecated: Use _discover_market_config() directly.
-        """
-        return await self._discover_market_config()
-
     # API Login
     async def doLogin(self, tries: int = 1) -> bool:
         """Authenticate with VW Connect and discover vehicles.
@@ -370,10 +363,11 @@ class Connection:
                 self._session_logged_in = await self._login()
                 if self._session_logged_in:
                     break
-                if i > tries:
-                    _LOGGER.error("Login failed after %s tries", tries)
-                    return False
-                await asyncio.sleep(random() * 5)
+                if i < tries - 1:
+                    await asyncio.sleep(random() * 5)
+            else:
+                _LOGGER.error("Login failed after %s tries", tries)
+                return False
 
             if not self._session_logged_in:
                 return False
