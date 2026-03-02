@@ -88,6 +88,7 @@ class Connection:
         xclient_id: str | None = None,
         on_xclient_id: Any | None = None,
         spin: str | None = None,
+        rvs_cache_ttl: int = 30,
     ) -> None:
         """Initialize a Connection to VW Connect services.
 
@@ -105,6 +106,8 @@ class Connection:
             xclient_id: Optional X-Client-Id header override.
             on_xclient_id: Optional callback invoked when X-Client-Id changes.
             spin: Security PIN for operations that require it (lock/unlock, honk & flash).
+            rvs_cache_ttl: TTL in seconds for the per-vehicle RVS data cache. Defaults to 30.
+                Consecutive update() calls within this window reuse cached data without API calls.
 
         Example:
             >>> async with ClientSession() as session:
@@ -122,6 +125,7 @@ class Connection:
         self._session_tokens: dict[str, Any] = {}
         self._session_country = country.upper()
         self._spin = spin
+        self._rvs_cache_ttl = rvs_cache_ttl
 
         # Determine region from country
         self._session_region = get_region_from_country(self._session_country)
@@ -143,8 +147,9 @@ class Connection:
         self._is_throttled: bool = False
         self.discovery_config: dict = {}
 
-        # NA three-token registry (empty for EMEA, populated during NA login)
+        # NA three-token registry (empty for EMEA, populated lazily during _login_na())
         self._na_tokens: dict = {}   # keys: "idk", "brand", "mbb"
+        self._na_rvs_cache: dict = {}  # Per-VIN RVS data cache (empty for EMEA, populated during NA data fetch)
         self._xclient_id: str | None = xclient_id  # caller-injected or registered during login
         self._xclient_id_callback = on_xclient_id  # called only when NEW xclientId generated
         self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
@@ -1614,6 +1619,15 @@ class Connection:
             be ``None`` if that particular fetch failed).  Returns ``None`` only
             when vehicle session creation itself fails (no data at all possible).
         """
+        # Check RVS cache — skip API roundtrip if data is fresh
+        cached = self._na_rvs_cache.get(vin)
+        if cached and (time.time() - cached["fetched_at"]) < self._rvs_cache_ttl:
+            _LOGGER.debug(
+                "NA vehicle data: returning cached RVS data for vin=%s (age=%.1fs, ttl=%ds)",
+                redact(vin), time.time() - cached["fetched_at"], self._rvs_cache_ttl,
+            )
+            return cached["data"]
+
         # Ensure IDK token is valid before proceeding
         if not await self.validate_tokens():
             _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", redact(vin))
@@ -1677,6 +1691,7 @@ class Connection:
                 if loc_resp.status == 401:
                     _LOGGER.debug("NA RVS location: 401 — refreshing vehicle session and retrying")
                     self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                    self._na_rvs_cache.pop(vin, None)
                     vehicle_token = await self._create_na_vehicle_session(vin)
                     if vehicle_token:
                         rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
@@ -1740,6 +1755,7 @@ class Connection:
                 if st_resp.status == 401:
                     _LOGGER.debug("NA RVS status: 401 — refreshing vehicle session and retrying")
                     self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                    self._na_rvs_cache.pop(vin, None)
                     vehicle_token = await self._create_na_vehicle_session(vin)
                     if vehicle_token:
                         rvs_headers["Authorization"] = f"Bearer {vehicle_token}"
@@ -1780,10 +1796,13 @@ class Connection:
             _LOGGER.warning("NA RVS status fetch exception for %s: %s", redact(vin), exc)
 
         # Return partial data even if one endpoint failed
-        return {
+        result = {
             "na_location": location_data,
             "na_status": status_data,
         }
+        if result is not None:
+            self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
+        return result
 
     async def _login_na(self) -> bool:
         """Perform the NA-specific OAuth2 + PKCE login flow.
