@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: unknown
-last_updated: "2026-02-28T04:32:16.088Z"
+last_updated: "2026-03-02T20:44:59.878Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 17
+  completed_phases: 10
+  total_plans: 24
+  completed_plans: 29
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 17-logging (complete)
-Plan: 2 of 2 complete — 17-02 complete
-Status: Phase 17 Plan 02 complete — ~12 DEBUG logs for NA auth + vehicle data flows, redact() used throughout, LOG-01/02/04 satisfied, 164 tests pass
-Last activity: 2026-03-01 - Phase 17 Plan 02 complete (2 tasks, 1 file, 164 tests pass)
+Phase: 22-fix-medium-and-nitpick-issues-from-pr-review
+Plan: 2 of 2 complete (22-01, 22-02 complete)
+Status: Phase 22 complete — all PR review medium/nitpick issues resolved
+Last activity: 2026-03-02 - Completed 22-02 (deduplicate RVS, add is_na property)
 
 Progress: [###       ] 15%
 
@@ -65,6 +65,8 @@ Progress: [###       ] 15%
 | Phase 16-type-hints P03 | 25 | 2 tasks | 2 files |
 | Phase 17-logging P01 | 2 | 2 tasks | 3 files |
 | Phase 17-logging P02 | 3 | 2 tasks | 1 file |
+| Phase 22-fix-medium-nitpick P01 | 2 | 2 tasks | 2 files |
+| Phase 22-fix-medium-nitpick P02 | 3 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -73,6 +75,8 @@ Progress: [###       ] 15%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [Phase 21-01]: User chose Option A: full git history rewrite with filter-repo to scrub testing_creds.env from all commits
+- [Phase 21-01]: Force-push required to propagate rewritten history to remote; PR #1 must be recreated
 - [Phase 08-fix-stale-unit-tests]: NA base_api_candidates == [] is intentional — hardcoded base_api used directly, discovery candidates unused
 - [Phase 09-requirements-wording-cleanup]: _na_tokens writes at login time now include issued_at: time.time() matching refresh method structure
 - [Phase 09-requirements-wording-cleanup]: _refresh_idk_token() docstring corrected — X-QMAuth NOT sent (server rejects with HTTP 400), PKCE code_verifier used instead
@@ -111,6 +115,10 @@ Recent decisions affecting current work:
 - [Phase 17-logging P02]: _exchange_code_for_tokens refactored — bare return json_loads(resp_text) replaced with tokens_data variable + DEBUG log + return, avoiding double parse
 - [Phase 17-logging P02]: redact(vin) used for VINs in all new log calls — VINs are 17 chars, first 8 shown is sufficient for correlation without exposing full VIN
 - [Phase 17-logging P02]: RVS URL logs outside retry loop; per-attempt HTTP status logs inside loop — best coverage without duplication
+- [Phase 22-01]: APP_VERSION/APP_VERSION_SHORT constants in vw_const.py; USER_AGENT uses f-string with APP_VERSION_SHORT
+- [Phase 22-01]: COUNTRY_TO_LOCALE kept minimal (US, CA, GB) matching original local dict; MAX_REDIRECT_DEPTH promoted to module-level
+- [Phase 22-02]: _fetch_rvs_endpoint returns None on 401 session recreation failure — no further retries
+- [Phase 22-02]: Test mocks set is_na explicitly — MagicMock(spec=Connection) returns truthy MagicMock for unset property attributes
 
 ### Roadmap Evolution
 
@@ -133,6 +141,6 @@ None yet for v1.1.
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Completed 17-logging 17-02-PLAN.md — ~12 DEBUG logs for NA auth + vehicle data flows, LOG-01/02/04 satisfied
+Last session: 2026-03-02
+Stopped at: Completed 22-02-PLAN.md — Phase 22 complete (RVS deduplicated, is_na property added)
 Resume file: None
