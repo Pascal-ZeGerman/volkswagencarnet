@@ -23,6 +23,7 @@ def _make_na_vehicle(states: dict | None = None) -> Vehicle:
     """Create an NA Vehicle with mocked Connection."""
     conn = MagicMock(spec=Connection)
     conn._session_region = "NA"
+    conn.is_na = True
     vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
     if states:
         vehicle._states.update(states)
@@ -33,6 +34,7 @@ def _make_emea_vehicle(states: dict | None = None) -> Vehicle:
     """Create an EMEA Vehicle with mocked Connection."""
     conn = MagicMock(spec=Connection)
     conn._session_region = "EMEA"
+    conn.is_na = False
     conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
     vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
     if states:

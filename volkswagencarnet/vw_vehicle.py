@@ -162,7 +162,7 @@ class Vehicle:
         if self._connection is None:
             return
 
-        if self._connection._session_region != "NA":
+        if not self._connection.is_na:
             return  # EMEA: home region is static from config — no discovery needed
 
         candidates = self._connection._session_region_config.get(
@@ -216,7 +216,7 @@ class Vehicle:
         await self._ensure_home_region()
 
         # NA region: skip EMEA capability/selectivestatus endpoints (return 404 for NA)
-        if self._connection is not None and self._connection._session_region == "NA":
+        if self._connection is not None and self._connection.is_na:
             _LOGGER.debug("NA vehicle %s: skipping EMEA capability discovery", self.vin)
             self._discovered = True
             return
@@ -306,7 +306,7 @@ class Vehicle:
             await self.discover()
         if not self.deactivated:
             # NA region: use RVS endpoint path instead of EMEA selectivestatus
-            if self._connection is not None and self._connection._session_region == "NA":
+            if self._connection is not None and self._connection.is_na:
                 await self._update_na_vehicle()
                 return
             await asyncio.gather(
@@ -1743,7 +1743,7 @@ class Vehicle:
             >>> print(f"Lat: {pos['lat']}, Lng: {pos['lng']}")
         """
         # NA region: read from na_location state populated by RVS endpoint
-        if self._connection is not None and self._connection._session_region == "NA":
+        if self._connection is not None and self._connection.is_na:
             return self._na_position()
         # EMEA: existing logic unchanged
         output: dict[str, str | float | None]
@@ -1816,7 +1816,7 @@ class Vehicle:
     def is_position_supported(self) -> bool:
         """Return true if position is available."""
         # NA region: supported if na_location data is present
-        if self._connection is not None and self._connection._session_region == "NA":
+        if self._connection is not None and self._connection.is_na:
             return self._states.get("na_location") is not None
         # EMEA: existing logic unchanged
         return is_valid_path(self.attrs, Paths.PARKING_TS) or self.attrs.get(
@@ -2703,7 +2703,7 @@ class Vehicle:
             True if all doors are locked, False otherwise.
         """
         # NA region: read from na_status state populated by RVS endpoint
-        if self._connection is not None and self._connection._session_region == "NA":
+        if self._connection is not None and self._connection.is_na:
             return self._na_door_locked()
         # EMEA: existing logic unchanged
         return find_path(self.attrs, Paths.ACCESS_DOOR_LOCK) == "locked"
@@ -2722,7 +2722,7 @@ class Vehicle:
     def is_door_locked_supported(self) -> bool:
         """Return true if supported."""
         # NA region: supported if na_status data is present
-        if self._connection is not None and self._connection._session_region == "NA":
+        if self._connection is not None and self._connection.is_na:
             return self._states.get("na_status") is not None
         # EMEA: existing logic unchanged
         if not self._services.get(Services.ACCESS, {}).get("active", False):
