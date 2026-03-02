@@ -468,7 +468,7 @@ class Connection:
         _LOGGER.debug('Requesting authorization page from "%s"', authorization_endpoint)
         self._session_auth_headers.pop("Referer", None)
         self._session_auth_headers.pop("Origin", None)
-        _LOGGER.debug('Request headers: "%s"', self._session_auth_headers)
+        _LOGGER.debug('Request header keys: %s', list(self._session_auth_headers.keys()))
 
         try:
             # Build OAuth parameters with region-specific settings
@@ -1538,10 +1538,8 @@ class Connection:
                     if challenge_hex:
                         spin_hash = self.hash_spin(challenge_hex, self._spin)
                         _LOGGER.debug(
-                            "NA vehicle session: challenge=%s spin=%s spinHash=%s",
-                            challenge_hex,
-                            self._spin,
-                            spin_hash,
+                            "NA vehicle session: challenge obtained, spinHash computed (len=%d)",
+                            len(spin_hash),
                         )
                     else:
                         _LOGGER.warning(
@@ -2161,27 +2159,23 @@ class Connection:
                         else:
                             res = {}
                             _LOGGER.debug(
-                                "Not success status code [%s] response: %s",
+                                "Not success status code [%s]",
                                 response.status,
-                                response.text,
                             )
                     except Exception:  # pylint: disable=broad-exception-caught
                         res = {}
                         _LOGGER.debug(
-                            "Something went wrong [%s] response: %s",
+                            "Something went wrong [%s]",
                             response.status,
-                            response.text,
                         )
                         if return_raw:
                             return response
                         return res
 
                     _LOGGER.debug(
-                        'Request for "%s" returned with status code [%s], headers: %s, response: %s',
+                        'Request for "%s" returned with status code [%s]',
                         url,
                         response.status,
-                        response.headers,
-                        res,
                     )
 
                     if return_raw:
