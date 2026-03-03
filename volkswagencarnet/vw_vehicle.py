@@ -1760,7 +1760,7 @@ class Vehicle:
                 parking_time = find_path(self.attrs, Paths.PARKING_TS)
                 output = {"lat": lat, "lng": lng, "timestamp": parking_time}
         except Exception:
-            output = {"lat": "?", "lng": "?"}
+            output = {"lat": None, "lng": None, "timestamp": None}
         return output
 
     def _na_position(self) -> dict[str, str | float | None]:

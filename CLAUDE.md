@@ -11,7 +11,7 @@ This is a Python library for communicating with Volkswagen Connect (WeConnect) s
 - `country='DE'` or other EU countries → EMEA (default)
 - No country parameter → EMEA (backward compatible)
 
-For North America, the library will automatically discover the correct API endpoints during the first login.
+For North America, the library uses hardcoded API endpoints (discovery is disabled).
 
 ## Development Commands
 
@@ -247,16 +247,13 @@ Uses `setuptools_scm` for automatic versioning from git tags. Version written to
 ## Important Notes
 
 ### Updating US Credentials
-If US authentication fails with current credentials:
-- OAuth credentials may be outdated (last confirmed: 2021)
-- Traffic capture from 2026 revealed:
-  - Client ID: `59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID`
-  - PKCE is **required** for token exchange (without it, server demands client_secret which is unavailable)
-  - Redirect URI uses custom scheme `kombi:///login`, not HTTPS callback
-  - Scope simplified to `openid`
-  - Identity endpoint separate from base API (`identity.na.vwgroup.io`)
-- Use network traffic analysis to capture current credentials from official VW Car-Net app
-- See `docs/US_NETWORK_TRAFFIC_ANALYSIS.md` for detailed capture guide using mitmproxy/Charles Proxy
+If US authentication fails with current credentials (last confirmed working: 2026-02-25):
+- Client ID: `59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID`
+- PKCE is **required** for token exchange (without it, server demands client_secret which is unavailable)
+- Redirect URI uses custom scheme `kombi:///login`, not HTTPS callback
+- Scope simplified to `openid`
+- Identity endpoint separate from base API (`identity.na.vwgroup.io`)
+- To capture updated credentials, use mitmproxy or Charles Proxy on the official VW Car-Net Android app
 - Extract current `client_id`, endpoints, and OAuth parameters from captured traffic
 
 ### Rate Limiting

@@ -1679,7 +1679,7 @@ class NAVehicleDataTest(IsolatedAsyncioTestCase):
 
     def test_emea_position_unaffected_by_na_branch(self):
         vehicle = _make_emea_vehicle_data()
-        assert vehicle.position == {"lat": "?", "lng": "?"}
+        assert vehicle.position == {"lat": None, "lng": None, "timestamp": None}
 
     def test_emea_door_locked_unaffected_by_na_branch(self):
         vehicle = _make_emea_vehicle_data()
