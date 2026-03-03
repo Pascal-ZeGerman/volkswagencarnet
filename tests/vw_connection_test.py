@@ -3131,3 +3131,734 @@ class TestServiceStatusExtended:
         conn = _make_connection()
         await conn.update_service_status("parkingposition", 403)
         assert conn._service_status["parkingposition"] == "Forbidden"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_1000_is_error(self):
+        """Test that internal 1000 code sets service status to Error."""
+        conn = _make_connection()
+        await conn.update_service_status("token", 1000)
+        assert conn._service_status["token"] == "Error"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_trips_url(self):
+        """Test trips URL pattern recognized."""
+        conn = _make_connection()
+        await conn.update_service_status("/vehicle/v1/trips/last", 200)
+        assert conn._service_status["trips"] == "Up"
+
+    @pytest.mark.asyncio
+    async def test_update_service_status_capabilities_url(self):
+        """Test capabilities URL pattern recognized."""
+        conn = _make_connection()
+        await conn.update_service_status("capabilities", 200)
+        assert conn._service_status["capabilities"] == "Up"
+
+
+# ---------------------------------------------------------------------------
+# MBB/Brand Token Exchange Tests (Phase 23-05 coverage closure)
+# ---------------------------------------------------------------------------
+class TestMBBTokenExchange:
+    """Test _register_mbb_client, _exchange_brand_token, _exchange_mbb_token, _refresh_mbb_token."""
+
+    def _make_na_conn(self):
+        """Create NA connection with mocked session."""
+        session = AsyncMock()
+        session._cookie_jar = MagicMock()
+        session._cookie_jar._cookies = {}
+        conn = Connection(session, "test@example.com", "password", country="US")
+        conn._session_auth_headers = {}
+        return conn
+
+    @pytest.mark.asyncio
+    async def test_register_mbb_client_success(self):
+        """Test _register_mbb_client returns xclient_id on success."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"client_id": "xclient-new-123"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        result = await conn._register_mbb_client()
+        assert result == "xclient-new-123"
+
+    @pytest.mark.asyncio
+    async def test_register_mbb_client_failure(self):
+        """Test _register_mbb_client raises AuthenticationError on non-200."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 500
+        mock_resp.text = AsyncMock(return_value="Internal Server Error")
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(AuthenticationError, match="MBB client registration failed"):
+            await conn._register_mbb_client()
+
+    @pytest.mark.asyncio
+    async def test_register_mbb_client_missing_client_id(self):
+        """Test _register_mbb_client raises AuthenticationError when client_id missing."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"other_field": "value"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(AuthenticationError, match="missing 'client_id'"):
+            await conn._register_mbb_client()
+
+    @pytest.mark.asyncio
+    async def test_register_mbb_client_missing_config(self):
+        """Test _register_mbb_client raises when mbb_oauth_base_url missing."""
+        conn = self._make_na_conn()
+        conn._session_region_config = {}  # No mbb_oauth_base_url
+
+        with pytest.raises(AuthenticationError, match="mbb_oauth_base_url"):
+            await conn._register_mbb_client()
+
+    @pytest.mark.asyncio
+    async def test_exchange_brand_token_success(self):
+        """Test _exchange_brand_token returns brand tokens on success."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"access_token": "brand_at", "refresh_token": "brand_rt"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        result = await conn._exchange_brand_token("idk_at")
+        assert result["access_token"] == "brand_at"
+
+    @pytest.mark.asyncio
+    async def test_exchange_brand_token_404_fallback(self):
+        """Test _exchange_brand_token tries fallback path on 404."""
+        conn = self._make_na_conn()
+        resp_404 = AsyncMock()
+        resp_404.status = 404
+        resp_200 = AsyncMock()
+        resp_200.status = 200
+        resp_200.json = AsyncMock(return_value={"access_token": "fallback_at"})
+        conn._session.post = AsyncMock(side_effect=[resp_404, resp_200])
+
+        result = await conn._exchange_brand_token("idk_at")
+        assert result["access_token"] == "fallback_at"
+        assert conn._session.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_exchange_brand_token_failure(self):
+        """Test _exchange_brand_token raises on non-200/404."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 400
+        mock_resp.text = AsyncMock(return_value="Bad Request")
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(AuthenticationError, match="Brand token exchange failed"):
+            await conn._exchange_brand_token("idk_at")
+
+    @pytest.mark.asyncio
+    async def test_exchange_mbb_token_success(self):
+        """Test _exchange_mbb_token returns MBB tokens on success."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"access_token": "mbb_at", "refresh_token": "mbb_rt"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        result = await conn._exchange_mbb_token("idk_id", "xclient-1")
+        assert result["access_token"] == "mbb_at"
+
+    @pytest.mark.asyncio
+    async def test_exchange_mbb_token_failure(self):
+        """Test _exchange_mbb_token raises on non-200."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 400
+        mock_resp.text = AsyncMock(return_value="Bad Request")
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(AuthenticationError, match="MBB initial token exchange failed"):
+            await conn._exchange_mbb_token("idk_id", "xclient-1")
+
+    @pytest.mark.asyncio
+    async def test_refresh_mbb_token_success(self):
+        """Test _refresh_mbb_token returns refreshed tokens on success."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"access_token": "mbb_at_new", "refresh_token": "mbb_rt_new"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        result = await conn._refresh_mbb_token(refresh_token="mbb_rt_old", xclient_id="xclient-1")
+        assert result["access_token"] == "mbb_at_new"
+
+    @pytest.mark.asyncio
+    async def test_refresh_mbb_token_failure(self):
+        """Test _refresh_mbb_token raises on non-200."""
+        conn = self._make_na_conn()
+        mock_resp = AsyncMock()
+        mock_resp.status = 401
+        mock_resp.text = AsyncMock(return_value="Unauthorized")
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(AuthenticationError, match="MBB token refresh failed"):
+            await conn._refresh_mbb_token(refresh_token="mbb_rt", xclient_id="xclient-1")
+
+
+# ---------------------------------------------------------------------------
+# refresh_tokens (EMEA) Tests
+# ---------------------------------------------------------------------------
+class TestRefreshTokens:
+    """Test EMEA refresh_tokens method."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_tokens_success(self):
+        """Test refresh_tokens updates tokens on success."""
+        conn = _make_connection()
+        conn._session_tokens["identity"] = {
+            "access_token": "old_at",
+            "refresh_token": "old_rt",
+            "id_token": "old_id",
+        }
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={
+            "access_token": "new_at",
+            "refresh_token": "new_rt",
+            "id_token": "new_id",
+        })
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with patch.object(conn, "update_service_status", AsyncMock()):
+            result = await conn.refresh_tokens()
+
+        assert result is True
+        assert conn._session_tokens["identity"]["access_token"] == "new_at"
+        assert "Bearer new_at" in conn._session_headers["Authorization"]
+
+    @pytest.mark.asyncio
+    async def test_refresh_tokens_failure(self):
+        """Test refresh_tokens returns False on non-200."""
+        conn = _make_connection()
+        conn._session_tokens["identity"] = {
+            "access_token": "old_at",
+            "refresh_token": "old_rt",
+        }
+        mock_resp = AsyncMock()
+        mock_resp.status = 401
+        mock_resp.text = AsyncMock(return_value="Unauthorized")
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with patch.object(conn, "update_service_status", AsyncMock()):
+            result = await conn.refresh_tokens()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_refresh_tokens_empty_response(self):
+        """Test refresh_tokens returns False when response has no access_token."""
+        conn = _make_connection()
+        conn._session_tokens["identity"] = {
+            "access_token": "old_at",
+            "refresh_token": "old_rt",
+        }
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        with patch.object(conn, "update_service_status", AsyncMock()):
+            result = await conn.refresh_tokens()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_refresh_tokens_exception(self):
+        """Test refresh_tokens returns False on exception."""
+        conn = _make_connection()
+        conn._session_tokens["identity"] = {
+            "access_token": "old_at",
+            "refresh_token": "old_rt",
+        }
+        conn._session.post = AsyncMock(side_effect=Exception("Network error"))
+
+        result = await conn.refresh_tokens()
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# get() Error Handling Tests
+# ---------------------------------------------------------------------------
+class TestGetErrorHandling:
+    """Test get() error handling paths."""
+
+    @pytest.mark.asyncio
+    async def test_get_400_returns_status_code(self):
+        """Test get() returns status_code dict on 400 error."""
+        conn = _make_connection()
+        ri = MagicMock(aiohttp.RequestInfo)
+        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
+        e.status = 400
+        conn._request = AsyncMock(side_effect=e)
+
+        result = await conn.get("https://emea.bff.cariad.digital/test")
+        assert result == {"status_code": 400}
+
+    @pytest.mark.asyncio
+    async def test_get_500_returns_status_code(self):
+        """Test get() returns status_code dict on 500 error."""
+        conn = _make_connection()
+        ri = MagicMock(aiohttp.RequestInfo)
+        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
+        e.status = 500
+        conn._request = AsyncMock(side_effect=e)
+
+        result = await conn.get("https://emea.bff.cariad.digital/test")
+        assert result == {"status_code": 500}
+
+    @pytest.mark.asyncio
+    async def test_get_502_returns_status_code(self):
+        """Test get() returns status_code dict on 502 error."""
+        conn = _make_connection()
+        ri = MagicMock(aiohttp.RequestInfo)
+        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
+        e.status = 502
+        conn._request = AsyncMock(side_effect=e)
+
+        result = await conn.get("https://emea.bff.cariad.digital/test")
+        assert result == {"status_code": 502}
+
+    @pytest.mark.asyncio
+    async def test_get_unknown_error_returns_status_code(self):
+        """Test get() returns status_code dict on unhandled error status."""
+        conn = _make_connection()
+        ri = MagicMock(aiohttp.RequestInfo)
+        e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
+        e.status = 418
+        conn._request = AsyncMock(side_effect=e)
+
+        result = await conn.get("https://emea.bff.cariad.digital/test")
+        assert result == {"status_code": 418}
+
+
+# ---------------------------------------------------------------------------
+# update() Method Tests
+# ---------------------------------------------------------------------------
+class TestUpdateMethod:
+    """Test Connection.update() method."""
+
+    @pytest.mark.asyncio
+    async def test_update_success_with_vehicles(self):
+        """Test update() calls validate_tokens and updates vehicles."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        mock_vehicle = MagicMock()
+        mock_vehicle.update = AsyncMock()
+        conn._vehicles = [mock_vehicle]
+
+        result = await conn.update()
+        assert result is True
+        mock_vehicle.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_relogin_on_token_failure(self):
+        """Test update() tries to relogin when validate_tokens fails."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=False)
+        conn.doLogin = AsyncMock(return_value=False)
+
+        result = await conn.update()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_update_not_logged_in_calls_login(self):
+        """Test update() calls _login when not logged in."""
+        conn = _make_connection()
+        conn._session_logged_in = False
+        conn._login = AsyncMock(return_value=False)
+
+        result = await conn.update()
+        assert result is False
+        conn._login.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# post() and put() Tests
+# ---------------------------------------------------------------------------
+class TestPostPut:
+    """Test post() and put() methods."""
+
+    @pytest.mark.asyncio
+    async def test_post_with_data(self):
+        """Test post() passes data to _request."""
+        conn = _make_connection()
+        conn._request = AsyncMock(return_value={"result": "ok"})
+        result = await conn.post("https://example.com/api", json={"key": "val"})
+        assert result == {"result": "ok"}
+        conn._request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_post_without_data(self):
+        """Test post() without data passes to _request."""
+        conn = _make_connection()
+        conn._request = AsyncMock(return_value={"result": "ok"})
+        result = await conn.post("https://example.com/api")
+        assert result == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_put_with_data(self):
+        """Test put() passes data to _request."""
+        conn = _make_connection()
+        conn._request = AsyncMock(return_value={"result": "ok"})
+        result = await conn.put("https://example.com/api", json={"key": "val"})
+        assert result == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_put_without_data(self):
+        """Test put() without data passes to _request."""
+        conn = _make_connection()
+        conn._request = AsyncMock(return_value={"result": "ok"})
+        result = await conn.put("https://example.com/api")
+        assert result == {"result": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# validate_tokens EMEA edge cases
+# ---------------------------------------------------------------------------
+class TestValidateTokensEMEA:
+    """Test validate_tokens EMEA path edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_validate_tokens_missing_identity_returns_false(self):
+        """Test validate_tokens returns False when identity tokens missing."""
+        conn = _make_connection()
+        conn._session_tokens = {}  # No identity key
+        result = await conn.validate_tokens()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_validate_tokens_about_to_expire_refreshes(self):
+        """Test validate_tokens refreshes when tokens expire before next update."""
+        import jwt as pyjwt
+        conn = _make_connection()
+        # Tokens expire in 60 seconds (within 5-minute interval)
+        near_future = int(time.time()) + 60
+        fake_token = pyjwt.encode({"exp": near_future, "sub": "test"}, "secret", algorithm="HS256")
+        conn._session_tokens["identity"] = {
+            "access_token": fake_token,
+            "id_token": fake_token,
+            "refresh_token": "rt",
+        }
+        mock_refresh = AsyncMock(return_value=True)
+        with patch.object(conn, "refresh_tokens", mock_refresh):
+            result = await conn.validate_tokens()
+        assert result is True
+        mock_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# NA Authorization Code Flow Test (covers lines 765-875)
+# ---------------------------------------------------------------------------
+class TestNAAuthorizationCodeFlow:
+    """Test _get_authorization_code_na full flow."""
+
+    def _make_na_conn(self):
+        session = AsyncMock()
+        session._cookie_jar = MagicMock()
+        session._cookie_jar._cookies = {}
+        conn = Connection(session, "user@example.com", "pass123", country="US")
+        conn._session_auth_headers = {}
+        return conn
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_full_success(self):
+        """Test full NA two-step login flow with mocked sub-methods."""
+        conn = self._make_na_conn()
+        openid_config = {
+            "authorization_endpoint": "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/authorize",
+        }
+
+        form_data_email = {
+            "csrf": "csrf1",
+            "relay_state": "rs1",
+            "hmac": "hmac1",
+            "form_action": "/signin-service/v1/client/login/identifier",
+        }
+        form_data_password = {
+            "csrf": "csrf2",
+            "relay_state": "rs2",
+            "hmac": "hmac2",
+            "form_action": "/signin-service/v1/client/login/authenticate",
+        }
+
+        # Mock password page GET response
+        mock_pw_resp = AsyncMock()
+        mock_pw_resp.status = 200
+        mock_pw_resp.text = AsyncMock(return_value="<html>password form</html>")
+        pw_cm = MagicMock()
+        pw_cm.__aenter__ = AsyncMock(return_value=mock_pw_resp)
+        pw_cm.__aexit__ = AsyncMock(return_value=False)
+        conn._session.get = MagicMock(return_value=pw_cm)
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>email form</html>")),
+            patch.object(conn, "_extract_identitykit_form", side_effect=[form_data_email, form_data_password]),
+            patch.object(conn, "post_form", AsyncMock(side_effect=[
+                "https://identity.na.vwgroup.io/signin-service/v1/client/login/password",
+                "https://identity.na.vwgroup.io/signin-service/v1/redirect",
+            ])),
+            patch.object(conn, "follow_redirects", AsyncMock(
+                return_value="kombi:///login?code=na_auth_code_123&state=xyz"
+            )),
+        ):
+            code = await conn._get_authorization_code_na(openid_config)
+
+        assert code == "na_auth_code_123"
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_no_redirect_after_email(self):
+        """Test raises AuthenticationError when email submission returns no redirect."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": "c", "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            patch.object(conn, "post_form", AsyncMock(return_value=None)),
+            pytest.raises(AuthenticationError, match="No redirect received after email"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_password_invalid(self):
+        """Test raises AuthenticationError on password_invalid redirect."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": "c", "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        mock_pw_resp = AsyncMock()
+        mock_pw_resp.status = 200
+        mock_pw_resp.text = AsyncMock(return_value="<html>pw form</html>")
+        pw_cm = MagicMock()
+        pw_cm.__aenter__ = AsyncMock(return_value=mock_pw_resp)
+        pw_cm.__aexit__ = AsyncMock(return_value=False)
+        conn._session.get = MagicMock(return_value=pw_cm)
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            patch.object(conn, "post_form", AsyncMock(side_effect=[
+                "https://identity.na.vwgroup.io/next",
+                "https://example.com/callback?error=login.errors.password_invalid",
+            ])),
+            pytest.raises(AuthenticationError, match="Password rejected"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_throttled(self):
+        """Test raises AuthenticationError on login.error.throttled."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": "c", "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        mock_pw_resp = AsyncMock()
+        mock_pw_resp.status = 200
+        mock_pw_resp.text = AsyncMock(return_value="<html>pw form</html>")
+        pw_cm = MagicMock()
+        pw_cm.__aenter__ = AsyncMock(return_value=mock_pw_resp)
+        pw_cm.__aexit__ = AsyncMock(return_value=False)
+        conn._session.get = MagicMock(return_value=pw_cm)
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            patch.object(conn, "post_form", AsyncMock(side_effect=[
+                "https://identity.na.vwgroup.io/next",
+                "https://example.com/callback?login.error.throttled=true",
+            ])),
+            pytest.raises(AuthenticationError, match="throttling"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_no_code_in_callback(self):
+        """Test raises AuthenticationError when code missing from callback URL."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": "c", "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        mock_pw_resp = AsyncMock()
+        mock_pw_resp.status = 200
+        mock_pw_resp.text = AsyncMock(return_value="<html>pw form</html>")
+        pw_cm = MagicMock()
+        pw_cm.__aenter__ = AsyncMock(return_value=mock_pw_resp)
+        pw_cm.__aexit__ = AsyncMock(return_value=False)
+        conn._session.get = MagicMock(return_value=pw_cm)
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            patch.object(conn, "post_form", AsyncMock(side_effect=[
+                "https://identity.na.vwgroup.io/next",
+                "https://identity.na.vwgroup.io/redirect",
+            ])),
+            patch.object(conn, "follow_redirects", AsyncMock(return_value="kombi:///login?state=xyz")),
+            pytest.raises(AuthenticationError, match="Authorization code not found"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_password_page_non200(self):
+        """Test raises AuthenticationError when password page returns non-200."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": "c", "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        mock_pw_resp = AsyncMock()
+        mock_pw_resp.status = 403
+        pw_cm = MagicMock()
+        pw_cm.__aenter__ = AsyncMock(return_value=mock_pw_resp)
+        pw_cm.__aexit__ = AsyncMock(return_value=False)
+        conn._session.get = MagicMock(return_value=pw_cm)
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            patch.object(conn, "post_form", AsyncMock(return_value="https://identity.na.vwgroup.io/next")),
+            pytest.raises(AuthenticationError, match="Password page returned HTTP 403"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+    @pytest.mark.asyncio
+    async def test_get_authorization_code_na_incomplete_form(self):
+        """Test raises AuthenticationError when identitykit form is incomplete."""
+        conn = self._make_na_conn()
+        openid_config = {"authorization_endpoint": "https://example.com/authorize"}
+
+        form_data = {"csrf": None, "relay_state": "r", "hmac": "h", "form_action": "/action"}
+
+        with (
+            patch.object(conn, "get_authorization_page", AsyncMock(return_value="<html>form</html>")),
+            patch.object(conn, "_extract_identitykit_form", return_value=form_data),
+            pytest.raises(AuthenticationError, match="IdentiKit form incomplete"),
+        ):
+            await conn._get_authorization_code_na(openid_config)
+
+
+# ---------------------------------------------------------------------------
+# Action Method Exception Paths (covers setClimater, setAuxiliary, etc. exceptions)
+# ---------------------------------------------------------------------------
+class TestActionMethodExceptions:
+    """Test action method exception wrapping."""
+
+    @pytest.mark.asyncio
+    async def test_setClimater_exception_wrapped(self):
+        """Test setClimater wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.post = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setClimater"):
+            await conn.setClimater(VIN, data={}, action="start")
+
+    @pytest.mark.asyncio
+    async def test_setClimaterSettings_exception_wrapped(self):
+        """Test setClimaterSettings wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setClimaterSettings"):
+            await conn.setClimaterSettings(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setAuxiliary_exception_wrapped(self):
+        """Test setAuxiliary wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.post = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setAuxiliary"):
+            await conn.setAuxiliary(VIN, data={}, action="start")
+
+    @pytest.mark.asyncio
+    async def test_setWindowHeater_exception_wrapped(self):
+        """Test setWindowHeater wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.post = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setWindowHeater"):
+            await conn.setWindowHeater(VIN, action="start")
+
+    @pytest.mark.asyncio
+    async def test_setChargingSettings_exception_wrapped(self):
+        """Test setChargingSettings wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setChargingSettings"):
+            await conn.setChargingSettings(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setLock_exception_wrapped(self):
+        """Test setLock wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.check_spin_state = AsyncMock(return_value=True)
+        conn.post = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setLock"):
+            await conn.setLock(VIN, lock=True, spin="1234")
+
+    @pytest.mark.asyncio
+    async def test_setHonkAndFlash_exception_wrapped(self):
+        """Test setHonkAndFlash wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.check_spin_state = AsyncMock(return_value=True)
+        conn.post = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setHonkAndFlash"):
+            await conn.setHonkAndFlash(VIN, position={"lat": 0, "lng": 0})
+
+    @pytest.mark.asyncio
+    async def test_setDepartureProfiles_exception_wrapped(self):
+        """Test setDepartureProfiles wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setDepartureProfiles"):
+            await conn.setDepartureProfiles(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setClimatisationTimers_exception_wrapped(self):
+        """Test setClimatisationTimers wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setClimatisationTimers"):
+            await conn.setClimatisationTimers(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setAuxiliaryHeatingTimers_exception_wrapped(self):
+        """Test setAuxiliaryHeatingTimers wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setAuxiliaryHeatingTimers"):
+            await conn.setAuxiliaryHeatingTimers(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setDepartureTimers_exception_wrapped(self):
+        """Test setDepartureTimers wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setDepartureTimers"):
+            await conn.setDepartureTimers(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setChargingCareModeSettings_exception_wrapped(self):
+        """Test setChargingCareModeSettings wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setChargingCareModeSettings"):
+            await conn.setChargingCareModeSettings(VIN, data={})
+
+    @pytest.mark.asyncio
+    async def test_setReadinessBatterySupport_exception_wrapped(self):
+        """Test setReadinessBatterySupport wraps exceptions in APIError."""
+        conn = _make_connection()
+        conn.put = AsyncMock(side_effect=Exception("network"))
+        with pytest.raises(APIError, match="setReadinessBatterySupport"):
+            await conn.setReadinessBatterySupport(VIN, data={})
