@@ -944,3 +944,275 @@ class TestDashboardWithDieselVehicle:
         for inst in dashboard.instruments:
             attrs = inst.attributes
             assert isinstance(attrs, dict), f"{inst.attr} attributes not a dict"
+
+
+# ===========================================================================
+# Coverage gap tests: uncovered branches in Instrument hierarchy
+# ===========================================================================
+
+
+class TestInstrumentBaseEdgeCase:
+    """Tests for Instrument base class uncovered branches."""
+
+    def test_is_mutable_raises_not_implemented(self):
+        """Base Instrument.is_mutable raises NotImplementedError."""
+        inst = Instrument(component="sensor", attr="test", name="Test")
+        vehicle = MagicMock()
+        inst.vehicle = vehicle
+        with pytest.raises(NotImplementedError):
+            _ = inst.is_mutable
+
+    def test_last_refresh_returns_none_when_no_state_class(self):
+        """last_refresh returns None when state_class is None and no last_updated attr."""
+        inst = Instrument(component="sensor", attr="nonexistent_attr", name="Test")
+        vehicle = MagicMock(spec=[])
+        inst.vehicle = vehicle
+        inst.state_class = None
+        result = inst.last_refresh
+        assert result is None
+
+    def test_last_refresh_raises_when_state_class_set(self):
+        """last_refresh raises NotImplementedError when state_class is set and no last_updated."""
+        inst = Instrument(component="sensor", attr="nonexistent_attr", name="Test")
+        vehicle = MagicMock(spec=[])
+        inst.vehicle = vehicle
+        inst.state_class = "measurement"
+        with pytest.raises(NotImplementedError):
+            _ = inst.last_refresh
+
+    def test_state_falls_through_to_get_attr(self):
+        """Instrument.state falls through to vehicle.get_attr when no direct attribute."""
+        inst = Instrument(component="sensor", attr="missing_attr", name="Test")
+        vehicle = MagicMock(spec=[])
+        vehicle.get_attr = MagicMock(return_value="fallback_value")
+        inst.vehicle = vehicle
+        assert inst.state == "fallback_value"
+
+
+class TestSensorConversion:
+    """Tests for Sensor unit conversion branches."""
+
+    def test_sensor_configurate_mpg(self):
+        """Sensor with L/100km unit converts to mpg when miles=True."""
+        sensor = Sensor(attr="fuel_consumption", name="Fuel", icon="", unit="L/100km")
+        sensor.configurate(miles=True)
+        assert sensor.unit == "mpg"
+        assert sensor.convert is True
+
+    def test_sensor_configurate_scandinavian_km_to_mil(self):
+        """Sensor with km unit converts to mil when scandinavian_miles=True."""
+        sensor = Sensor(attr="range", name="Range", icon="", unit="km")
+        sensor.configurate(scandinavian_miles=True)
+        assert sensor.unit == "mil"
+
+    def test_sensor_configurate_scandinavian_kmh_to_milh(self):
+        """Sensor with km/h converts to mil/h with scandinavian_miles."""
+        sensor = Sensor(attr="speed", name="Speed", icon="", unit="km/h")
+        sensor.configurate(scandinavian_miles=True)
+        assert sensor.unit == "mil/h"
+
+    def test_sensor_configurate_scandinavian_l100km_to_l100mil(self):
+        """Sensor with L/100km converts to L/100mil with scandinavian_miles."""
+        sensor = Sensor(attr="fuel", name="Fuel", icon="", unit="L/100km")
+        sensor.configurate(scandinavian_miles=True)
+        assert sensor.unit == "L/100mil"
+
+    def test_sensor_configurate_scandinavian_kwh_to_kwh100mil(self):
+        """Sensor with kWh/100km converts to kWh/100mil with scandinavian_miles."""
+        sensor = Sensor(attr="elec", name="Elec", icon="", unit="kWh/100km")
+        sensor.configurate(scandinavian_miles=True)
+        assert sensor.unit == "kWh/100mil"
+
+    def test_sensor_state_mpg_conversion(self):
+        """Sensor state converts L/100km value to mpg."""
+        sensor = Sensor(attr="fuel_consumption", name="Fuel", icon="", unit="L/100km")
+        sensor.configurate(miles=True)
+        vehicle = MagicMock()
+        vehicle.fuel_consumption = 7.0
+        sensor.vehicle = vehicle
+        # 282.48 / 7.0 = 40.35...
+        assert sensor.state == round(282.48 / 7.0, 1)
+
+    def test_sensor_state_mil_conversion(self):
+        """Sensor state converts km to mil (divide by 10)."""
+        sensor = Sensor(attr="electric_range", name="Range", icon="", unit="km")
+        sensor.configurate(scandinavian_miles=True)
+        sensor.convert = True
+        vehicle = MagicMock()
+        vehicle.electric_range = 300
+        sensor.vehicle = vehicle
+        assert sensor.state == 30.0
+
+    def test_sensor_str_state_with_unit(self):
+        """Sensor str_state includes unit."""
+        sensor = Sensor(attr="battery_level", name="Battery", icon="", unit="%")
+        vehicle = MagicMock()
+        vehicle.battery_level = 75
+        sensor.vehicle = vehicle
+        assert sensor.str_state == "75 %"
+
+    def test_sensor_str_state_without_unit(self):
+        """Sensor str_state without unit returns just value."""
+        sensor = Sensor(attr="charging_state", name="Charging", icon="", unit="")
+        vehicle = MagicMock()
+        vehicle.charging_state = "Ready"
+        sensor.vehicle = vehicle
+        assert sensor.str_state == "Ready"
+
+
+class TestBinarySensorEdgeCase:
+    """Tests for BinarySensor uncovered branches."""
+
+    def test_binary_sensor_string_val_normal(self):
+        """BinarySensor with string 'Normal' returns False."""
+        bs = BinarySensor(attr="parking_light", name="Parking Light", device_class="light")
+        vehicle = MagicMock()
+        vehicle.parking_light = "Normal"
+        bs.vehicle = vehicle
+        assert bs.state is False
+
+    def test_binary_sensor_string_val_not_normal(self):
+        """BinarySensor with non-'Normal' string returns True."""
+        bs = BinarySensor(attr="parking_light", name="Parking Light", device_class="light")
+        vehicle = MagicMock()
+        vehicle.parking_light = "Warning"
+        bs.vehicle = vehicle
+        assert bs.state is True
+
+    def test_binary_sensor_is_on(self):
+        """BinarySensor.is_on returns state."""
+        bs = BinarySensor(attr="door_locked", name="Door Lock", device_class="lock")
+        vehicle = MagicMock()
+        vehicle.door_locked = True
+        bs.vehicle = vehicle
+        assert bs.is_on is True
+
+    def test_binary_sensor_str_state_safety_warning(self):
+        """BinarySensor with safety device_class returns 'Warning!' when True."""
+        from volkswagencarnet.vw_dashboard import VWDeviceClass
+        bs = BinarySensor(attr="any_warning", name="Warning", device_class="safety")
+        vehicle = MagicMock()
+        vehicle.any_warning = True
+        bs.vehicle = vehicle
+        assert bs.str_state == "Warning!"
+
+    def test_binary_sensor_str_state_safety_ok(self):
+        """BinarySensor with safety device_class returns 'OK' when False."""
+        bs = BinarySensor(attr="any_warning", name="Warning", device_class="safety")
+        vehicle = MagicMock()
+        vehicle.any_warning = False
+        bs.vehicle = vehicle
+        assert bs.str_state == "OK"
+
+    def test_binary_sensor_str_state_plug(self):
+        """BinarySensor with plug device_class returns 'Charging'/'Plug removed'."""
+        from volkswagencarnet.vw_dashboard import VWDeviceClass
+        bs = BinarySensor(attr="external_power", name="Power", device_class=VWDeviceClass.PLUG)
+        vehicle = MagicMock()
+        vehicle.external_power = True
+        bs.vehicle = vehicle
+        assert bs.str_state == "Charging"
+
+    def test_binary_sensor_str_state_none(self):
+        """BinarySensor with None state returns '?'."""
+        bs = BinarySensor(attr="unknown_attr", name="Unknown", device_class="other")
+        vehicle = MagicMock(spec=[])
+        vehicle.get_attr = MagicMock(return_value=None)
+        bs.vehicle = vehicle
+        assert bs.str_state == "?"
+
+    def test_binary_sensor_str_state_on_off(self):
+        """BinarySensor with generic device_class returns 'On'/'Off'."""
+        bs = BinarySensor(attr="request_in_progress", name="Request", device_class="running")
+        vehicle = MagicMock()
+        vehicle.request_in_progress = True
+        bs.vehicle = vehicle
+        assert bs.str_state == "On"
+
+        vehicle.request_in_progress = False
+        assert bs.str_state == "Off"
+
+    def test_binary_sensor_reverse_state(self):
+        """BinarySensor with reverse_state flips True to False."""
+        bs = BinarySensor(attr="door_closed", name="Door", device_class="door", reverse_state=True)
+        vehicle = MagicMock()
+        vehicle.door_closed = True
+        bs.vehicle = vehicle
+        assert bs.state is False
+
+        vehicle.door_closed = False
+        assert bs.state is True
+
+
+class TestClimateEdgeCase:
+    """Tests for Climate subclass uncovered branches."""
+
+    def test_climate_base_abstract_methods(self):
+        """Climate base class abstract methods return None."""
+        from volkswagencarnet.vw_dashboard import Climate
+        c = Climate(attr="test", name="Test", icon="")
+        vehicle = MagicMock()
+        c.vehicle = vehicle
+        assert c.hvac_mode is None
+        assert c.target_temperature is None
+        assert c.set_temperature() is None
+        assert c.set_hvac_mode("on") is None
+
+    @pytest.mark.asyncio
+    async def test_electric_climatisation_set_temperature(self):
+        """ElectricClimatisationClimate.set_temperature calls vehicle methods."""
+        ec = ElectricClimatisationClimate()
+        vehicle = MagicMock()
+        vehicle.set_climatisation_settings = AsyncMock()
+        vehicle.update = AsyncMock()
+        ec.vehicle = vehicle
+        await ec.set_temperature(temperature=22.5)
+        vehicle.set_climatisation_settings.assert_called_once_with(
+            "climatisation_target_temperature", 22.5
+        )
+        vehicle.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_electric_climatisation_set_temperature_from_kwargs(self):
+        """ElectricClimatisationClimate.set_temperature extracts temperature from kwargs."""
+        ec = ElectricClimatisationClimate()
+        vehicle = MagicMock()
+        vehicle.set_climatisation_settings = AsyncMock()
+        vehicle.update = AsyncMock()
+        ec.vehicle = vehicle
+        # Pass temperature only via keyword to test the kwargs path
+        await ec.set_temperature(temperature=20.0)
+        vehicle.set_climatisation_settings.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_electric_climatisation_set_temperature_none_noop(self):
+        """ElectricClimatisationClimate.set_temperature with no temp is a no-op."""
+        ec = ElectricClimatisationClimate()
+        vehicle = MagicMock()
+        vehicle.set_climatisation_settings = AsyncMock()
+        vehicle.update = AsyncMock()
+        ec.vehicle = vehicle
+        await ec.set_temperature()
+        vehicle.set_climatisation_settings.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_electric_climatisation_set_hvac_mode_start(self):
+        """ElectricClimatisationClimate.set_hvac_mode starts climatisation when truthy."""
+        ec = ElectricClimatisationClimate()
+        vehicle = MagicMock()
+        vehicle.set_climatisation = AsyncMock()
+        vehicle.update = AsyncMock()
+        ec.vehicle = vehicle
+        await ec.set_hvac_mode(True)
+        vehicle.set_climatisation.assert_called_once_with("start")
+
+    @pytest.mark.asyncio
+    async def test_electric_climatisation_set_hvac_mode_stop(self):
+        """ElectricClimatisationClimate.set_hvac_mode stops climatisation when falsy."""
+        ec = ElectricClimatisationClimate()
+        vehicle = MagicMock()
+        vehicle.set_climatisation = AsyncMock()
+        vehicle.update = AsyncMock()
+        ec.vehicle = vehicle
+        await ec.set_hvac_mode(False)
+        vehicle.set_climatisation.assert_called_once_with("stop")
