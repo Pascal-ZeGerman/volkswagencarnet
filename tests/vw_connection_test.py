@@ -2103,7 +2103,7 @@ class FetchRvsEndpointTest(IsolatedAsyncioTestCase):
     async def test_fetch_rvs_endpoint_exception_returns_none(self):
         """Network exception is caught and returns None."""
         conn = _make_na_connection_for_rvs()
-        conn._session.get = AsyncMock(side_effect=Exception("Connection reset"))
+        conn._session.get = AsyncMock(side_effect=aiohttp.ClientError("Connection reset"))
 
         result = await conn._fetch_rvs_endpoint(
             url="https://example.com/rvs/v1/vehicle/VIN",

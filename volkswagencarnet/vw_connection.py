@@ -17,6 +17,7 @@ import time
 from urllib.parse import parse_qs, urljoin, urlparse
 from typing import Any
 
+import aiohttp
 from aiohttp import ClientTimeout, client_exceptions
 from aiohttp.hdrs import METH_GET, METH_POST, METH_PUT
 from bs4 import BeautifulSoup
@@ -152,7 +153,7 @@ class Connection:
         self.discovery_config: dict = {}
 
         # NA three-token registry (empty for EMEA, populated lazily during _login_na())
-        self._na_tokens: dict = {}   # keys: "idk", "brand", "mbb"
+        self._na_tokens: dict = {}   # keys: "idk", "brand", "mbb", plus per-VIN keys (e.g., _na_tokens["WVWZZZ..."]["vehicle_session"])
         self._na_rvs_cache: dict = {}  # Per-VIN RVS data cache (empty for EMEA, populated during NA data fetch)
         self._xclient_id: str | None = xclient_id  # caller-injected or registered during login
         self._xclient_id_callback = on_xclient_id  # called only when NEW xclientId generated
@@ -907,7 +908,8 @@ class Connection:
             token_body["code_verifier"] = self._pkce_verifier
             _LOGGER.debug("Added PKCE verifier to token exchange")
 
-        # Add X-QMAuth header for NA token exchange (required by identity.na.vwgroup.io)
+        # X-QMAuth is required for token exchange but must NOT be sent during IDK refresh
+        # (causes HTTP 400). See _refresh_idk_token().
         if self._session_region == "NA":
             self._session_auth_headers["X-QMAuth"] = self._calculate_xqmauth()
 
@@ -1215,7 +1217,7 @@ class Connection:
                     "IDK refresh attempt %s/%s failed with HTTP %s: %s",
                     attempt, max_attempts, response.status, text,
                 )
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 _LOGGER.warning("IDK refresh attempt %s/%s error: %s", attempt, max_attempts, exc)
 
             if attempt < max_attempts:
@@ -1329,15 +1331,12 @@ class Connection:
 
         When SPIN is configured the method performs a two-step flow:
 
-        1. POST vehicle session with ``spinHash=null`` — the server accepts this
-           on the first call and returns a ``carnetVehicleToken``.
-        2. GET ``ss/v1/user/{userId}/challenge`` with that token as Bearer — the
-           challenge endpoint requires the ``carnetVehicleToken``, NOT the IDK
-           access_token.  The response is a flat ``{"challenge": "...",
-           "remainingTries": N}`` object.
-        3. Compute ``spinHash = SHA-512(UTF-8("{challenge}.{spin}"))``.
-        4. POST vehicle session again with the computed ``spinHash`` — this
-           validates the SPIN and returns the final ``carnetVehicleToken``.
+        1. GET ``ss/v1/user/{userId}/challenge`` with IDK access_token as
+           Bearer and x-user-id header — returns ``{"challenge": "...",
+           "remainingTries": N}``.
+        2. Compute ``spinHash = SHA-512(UTF-8("{challenge}.{spin}"))``.
+        3. POST vehicle session with computed ``spinHash`` — validates the SPIN
+           and returns the ``carnetVehicleToken``.
 
         When SPIN is not configured the method performs a single POST with
         ``spinHash=null``.
@@ -1483,7 +1482,7 @@ class Connection:
                     body_text[:300],
                 )
                 return None
-            except Exception as exc:  # pylint: disable=broad-exception-caught
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 _LOGGER.warning("NA vehicle session: exception for tsp=%r: %s", tsp_value, exc)
                 return None
 
@@ -1551,7 +1550,7 @@ class Connection:
                         body_text[:200],
                     )
                     return None
-            except Exception as exc:  # pylint: disable=broad-exception-caught
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 _LOGGER.warning("NA vehicle session: challenge GET failed: %s", exc)
                 return None
 
@@ -1574,8 +1573,8 @@ class Connection:
             token_claims = jwt.decode(vehicle_token, options={"verify_signature": False})
             expires_at = token_claims.get("exp", time.time() + 1800)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            _LOGGER.debug("NA: could not decode vehicle token JWT for exp claim: %s", exc)
-            expires_at = time.time() + 1800
+            _LOGGER.warning("NA: could not decode vehicle token JWT for exp claim: %s", exc)
+            expires_at = time.time() + 600
 
         if vin not in self._na_tokens:
             self._na_tokens[vin] = {}
@@ -1630,6 +1629,7 @@ class Connection:
                         timeout=ClientTimeout(total=TIMEOUT.seconds),
                         allow_redirects=False,
                     )
+                    _LOGGER.debug("NA RVS %s: retry after 401 returned status=%s for vin=%s", label, resp.status, redact(vin))
                 if resp.status == 200:
                     data = await resp.json()
                     if isinstance(data, dict) and "data" in data:
@@ -1656,7 +1656,7 @@ class Connection:
                         label, redact(vin), resp.status, body_preview[:200],
                     )
                     break  # non-5xx non-200 — do not retry
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             _LOGGER.warning("NA RVS %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
 
@@ -1712,6 +1712,9 @@ class Connection:
         except Exception as exc:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
             user_id = ""
+
+        if not user_id:
+            return None
 
         # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
         rvs_headers: dict = {
@@ -1977,6 +1980,7 @@ class Connection:
             self._session_logged_in = True
             return True
 
+        # TODO: EMEA login swallows AuthenticationError unlike NA which re-raises. Align behavior in future cleanup.
         except (AuthenticationError, RequestError, RedirectError) as error:
             _LOGGER.error("Authentication error during login: %s", error)
             self._session_logged_in = False
@@ -2109,11 +2113,12 @@ class Connection:
                                 "Not success status code [%s]",
                                 response.status,
                             )
-                    except Exception:  # pylint: disable=broad-exception-caught
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
                         res = {}
-                        _LOGGER.debug(
-                            "Something went wrong [%s]",
-                            response.status,
+                        _LOGGER.warning(
+                            "Request to '%s' failed to parse response [status %s]: %s",
+                            url, response.status, exc,
+                            exc_info=True,
                         )
                         if return_raw:
                             return response

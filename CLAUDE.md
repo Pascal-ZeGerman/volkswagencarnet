@@ -162,15 +162,15 @@ The library uses OAuth2 with authorization code flow:
 **Regional OAuth Differences:**
 - **EMEA (EU)**: Standard OAuth2 authorization code flow
 - **North America (US/CA)**: Standard OAuth2 authorization code flow (2026)
-  - PKCE is **required**: `code_verifier` replaces `client_secret` at token exchange (client is confidential without PKCE)
+  - PKCE is **required**: `code_verifier` replaces `client_secret` at token exchange (public client, PKCE required)
   - Identity provider: `identity.na.vwgroup.io` (separate from base API)
-  - Redirect URI: HTTPS callback to base API endpoint
-  - Minimal scope: `openid email`
+  - Redirect URI: `kombi:///login` (custom URI scheme)
+  - Minimal scope: `openid`
 
 ### API Structure
 
 - **EMEA**: `https://emea.bff.cariad.digital`
-- **North America**: Auto-discovered (tries multiple endpoint candidates)
+- **North America**: Hardcoded: `https://b-h-s.spr.us00.p.con-veh.net` (discovery disabled)
 - Home region configured per region (DE: `https://msg.volkswagen.de`)
 - Default country: `DE` (Germany), configurable via `country` parameter
 - Authentication uses Identity service with JWT tokens
@@ -183,7 +183,7 @@ The library uses OAuth2 with authorization code flow:
 **Region-Specific Configuration** (`vw_const.py`):
 - Each region has its own `client_id` for OAuth authentication
 - EMEA Client ID: `a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com`
-- NA Client ID: `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com` (2026 credentials)
+- NA Client ID: `59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID` (2026 credentials)
 - NA base API: `https://b-h-s.spr.us00.p.con-veh.net` (confirmed working 2026)
 - NA identity provider: `https://identity.na.vwgroup.io` (OAuth/OIDC endpoint)
 - `"legal entity is missing or invalid"` error = wrong client_id or outdated credentials
@@ -250,10 +250,10 @@ Uses `setuptools_scm` for automatic versioning from git tags. Version written to
 If US authentication fails with current credentials:
 - OAuth credentials may be outdated (last confirmed: 2021)
 - Traffic capture from 2026 revealed:
-  - Client ID: `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com`
+  - Client ID: `59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID`
   - PKCE is **required** for token exchange (without it, server demands client_secret which is unavailable)
-  - Redirect URI uses HTTPS callback, not custom scheme
-  - Scope simplified to `openid email`
+  - Redirect URI uses custom scheme `kombi:///login`, not HTTPS callback
+  - Scope simplified to `openid`
   - Identity endpoint separate from base API (`identity.na.vwgroup.io`)
 - Use network traffic analysis to capture current credentials from official VW Car-Net app
 - See `docs/US_NETWORK_TRAFFIC_ANALYSIS.md` for detailed capture guide using mitmproxy/Charles Proxy

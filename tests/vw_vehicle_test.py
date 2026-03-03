@@ -1634,10 +1634,11 @@ class NAVehicleDataTest(IsolatedAsyncioTestCase):
         vehicle = _make_na_vehicle_data()
         assert vehicle.position == {"lat": None, "lng": None, "timestamp": None}
 
-    def test_position_raises_value_error_on_malformed_na_location(self):
+    def test_position_returns_safe_default_on_malformed_na_location(self):
+        """position catches ValueError from _na_position and returns safe default."""
         vehicle = _make_na_vehicle_data(states={"na_location": {"location": {}}})
-        with pytest.raises(ValueError):
-            _ = vehicle.position
+        pos = vehicle.position
+        assert pos == {"lat": None, "lng": None, "timestamp": None}
 
     def test_door_locked_true_when_lockstatus_locked(self):
         fixture_data = _load_na_vehicle_fixture("rvs_status.json")
@@ -1653,10 +1654,10 @@ class NAVehicleDataTest(IsolatedAsyncioTestCase):
         vehicle = _make_na_vehicle_data()
         assert vehicle.door_locked is False
 
-    def test_door_locked_raises_value_error_on_missing_lockstatus(self):
+    def test_door_locked_returns_false_on_missing_lockstatus(self):
+        """door_locked catches ValueError from _na_door_locked and returns safe default."""
         vehicle = _make_na_vehicle_data(states={"na_status": {"platform": "VW_NA"}})
-        with pytest.raises(ValueError):
-            _ = vehicle.door_locked
+        assert vehicle.door_locked is False
 
     def test_is_position_supported_true_when_na_location_present(self):
         vehicle = _make_na_vehicle_data(

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Phases
 status: unknown
-last_updated: "2026-03-02T22:29:35.984Z"
+last_updated: "2026-03-03T04:36:10.907Z"
 progress:
   total_phases: 17
-  completed_phases: 11
-  total_plans: 26
-  completed_plans: 31
+  completed_phases: 12
+  total_plans: 30
+  completed_plans: 35
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 23-create-holistic-test-suite-with-comprehensive-code-coverage
-Plan: 3 of 4 complete (23-01, 23-02, 23-03 complete)
-Status: Phase 23 in progress — dashboard test coverage added (76% from 0%)
-Last activity: 2026-03-02 - Completed 23-03 (dashboard instrument tests: 111 tests, 946 lines)
+Plan: 6 of 6 complete (23-01, 23-02, 23-03, 23-04, 23-05, 23-06 complete)
+Status: Phase 23 complete -- 973 tests, 82% vw_connection.py coverage (target 80%+ met)
+Last activity: 2026-03-03 - Completed 23-05 (connection coverage gap closure: 51 new tests, 61% to 82%)
 
 Progress: [###       ] 15%
 
@@ -68,6 +68,8 @@ Progress: [###       ] 15%
 | Phase 22-fix-medium-nitpick P01 | 2 | 2 tasks | 2 files |
 | Phase 22-fix-medium-nitpick P02 | 3 | 2 tasks | 3 files |
 | Phase 23-connection-tests P01 | 4 | 2 tasks | 8 files |
+| Phase 23 P04 | 5 | 2 tasks | 5 files |
+| Phase 23 P06 | 7 | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -122,6 +124,9 @@ Recent decisions affecting current work:
 - [Phase 22-02]: Test mocks set is_na explicitly — MagicMock(spec=Connection) returns truthy MagicMock for unset property attributes
 - [Phase 23-01]: AsyncMock-based method mocking preferred over aioresponses for Connection tests (mock session doesn't integrate with aioresponses ClientSession patching)
 - [Phase 23-01]: Action method tests mock post/put at Connection level for cleaner URL assertions; _make_connection() factory pattern established
+- [Phase 23]: vw_connection.py (61%) and vw_vehicle.py (64%) remain below 80% -- large files with OAuth/action method gaps; dashboard 80%, utilities 86% met targets
+- [Phase 23-05]: test_set_schedule repurposed to test setDepartureTimers — no setSchedule method exists in codebase
+- [Phase 23-05]: vw_connection.py coverage raised from 61% to 82% — 51 new tests covering OAuth helpers, NA auth code flow, MBB tokens, action exceptions
 
 ### Roadmap Evolution
 
@@ -144,6 +149,6 @@ None yet for v1.1.
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 23-01-PLAN.md — connection tests with 87 tests covering auth, actions, data fetches
+Last session: 2026-03-03
+Stopped at: Completed 23-05-PLAN.md — Connection coverage gap closure (973 tests, 82% vw_connection.py)
 Resume file: None

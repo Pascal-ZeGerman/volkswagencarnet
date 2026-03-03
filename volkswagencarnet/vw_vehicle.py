@@ -1744,7 +1744,11 @@ class Vehicle:
         """
         # NA region: read from na_location state populated by RVS endpoint
         if self._connection is not None and self._connection.is_na:
-            return self._na_position()
+            try:
+                return self._na_position()
+            except ValueError as exc:
+                _LOGGER.warning("NA position data malformed for %s: %s", self.vin, exc)
+                return {"lat": None, "lng": None, "timestamp": None}
         # EMEA: existing logic unchanged
         output: dict[str, str | float | None]
         try:
@@ -2704,7 +2708,11 @@ class Vehicle:
         """
         # NA region: read from na_status state populated by RVS endpoint
         if self._connection is not None and self._connection.is_na:
-            return self._na_door_locked()
+            try:
+                return self._na_door_locked()
+            except ValueError as exc:
+                _LOGGER.warning("NA door lock data malformed for %s: %s", self.vin, exc)
+                return False
         # EMEA: existing logic unchanged
         return find_path(self.attrs, Paths.ACCESS_DOOR_LOCK) == "locked"
 
