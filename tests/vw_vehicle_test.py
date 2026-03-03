@@ -3693,3 +3693,23 @@ class TestNAValueErrorSafeDefaults:
         vehicle._discovered = True
         vehicle._states["na_status"] = {"otherKey": "val"}
         assert vehicle.door_locked is False
+
+
+class TestPlan2402EMEAPositionFallback:
+    """Regression test for Plan 24-01: EMEA position fallback returns None values."""
+
+    def test_emea_position_fallback_returns_none_values(self):
+        """EMEA position with malformed attrs returns {lat: None, lng: None, timestamp: None}, not '?'."""
+        conn = MagicMock(spec=Connection)
+        conn._session_region = "EMEA"
+        conn.is_na = False
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+        # Set invalid parking position data (non-numeric lat/lng)
+        vehicle._states["parkingposition"] = {"not_a_real_key": "garbage"}
+        pos = vehicle.position
+        assert pos == {"lat": None, "lng": None, "timestamp": None}
+        # Verify we get None, not "?" strings
+        assert pos["lat"] is None
+        assert pos["lng"] is None
+        assert pos["timestamp"] is None

@@ -3967,6 +3967,65 @@ class TestRefreshIdkTokenGuards:
 # ---------------------------------------------------------------------------
 # PR Review Issue 18: X-QMAuth header in NA token exchange
 # ---------------------------------------------------------------------------
+class Plan24_02_RegressionTests(IsolatedAsyncioTestCase):
+    """Regression tests for Plan 24-01 fixes: JWT narrowing, 401 retry break, SPIN challenge."""
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", side_effect=jwt.exceptions.DecodeError("bad token"))
+    async def test_jwt_decode_invalid_token_returns_none_vehicle_session(self, _mock_jwt):
+        """_create_na_vehicle_session returns None when jwt.decode raises DecodeError (subclass of InvalidTokenError)."""
+        conn = _make_na_connection_with_tokens()
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_jwt_decode_invalid_token_returns_none_vehicle_data(self, mock_jwt):
+        """_get_na_vehicle_data returns None when jwt.decode for x-user-id raises InvalidAudienceError."""
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        # First call (in _create_na_vehicle_session) succeeds; second call (in _get_na_vehicle_data) fails
+        mock_jwt.side_effect = [
+            {"sub": USER_ID},  # _create_na_vehicle_session: decode id_token for userId
+            {"exp": int(time.time()) + 3600},  # _create_na_vehicle_session: decode vehicle token for exp
+            jwt.exceptions.InvalidAudienceError("bad aud"),  # _get_na_vehicle_data: decode id_token for x-user-id
+        ]
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is None
+
+    async def test_rvs_401_retry_break_on_second_failure(self):
+        """_fetch_rvs_endpoint returns None after 401 retry fails (second 401), with exactly 2 GET calls."""
+        conn = _make_na_connection_for_rvs()
+        # First GET returns 401, session refresh succeeds, retry GET returns 401 again
+        conn._session.get = AsyncMock(side_effect=[
+            _make_mock_response(401),
+            _make_mock_response(401),
+        ])
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+        assert result is None
+        assert conn._session.get.call_count == 2
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_spin_challenge_missing_challenge_field(self, _mock_jwt):
+        """_create_na_vehicle_session returns None when challenge response lacks 'challenge' key."""
+        conn = _make_na_connection_with_tokens(spin=FAKE_SPIN)
+        # Challenge response has remainingTries but no "challenge" key
+        conn._session.get = AsyncMock(
+            return_value=_mock_resp(200, {"data": {"remainingTries": 3}})
+        )
+        conn._session.post = AsyncMock()
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+        # POST should never be called since challenge fetch returned no challenge
+        conn._session.post.assert_not_called()
+
+
 class TestNATokenExchangeXQMAuth:
     """Test X-QMAuth header presence in NA token exchange."""
 
