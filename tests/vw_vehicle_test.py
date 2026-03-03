@@ -3665,3 +3665,31 @@ class TestDoorLockedSensor:
         assert v.is_trunk_locked_sensor_supported is True
         v._services[Services.ACCESS] = {"active": True}
         assert v.is_trunk_locked_sensor_supported is False
+
+
+# ---------------------------------------------------------------------------
+# PR Review Issue 6: ValueError safe defaults for NA properties
+# ---------------------------------------------------------------------------
+class TestNAValueErrorSafeDefaults:
+    """Test that NA property callers catch ValueError and return safe defaults."""
+
+    def test_na_position_malformed_returns_safe_default(self):
+        """Position returns safe default when na_location has unexpected structure."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_location"] = {"bad": "data"}
+        pos = vehicle.position
+        assert pos == {"lat": None, "lng": None, "timestamp": None}
+
+    def test_na_door_locked_missing_lockstatus_returns_false(self):
+        """door_locked returns False when na_status is missing lockStatus."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"otherKey": "val"}
+        assert vehicle.door_locked is False

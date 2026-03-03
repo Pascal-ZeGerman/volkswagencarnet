@@ -3862,3 +3862,127 @@ class TestActionMethodExceptions:
         conn.put = AsyncMock(side_effect=Exception("network"))
         with pytest.raises(APIError, match="setReadinessBatterySupport"):
             await conn.setReadinessBatterySupport(VIN, data={})
+
+
+# ---------------------------------------------------------------------------
+# PR Review Issue 10: PKCE generation tests
+# ---------------------------------------------------------------------------
+class TestPKCEGeneration:
+    """Test PKCE code_verifier and code_challenge generation."""
+
+    def test_generate_pkce_verifier_length(self):
+        """Verifier should be 43 chars (32 bytes base64url without padding)."""
+        conn = _make_connection()
+        verifier = conn._generate_pkce_verifier()
+        assert len(verifier) == 43
+
+    def test_generate_pkce_verifier_no_padding(self):
+        """Verifier should not contain '=' padding characters."""
+        conn = _make_connection()
+        verifier = conn._generate_pkce_verifier()
+        assert "=" not in verifier
+
+    def test_generate_pkce_verifier_uniqueness(self):
+        """Two calls should produce different values."""
+        conn = _make_connection()
+        v1 = conn._generate_pkce_verifier()
+        v2 = conn._generate_pkce_verifier()
+        assert v1 != v2
+
+    def test_generate_pkce_challenge_is_sha256(self):
+        """Challenge should be SHA256 of verifier, base64url encoded without padding."""
+        import base64
+        import hashlib
+
+        conn = _make_connection()
+        verifier = conn._generate_pkce_verifier()
+        challenge = conn._generate_pkce_challenge(verifier)
+
+        # Manually compute expected challenge
+        digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+        expected = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+        assert challenge == expected
+
+    def test_generate_pkce_challenge_known_vector(self):
+        """Use known input/output pair from RFC 7636 Appendix B."""
+        conn = _make_connection()
+        # RFC 7636 test vector
+        verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        challenge = conn._generate_pkce_challenge(verifier)
+        assert challenge == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+
+
+# ---------------------------------------------------------------------------
+# PR Review Issue 11: PKCE verifier in NA token exchange
+# ---------------------------------------------------------------------------
+class TestNATokenExchangePKCE:
+    """Test that NA token exchange includes PKCE code_verifier."""
+
+    @pytest.mark.asyncio
+    async def test_na_token_exchange_includes_pkce_verifier(self):
+        """Token exchange POST body should contain code_verifier matching _pkce_verifier."""
+        conn = _make_connection(country="US")
+        conn._pkce_verifier = "test-pkce-verifier-value-1234567890abc"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value='{"access_token":"at","id_token":"id","token_type":"Bearer"}')
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        await conn._exchange_code_for_tokens("auth_code", "https://example.com/token")
+
+        # Verify POST was called with code_verifier in the data
+        call_kwargs = conn._session.post.call_args
+        post_data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert post_data["code_verifier"] == "test-pkce-verifier-value-1234567890abc"
+
+
+# ---------------------------------------------------------------------------
+# PR Review Issue 12: _refresh_idk_token guard clause tests
+# ---------------------------------------------------------------------------
+class TestRefreshIdkTokenGuards:
+    """Test guard clauses in _refresh_idk_token."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_idk_token_no_refresh_token_raises(self):
+        """Should raise AuthenticationError when no refresh_token is stored."""
+        conn = _make_connection(country="US")
+        conn._na_tokens = {"idk": {}}
+
+        with pytest.raises(AuthenticationError, match="no refresh_token"):
+            await conn._refresh_idk_token()
+
+    @pytest.mark.asyncio
+    async def test_refresh_idk_token_no_token_endpoint_raises(self):
+        """Should raise AuthenticationError when _na_token_endpoint is None."""
+        conn = _make_connection(country="US")
+        conn._na_tokens = {"idk": {"refresh_token": "some_rt"}}
+        conn._na_token_endpoint = None
+
+        with pytest.raises(AuthenticationError, match="_na_token_endpoint not set"):
+            await conn._refresh_idk_token()
+
+
+# ---------------------------------------------------------------------------
+# PR Review Issue 18: X-QMAuth header in NA token exchange
+# ---------------------------------------------------------------------------
+class TestNATokenExchangeXQMAuth:
+    """Test X-QMAuth header presence in NA token exchange."""
+
+    @pytest.mark.asyncio
+    async def test_na_token_exchange_includes_xqmauth_header(self):
+        """NA token exchange should include X-QMAuth header."""
+        conn = _make_connection(country="US")
+        conn._pkce_verifier = "test-verifier"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value='{"access_token":"at","id_token":"id","token_type":"Bearer"}')
+        conn._session.post = AsyncMock(return_value=mock_resp)
+
+        await conn._exchange_code_for_tokens("auth_code", "https://example.com/token")
+
+        # Verify X-QMAuth header was set before the POST
+        call_kwargs = conn._session.post.call_args
+        post_headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert "X-QMAuth" in post_headers

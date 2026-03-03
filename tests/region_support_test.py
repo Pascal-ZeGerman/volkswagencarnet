@@ -79,6 +79,14 @@ class TestConnectionRegionDetection:
             assert conn._session_region == "NA"
             assert conn._session_country == "CA"
 
+    @pytest.mark.asyncio
+    async def test_canada_country_detected_as_na(self):
+        """CA country should set _session_region='NA' and is_na=True."""
+        async with ClientSession() as session:
+            conn = Connection(session, "test@example.com", "password", country="CA")
+            assert conn._session_region == "NA"
+            assert conn.is_na is True
+
 
 class TestEndpointDiscovery:
     """Test market config discovery for NA region."""
