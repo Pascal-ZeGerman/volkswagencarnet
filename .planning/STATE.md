@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
+milestone: v1.2
 milestone_name: Phases
 status: unknown
-last_updated: "2026-03-02T20:44:59.878Z"
+last_updated: "2026-03-02T22:29:35.984Z"
 progress:
   total_phases: 17
-  completed_phases: 10
-  total_plans: 24
-  completed_plans: 29
+  completed_phases: 11
+  total_plans: 26
+  completed_plans: 31
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 22-fix-medium-and-nitpick-issues-from-pr-review
-Plan: 2 of 2 complete (22-01, 22-02 complete)
-Status: Phase 22 complete — all PR review medium/nitpick issues resolved
-Last activity: 2026-03-02 - Completed 22-02 (deduplicate RVS, add is_na property)
+Phase: 23-create-holistic-test-suite-with-comprehensive-code-coverage
+Plan: 3 of 4 complete (23-01, 23-02, 23-03 complete)
+Status: Phase 23 in progress — dashboard test coverage added (76% from 0%)
+Last activity: 2026-03-02 - Completed 23-03 (dashboard instrument tests: 111 tests, 946 lines)
 
 Progress: [###       ] 15%
 
@@ -67,6 +67,7 @@ Progress: [###       ] 15%
 | Phase 17-logging P02 | 3 | 2 tasks | 1 file |
 | Phase 22-fix-medium-nitpick P01 | 2 | 2 tasks | 2 files |
 | Phase 22-fix-medium-nitpick P02 | 3 | 2 tasks | 3 files |
+| Phase 23-connection-tests P01 | 4 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,8 @@ Recent decisions affecting current work:
 - [Phase 22-01]: COUNTRY_TO_LOCALE kept minimal (US, CA, GB) matching original local dict; MAX_REDIRECT_DEPTH promoted to module-level
 - [Phase 22-02]: _fetch_rvs_endpoint returns None on 401 session recreation failure — no further retries
 - [Phase 22-02]: Test mocks set is_na explicitly — MagicMock(spec=Connection) returns truthy MagicMock for unset property attributes
+- [Phase 23-01]: AsyncMock-based method mocking preferred over aioresponses for Connection tests (mock session doesn't integrate with aioresponses ClientSession patching)
+- [Phase 23-01]: Action method tests mock post/put at Connection level for cleaner URL assertions; _make_connection() factory pattern established
 
 ### Roadmap Evolution
 
@@ -142,5 +145,5 @@ None yet for v1.1.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 22-02-PLAN.md — Phase 22 complete (RVS deduplicated, is_na property added)
+Stopped at: Completed 23-01-PLAN.md — connection tests with 87 tests covering auth, actions, data fetches
 Resume file: None

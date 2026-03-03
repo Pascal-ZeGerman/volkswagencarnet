@@ -48,6 +48,17 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 22: Fix Medium & Nitpick Issues from PR Review** — Address remaining medium-severity and nitpick PR feedback (completed 2026-03-02)
 - [ ] **Phase 23: Create Holistic Test Suite with Comprehensive Code Coverage** — Full test coverage across NA and EMEA paths
 
+### Phase 23: Create Holistic Test Suite with Comprehensive Code Coverage
+**Goal:** Achieve comprehensive unit test coverage across all NA and EMEA code paths, ensuring the library is well-tested before merging to main.
+**Scope:** Unit tests for connection logic (both regions), vehicle data parsing, token management, error handling, dashboard instruments, and utility functions.
+**Plans:** 2/4 plans executed
+
+Plans:
+- [ ] 23-01-PLAN.md — Connection tests: aioresponses setup, EMEA OAuth flow, action methods, data fetches, token management
+- [ ] 23-02-PLAN.md — Vehicle tests: parametrized property getters, action methods, update flows, discovery
+- [ ] 23-03-PLAN.md — Dashboard tests: Instrument hierarchy, Dashboard class, specialized subclasses, edge cases
+- [ ] 23-04-PLAN.md — Consolidation: merge phase-specific files, fill coverage gaps, verify 80%+ target
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -60,5 +71,5 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 19. Security + Code Cleanup | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 20. Performance + Test Coverage | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 21. Fix Critical/High PR Review Issues | v1.2 | 2/2 | Complete | 2026-03-02 |
-| 22. Fix Medium & Nitpick PR Issues | 2/2 | Complete   | 2026-03-02 | - |
-| 23. Holistic Test Suite | v1.2 | 0/? | Not started | - |
+| 22. Fix Medium & Nitpick PR Issues | 2/2 | Complete    | 2026-03-02 | - |
+| 23. Holistic Test Suite | 2/4 | In Progress|  | - |

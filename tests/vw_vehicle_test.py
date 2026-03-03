@@ -1,6 +1,7 @@
 """Vehicle class tests."""
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
@@ -9,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp import ClientSession
 from freezegun import freeze_time
 import pytest
+from volkswagencarnet.vw_connection import Connection
 from volkswagencarnet.vw_const import Services
 from volkswagencarnet.vw_vehicle import (
     ENGINE_TYPE_DIESEL,
@@ -1413,3 +1415,303 @@ class TestVehicleDataMethods:
         vehicle = Vehicle(conn=None, url="TESTVIN123")
         result = await vehicle._update_na_vehicle()
         assert result is False
+
+
+# ===========================================================================
+# Merged from na_vehicle_compat_test.py
+# ===========================================================================
+
+NA_VEHICLE_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses" / "na_vehicle"
+
+
+def _make_na_conn() -> Connection:
+    """Create a Connection with country='US' and mocked session, simulating post-login NA state."""
+    sess = AsyncMock()
+    sess._cookie_jar = MagicMock()
+    sess._cookie_jar._cookies = {}
+    conn = Connection(sess, "user@example.com", "password", country="US")
+    conn._na_auth_level = "full"
+    conn._na_tokens = {"idk": {"access_token": "idk_at", "refresh_token": "idk_rt", "id_token": "idk_id"}}
+    conn._session_tokens = {"identity": {"access_token": "idk_at"}}
+    conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
+    return conn
+
+
+def _load_compat_fixture(*path_parts) -> dict:
+    """Load a fixture JSON file from tests/fixtures/resources/responses/."""
+    fixture_path = os.path.join(
+        os.path.dirname(__file__),
+        "fixtures", "resources", "responses", *path_parts,
+    )
+    with open(fixture_path) as f:
+        return json.load(f)
+
+
+class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
+    """Verify Vehicle properties return correct values under NA auth context."""
+
+    async def test_egolf_battery_properties_via_na_conn(self):
+        """Electric vehicle battery properties parse correctly from EMEA fixture under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.battery_level == 71
+        assert isinstance(vehicle.battery_level, int)
+        assert vehicle.battery_cruising_range == 116
+        assert isinstance(vehicle.battery_cruising_range, int)
+        assert vehicle.electric_range == 116
+        assert isinstance(vehicle.electric_range, int)
+
+    async def test_egolf_charging_properties_via_na_conn(self):
+        """Charging state and support flags parse correctly from EMEA fixture under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.charging_state == "Not ready"
+        assert isinstance(vehicle.charging_state, str)
+        assert vehicle.is_battery_level_supported is True
+        assert vehicle.is_charging_supported is True
+        assert vehicle.is_electric_range_supported is True
+        assert vehicle.is_fuel_level_supported is False
+
+    async def test_egolf_climatisation_properties_via_na_conn(self):
+        """Climatisation properties parse correctly from EMEA fixture under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.climatisation_state == "off"
+        assert isinstance(vehicle.climatisation_state, str)
+        assert vehicle.climatisation_target_temperature == 22.0
+        assert isinstance(vehicle.climatisation_target_temperature, float)
+        assert vehicle.is_climatisation_state_supported is True
+
+    async def test_egolf_door_and_access_properties_via_na_conn(self):
+        """Door lock, door closed, trunk, and windows properties parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        vehicle._states["na_status"] = _load_compat_fixture("na_vehicle", "rvs_status.json")
+        assert vehicle.door_locked is True
+        assert isinstance(vehicle.door_locked, bool)
+        assert vehicle.door_closed_left_front is True
+        assert isinstance(vehicle.door_closed_left_front, bool)
+        assert vehicle.trunk_locked is True
+        assert isinstance(vehicle.trunk_locked, bool)
+        assert vehicle.windows_closed is True
+        assert isinstance(vehicle.windows_closed, bool)
+
+    async def test_egolf_service_and_distance_properties_via_na_conn(self):
+        """Service inspection and odometer properties parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.service_inspection == 402
+        assert isinstance(vehicle.service_inspection, int)
+        assert vehicle.service_inspection_distance == 19795
+        assert isinstance(vehicle.service_inspection_distance, int)
+        assert vehicle.distance == 74777
+        assert isinstance(vehicle.distance, int)
+
+    async def test_egolf_vehicle_type_properties_via_na_conn(self):
+        """car_type and is_car_type_electric parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
+        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.car_type == "Electric"
+        assert isinstance(vehicle.car_type, str)
+        assert vehicle.is_car_type_electric is True
+
+    async def test_arteon_diesel_fuel_properties_via_na_conn(self):
+        """Diesel vehicle fuel properties parse correctly from EMEA fixture under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+        vehicle._states.update(_load_compat_fixture("arteon_2023_diesel", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.fuel_level == 19
+        assert isinstance(vehicle.fuel_level, int)
+        assert vehicle.is_fuel_level_supported is True
+        assert vehicle.is_battery_level_supported is False
+        assert vehicle.is_electric_range_supported is False
+
+
+class NAGolfGteHybridCompatTest(IsolatedAsyncioTestCase):
+    """Verify Golf GTE hybrid Vehicle properties under NA auth context."""
+
+    async def test_golf_gte_hybrid_has_both_fuel_and_charging_services_via_na_conn(self):
+        """Hybrid vehicle reports both fuel and charging services as supported under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.is_charging_supported is True
+        assert vehicle.is_fuel_level_supported is True
+        assert vehicle.is_battery_level_supported is True
+
+    async def test_golf_gte_hybrid_charging_state_via_na_conn(self):
+        """Hybrid charging state and battery level parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.charging_state == "Not ready"
+        assert isinstance(vehicle.charging_state, str)
+        assert vehicle.battery_level == 65
+        assert isinstance(vehicle.battery_level, int)
+        assert 0 <= vehicle.battery_level <= 100
+
+    async def test_golf_gte_hybrid_door_access_via_na_conn(self):
+        """Hybrid door/lock access properties parse correctly under NA auth."""
+        conn = _make_na_conn()
+        vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
+        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._discovered = True
+
+        assert vehicle.door_locked is False
+        assert isinstance(vehicle.door_locked, bool)
+
+
+# ===========================================================================
+# Merged from na_vehicle_data_test.py (vehicle-side tests)
+# ===========================================================================
+
+
+def _load_na_vehicle_fixture(filename: str) -> dict:
+    with open(NA_VEHICLE_FIXTURE_DIR / filename) as f:
+        return json.load(f)
+
+
+def _make_na_vehicle_data(states: dict | None = None) -> Vehicle:
+    """Create an NA Vehicle with mocked Connection."""
+    conn = MagicMock(spec=Connection)
+    conn._session_region = "NA"
+    conn.is_na = True
+    vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+    if states:
+        vehicle._states.update(states)
+    return vehicle
+
+
+def _make_emea_vehicle_data(states: dict | None = None) -> Vehicle:
+    """Create an EMEA Vehicle with mocked Connection."""
+    conn = MagicMock(spec=Connection)
+    conn._session_region = "EMEA"
+    conn.is_na = False
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+    if states:
+        vehicle._states.update(states)
+    return vehicle
+
+
+class NAVehicleDataTest(IsolatedAsyncioTestCase):
+    """Tests for NA vehicle data properties."""
+
+    def test_position_returns_lat_lng_from_na_location(self):
+        fixture_data = _load_na_vehicle_fixture("rvs_location.json")
+        vehicle = _make_na_vehicle_data(states={"na_location": fixture_data})
+        assert vehicle.position == {
+            "lat": 37.7749295,
+            "lng": -122.4194155,
+            "timestamp": "2026-01-15T14:30:00Z",
+        }
+
+    def test_position_returns_none_when_na_location_absent(self):
+        vehicle = _make_na_vehicle_data()
+        assert vehicle.position == {"lat": None, "lng": None, "timestamp": None}
+
+    def test_position_raises_value_error_on_malformed_na_location(self):
+        vehicle = _make_na_vehicle_data(states={"na_location": {"location": {}}})
+        with pytest.raises(ValueError):
+            _ = vehicle.position
+
+    def test_door_locked_true_when_lockstatus_locked(self):
+        fixture_data = _load_na_vehicle_fixture("rvs_status.json")
+        vehicle = _make_na_vehicle_data(states={"na_status": fixture_data})
+        assert vehicle.door_locked is True
+
+    def test_door_locked_false_when_lockstatus_unlocked(self):
+        fixture_data = _load_na_vehicle_fixture("rvs_status_unlocked.json")
+        vehicle = _make_na_vehicle_data(states={"na_status": fixture_data})
+        assert vehicle.door_locked is False
+
+    def test_door_locked_false_when_na_status_absent(self):
+        vehicle = _make_na_vehicle_data()
+        assert vehicle.door_locked is False
+
+    def test_door_locked_raises_value_error_on_missing_lockstatus(self):
+        vehicle = _make_na_vehicle_data(states={"na_status": {"platform": "VW_NA"}})
+        with pytest.raises(ValueError):
+            _ = vehicle.door_locked
+
+    def test_is_position_supported_true_when_na_location_present(self):
+        vehicle = _make_na_vehicle_data(
+            states={"na_location": {"location": {"latitude": 1.0, "longitude": 2.0}}}
+        )
+        assert vehicle.is_position_supported is True
+
+    def test_is_position_supported_false_when_na_location_absent(self):
+        vehicle = _make_na_vehicle_data()
+        assert vehicle.is_position_supported is False
+
+    def test_is_door_locked_supported_true_when_na_status_present(self):
+        vehicle = _make_na_vehicle_data(states={"na_status": {"lockStatus": "LOCKED"}})
+        assert vehicle.is_door_locked_supported is True
+
+    def test_is_door_locked_supported_false_when_na_status_absent(self):
+        vehicle = _make_na_vehicle_data()
+        assert vehicle.is_door_locked_supported is False
+
+    def test_emea_position_unaffected_by_na_branch(self):
+        vehicle = _make_emea_vehicle_data()
+        assert vehicle.position == {"lat": "?", "lng": "?"}
+
+    def test_emea_door_locked_unaffected_by_na_branch(self):
+        vehicle = _make_emea_vehicle_data()
+        assert vehicle.door_locked is False
+
+    async def test_update_na_vehicle_calls_get_na_vehicle_data(self):
+        vehicle = _make_na_vehicle_data()
+        vehicle._discovered = True
+        vehicle._connection._get_na_vehicle_data = AsyncMock(
+            return_value={
+                "na_location": _load_na_vehicle_fixture("rvs_location.json"),
+                "na_status": _load_na_vehicle_fixture("rvs_status.json"),
+            }
+        )
+        result = await vehicle._update_na_vehicle()
+        assert result is True
+        assert vehicle._states.get("na_location") is not None
+        assert vehicle._states.get("na_status") is not None
+
+    async def test_update_na_vehicle_returns_false_on_none_response(self):
+        vehicle = _make_na_vehicle_data()
+        vehicle._discovered = True
+        vehicle._connection._get_na_vehicle_data = AsyncMock(return_value=None)
+        result = await vehicle._update_na_vehicle()
+        assert result is False
+
+    async def test_discover_na_skips_capability_endpoints(self):
+        vehicle = _make_na_vehicle_data()
+        vehicle._discovered = False
+        vehicle._connection.getOperationList = AsyncMock()
+
+        with patch.object(vehicle, "_ensure_home_region", new_callable=AsyncMock):
+            await vehicle.discover()
+
+        assert vehicle._discovered is True
+        vehicle._connection.getOperationList.assert_not_called()

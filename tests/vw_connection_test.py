@@ -1,7 +1,12 @@
 """Tests for main connection class."""
 
+import inspect
+import json
+import logging
+import re
 import sys
 import time
+from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +15,13 @@ from aiohttp import ClientSession, client_exceptions
 import pytest
 from volkswagencarnet import vw_connection
 from volkswagencarnet.vw_connection import Connection
+from volkswagencarnet.vw_const import (
+    APP_VERSION,
+    APP_VERSION_SHORT,
+    MAX_REDIRECT_DEPTH,
+    COUNTRY_TO_LOCALE,
+    USER_AGENT,
+)
 from volkswagencarnet.vw_exceptions import APIError, AuthenticationError, RedirectError, RequestError
 
 
@@ -1598,3 +1610,1018 @@ class TestServiceStatus:
         conn = _make_connection()
         result = await conn.get_service_status()
         assert isinstance(result, dict)
+
+
+# ===========================================================================
+# Merged from phase21_pr_review_fixes_test.py
+# ===========================================================================
+
+# Shared helpers for Phase 21 tests
+VW_CONNECTION_SRC = Path(__file__).parent.parent / "volkswagencarnet" / "vw_connection.py"
+FAKE_IDK_ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.fake-token-value"
+FAKE_IDK_ID_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.fake-id-token"
+FAKE_SPIN = "0560"
+FAKE_CHALLENGE = "1D02046F451D9ECCA3E4FB6B564958DF0495A069"
+USER_ID = "user-sub-12345"
+VIN = "WVWZZZ3HZPK002581"
+BASE_API = "https://b-h-s.spr.us00.p.con-veh.net"
+
+
+def _make_na_connection() -> Connection:
+    """Create a minimal NA Connection with a mocked aiohttp session."""
+    sess = MagicMock()
+    sess._cookie_jar = MagicMock()
+    sess._cookie_jar._cookies = {}
+    conn = Connection(sess, "user@test.com", "password", country="US")
+    conn._base_api = BASE_API
+    return conn
+
+
+def _make_na_connection_with_tokens(spin: str | None = None) -> Connection:
+    """Create an NA Connection with IDK tokens pre-populated."""
+    conn = _make_na_connection()
+    if spin:
+        conn._spin = spin
+    conn._na_tokens = {
+        "idk": {
+            "id_token": FAKE_IDK_ID_TOKEN,
+            "access_token": FAKE_IDK_ACCESS_TOKEN,
+        },
+        VIN: {
+            "tsp_provider": "ATC",
+        },
+    }
+    return conn
+
+
+def _mock_resp(status: int = 200, json_data=None, text_data: str = ""):
+    """Build a lightweight mock aiohttp response."""
+    r = MagicMock()
+    r.status = status
+    r.json = AsyncMock(return_value=json_data if json_data is not None else {})
+    r.text = AsyncMock(return_value=text_data)
+    return r
+
+
+def _read_source() -> str:
+    """Read vw_connection.py source code."""
+    return VW_CONNECTION_SRC.read_text()
+
+
+class SpinRedactionTest(IsolatedAsyncioTestCase):
+    """Tests for C-2: SPIN plaintext never appears in log output."""
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_spin_hash_length_logged_not_spin_value(self, mock_jwt):
+        """During vehicle session challenge, log shows hash length, not SPIN value."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens(spin=FAKE_SPIN)
+
+        challenge_resp = _mock_resp(200, {"challenge": FAKE_CHALLENGE, "remainingTries": 6})
+        conn._session.get = AsyncMock(return_value=challenge_resp)
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            await conn._create_na_vehicle_session(VIN)
+
+        all_logs = "\n".join(log.output)
+        self.assertNotIn(FAKE_SPIN, all_logs)
+        self.assertIn("len=128", all_logs)
+
+    def test_no_self_spin_in_logger_calls(self):
+        """Source code contains no _LOGGER call that logs self._spin directly."""
+        source = _read_source()
+        matches = re.findall(r'_LOGGER\.\w+\([^)]*self\._spin[^)]*\)', source)
+        self.assertEqual(
+            len(matches), 0,
+            f"Found {len(matches)} _LOGGER call(s) referencing self._spin: {matches}"
+        )
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_spin_redaction_with_no_spin_set(self, mock_jwt):
+        """When no SPIN is set, no SPIN-related data appears in logs at all."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens(spin=None)
+
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        conn._session.get = AsyncMock()
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            await conn._create_na_vehicle_session(VIN)
+
+        all_logs = "\n".join(log.output)
+        self.assertNotIn("spinHash computed", all_logs)
+        conn._session.get.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_challenge_response_logs_only_key_names(self, mock_jwt):
+        """Challenge response logs only dictionary key names, not values."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens(spin=FAKE_SPIN)
+
+        challenge_data = {"challenge": FAKE_CHALLENGE, "remainingTries": 6}
+        conn._session.get = AsyncMock(return_value=_mock_resp(200, challenge_data))
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-token"})
+        )
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            await conn._create_na_vehicle_session(VIN)
+
+        all_logs = "\n".join(log.output)
+        self.assertNotIn(FAKE_CHALLENGE, all_logs)
+        self.assertIn("challenge", all_logs)
+
+
+class AuthHeaderRedactionTest(IsolatedAsyncioTestCase):
+    """Tests for C-3: Auth headers logged as key names only."""
+
+    async def test_get_authorization_page_logs_header_keys_only(self):
+        """get_authorization_page logs header key names, not header values."""
+        conn = _make_na_connection()
+        conn._session_auth_headers = {
+            "Authorization": f"Bearer {FAKE_IDK_ACCESS_TOKEN}",
+            "Accept": "text/html",
+            "User-Agent": "okhttp/5.0.0-alpha.2",
+        }
+        conn._session_region_config = {
+            "redirect_uri": "kombi:///login",
+            "scope": "openid",
+        }
+        conn._client_id = "test-client-id"
+        conn._session_country = "US"
+
+        mock_resp = MagicMock()
+        mock_resp.status = 302
+        mock_resp.headers = {"Location": "https://identity.na.vwgroup.io/login"}
+        mock_resp.text = AsyncMock(return_value="")
+        conn._session.get = AsyncMock(return_value=mock_resp)
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            try:
+                await conn.get_authorization_page("https://identity.na.vwgroup.io/authorize")
+            except Exception:
+                pass
+
+        all_logs = "\n".join(log.output)
+        self.assertNotIn(FAKE_IDK_ACCESS_TOKEN, all_logs)
+        self.assertNotIn("eyJ0eXA", all_logs)
+        self.assertIn("Request header keys", all_logs)
+
+    async def test_auth_header_log_contains_no_bearer_tokens(self):
+        """No Bearer token string appears in any log from get_authorization_page."""
+        conn = _make_na_connection()
+        conn._session_auth_headers = {
+            "Authorization": "Bearer super-secret-token-12345",
+            "Accept": "text/html",
+        }
+        conn._session_region_config = {"redirect_uri": "kombi:///login", "scope": "openid"}
+        conn._client_id = "test-client-id"
+        conn._session_country = "US"
+
+        mock_resp = MagicMock()
+        mock_resp.status = 302
+        mock_resp.headers = {"Location": "https://identity.na.vwgroup.io/login"}
+        mock_resp.text = AsyncMock(return_value="")
+        conn._session.get = AsyncMock(return_value=mock_resp)
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            try:
+                await conn.get_authorization_page("https://identity.na.vwgroup.io/authorize")
+            except Exception:
+                pass
+
+        all_logs = "\n".join(log.output)
+        self.assertNotIn("super-secret-token-12345", all_logs)
+        self.assertNotIn("Bearer ", all_logs)
+
+    async def test_auth_header_keys_logged_as_python_list(self):
+        """Header key names are logged as a Python list."""
+        conn = _make_na_connection()
+        conn._session_auth_headers = {
+            "Authorization": "Bearer secret",
+            "Accept": "text/html",
+        }
+        conn._session_region_config = {"redirect_uri": "kombi:///login", "scope": "openid"}
+        conn._client_id = "test-client-id"
+        conn._session_country = "US"
+
+        mock_resp = MagicMock()
+        mock_resp.status = 302
+        mock_resp.headers = {"Location": "https://identity.na.vwgroup.io/login"}
+        mock_resp.text = AsyncMock(return_value="")
+        conn._session.get = AsyncMock(return_value=mock_resp)
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="DEBUG") as log:
+            try:
+                await conn.get_authorization_page("https://identity.na.vwgroup.io/authorize")
+            except Exception:
+                pass
+
+        all_logs = "\n".join(log.output)
+        self.assertIn("Authorization", all_logs)
+        self.assertIn("Accept", all_logs)
+
+
+class DoLoginRetryTest(IsolatedAsyncioTestCase):
+    """Tests for H-2: doLogin retry loop uses for/else with correct exhaustion."""
+
+    async def test_doLogin_returns_false_on_single_failure(self):
+        """doLogin(tries=1) returns False when the single login attempt fails."""
+        conn = _make_na_connection()
+        conn._login = AsyncMock(return_value=False)
+        conn._discover_market_config = AsyncMock(return_value=True)
+
+        result = await conn.doLogin(tries=1)
+
+        self.assertFalse(result)
+        self.assertEqual(conn._login.call_count, 1)
+
+    async def test_doLogin_succeeds_on_second_attempt(self):
+        """doLogin(tries=3) succeeds when second login attempt returns True."""
+        conn = _make_na_connection()
+        conn._login = AsyncMock(side_effect=[False, True])
+        conn._discover_market_config = AsyncMock(return_value=True)
+        conn._session_tokens = {"identity": {"access_token": "test", "id_token": "test-id"}}
+        conn._session_headers = {"Authorization": ""}
+
+        conn._request = AsyncMock(return_value={"data": {"vehicles": []}})
+        conn.update = AsyncMock()
+
+        with patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock):
+            result = await conn.doLogin(tries=3)
+
+        self.assertTrue(result)
+        self.assertEqual(conn._login.call_count, 2)
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_doLogin_returns_false_after_exhausting_all_tries(self, mock_sleep):
+        """doLogin(tries=3) returns False after all 3 attempts fail."""
+        conn = _make_na_connection()
+        conn._login = AsyncMock(return_value=False)
+        conn._discover_market_config = AsyncMock(return_value=True)
+
+        result = await conn.doLogin(tries=3)
+
+        self.assertFalse(result)
+        self.assertEqual(conn._login.call_count, 3)
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_doLogin_logs_error_on_exhaustion(self, mock_sleep):
+        """doLogin logs an error message when all retry attempts are exhausted."""
+        conn = _make_na_connection()
+        conn._login = AsyncMock(return_value=False)
+        conn._discover_market_config = AsyncMock(return_value=True)
+
+        with self.assertLogs("volkswagencarnet.vw_connection", level="ERROR") as log:
+            await conn.doLogin(tries=2)
+
+        all_logs = "\n".join(log.output)
+        self.assertIn("Login failed after", all_logs)
+        self.assertIn("2", all_logs)
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_doLogin_sleeps_between_retries_but_not_after_last(self, mock_sleep):
+        """Sleep is called between retry attempts but not after the final failure."""
+        conn = _make_na_connection()
+        conn._login = AsyncMock(return_value=False)
+        conn._discover_market_config = AsyncMock(return_value=True)
+
+        await conn.doLogin(tries=3)
+
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    def test_doLogin_uses_for_else_pattern(self):
+        """doLogin source code uses for/else pattern (not if i > tries)."""
+        import ast
+        source = _read_source()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "doLogin":
+                doLogin_source = ast.get_source_segment(source, node)
+                if doLogin_source:
+                    self.assertIn("for i in range(tries)", doLogin_source)
+                    self.assertNotIn("if i > tries", doLogin_source)
+                    self.assertNotIn("if i >= tries", doLogin_source)
+                break
+
+
+class Phase21IntegrationTest(IsolatedAsyncioTestCase):
+    """Integration tests verifying Phase 21 fixes don't regress each other."""
+
+    def test_connection_class_is_importable(self):
+        """Connection class imports without error after all Phase 21 changes."""
+        from volkswagencarnet.vw_connection import Connection as Conn
+        self.assertTrue(callable(Conn))
+
+    def test_connection_has_expected_login_method(self):
+        """Connection.doLogin still exists and is async after retry loop fix."""
+        self.assertTrue(hasattr(Connection, "doLogin"))
+        self.assertTrue(inspect.iscoroutinefunction(Connection.doLogin))
+
+    def test_connection_has_request_method(self):
+        """Connection._request still exists after response body log removal."""
+        self.assertTrue(hasattr(Connection, "_request"))
+        self.assertTrue(inspect.iscoroutinefunction(Connection._request))
+
+    def test_connection_has_get_authorization_page(self):
+        """Connection.get_authorization_page still exists after header log fix."""
+        self.assertTrue(hasattr(Connection, "get_authorization_page"))
+        self.assertTrue(inspect.iscoroutinefunction(Connection.get_authorization_page))
+
+    def test_connection_still_has_discover_market_config(self):
+        """_discover_market_config (live discovery) still exists."""
+        self.assertTrue(hasattr(Connection, "_discover_market_config"))
+
+    async def test_na_connection_initialization_after_dead_code_removal(self):
+        """NA Connection can be instantiated after _discover_endpoints removal."""
+        conn = _make_na_connection()
+        self.assertEqual(conn._session_region, "NA")
+        self.assertFalse(hasattr(conn, "_discover_endpoints"))
+
+
+# ===========================================================================
+# Merged from phase22_constants_and_dedup_test.py
+# ===========================================================================
+
+_TEST_VIN = "TESTVIN22PHASE001"
+
+
+def _make_mock_response(status, json_data=None, text_data=""):
+    """Build a lightweight mock aiohttp response for phase22 tests."""
+    mock_resp = MagicMock()
+    mock_resp.status = status
+    mock_resp.text = AsyncMock(return_value=text_data)
+    mock_resp.json = AsyncMock(return_value=json_data if json_data is not None else {})
+    return mock_resp
+
+
+def _make_na_connection_for_rvs() -> Connection:
+    """Create a minimal NA Connection for _fetch_rvs_endpoint testing."""
+    sess = MagicMock()
+    conn = Connection(sess, "user@test.com", "password", country="US")
+    conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
+    conn._na_tokens = {
+        _TEST_VIN: {
+            "vehicle_session": {
+                "token": "fake.vehicle.token",
+                "expires_at": 9999999999,
+                "issued_at": 0,
+            },
+        },
+    }
+    conn._create_na_vehicle_session = AsyncMock(return_value="refreshed.vehicle.token")
+    return conn
+
+
+class FetchRvsEndpointTest(IsolatedAsyncioTestCase):
+    """Tests for the _fetch_rvs_endpoint helper method."""
+
+    async def test_fetch_rvs_endpoint_200_returns_parsed_json(self):
+        """200 response returns parsed JSON dict directly."""
+        conn = _make_na_connection_for_rvs()
+        expected = {"lockStatus": "LOCKED", "platform": "VW_NA"}
+        conn._session.get = AsyncMock(return_value=_make_mock_response(200, json_data=expected))
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+
+        assert result == expected
+
+    async def test_fetch_rvs_endpoint_200_unwraps_data_key(self):
+        """200 response with {"data": {...}} envelope unwraps the inner dict."""
+        conn = _make_na_connection_for_rvs()
+        inner = {"latitude": 40.0, "longitude": -74.0}
+        conn._session.get = AsyncMock(
+            return_value=_make_mock_response(200, json_data={"data": inner})
+        )
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/location/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="location",
+        )
+
+        assert result == inner
+
+    async def test_fetch_rvs_endpoint_401_refreshes_session_and_retries(self):
+        """401 triggers session recreation, updates headers, and retries the request."""
+        conn = _make_na_connection_for_rvs()
+        expected = {"lockStatus": "LOCKED"}
+        conn._session.get = AsyncMock(side_effect=[
+            _make_mock_response(401),
+            _make_mock_response(200, json_data=expected),
+        ])
+
+        headers = {"Authorization": "Bearer old-token"}
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers=headers,
+            label="status",
+        )
+
+        assert result == expected
+        conn._create_na_vehicle_session.assert_called_once_with(_TEST_VIN)
+        assert headers["Authorization"] == "Bearer refreshed.vehicle.token"
+
+    async def test_fetch_rvs_endpoint_401_returns_none_when_session_refresh_fails(self):
+        """401 with failed session recreation returns None immediately."""
+        conn = _make_na_connection_for_rvs()
+        conn._create_na_vehicle_session = AsyncMock(return_value=None)
+        conn._session.get = AsyncMock(return_value=_make_mock_response(401))
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+
+        assert result is None
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_fetch_rvs_endpoint_5xx_retries_with_backoff(self, _mock_sleep):
+        """5xx responses retry up to RVS_MAX_RETRIES times, succeeding on last attempt."""
+        conn = _make_na_connection_for_rvs()
+        expected = {"lockStatus": "LOCKED"}
+        conn._session.get = AsyncMock(side_effect=[
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(200, json_data=expected),
+        ])
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+
+        assert result == expected
+        assert conn._session.get.call_count == 3
+
+    async def test_fetch_rvs_endpoint_non_5xx_non_200_breaks_immediately(self):
+        """403/404 does not retry -- returns None after first attempt."""
+        conn = _make_na_connection_for_rvs()
+        conn._session.get = AsyncMock(
+            return_value=_make_mock_response(403, text_data="Forbidden")
+        )
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+
+        assert result is None
+        assert conn._session.get.call_count == 1
+
+    async def test_fetch_rvs_endpoint_exception_returns_none(self):
+        """Network exception is caught and returns None."""
+        conn = _make_na_connection_for_rvs()
+        conn._session.get = AsyncMock(side_effect=Exception("Connection reset"))
+
+        result = await conn._fetch_rvs_endpoint(
+            url="https://example.com/rvs/v1/vehicle/VIN",
+            vin=_TEST_VIN,
+            rvs_headers={"Authorization": "Bearer token"},
+            label="status",
+        )
+
+        assert result is None
+
+
+class IsNaPropertyTest(IsolatedAsyncioTestCase):
+    """Tests for Connection.is_na property."""
+
+    def test_is_na_true_for_us_country(self):
+        """country='US' sets session_region to NA, so is_na returns True."""
+        sess = MagicMock()
+        conn = Connection(sess, "user@test.com", "password", country="US")
+        assert conn.is_na is True
+
+    def test_is_na_false_for_de_country(self):
+        """country='DE' defaults to EMEA region, so is_na returns False."""
+        sess = MagicMock()
+        conn = Connection(sess, "user@test.com", "password", country="DE")
+        assert conn.is_na is False
+
+
+class ConstantsTest(IsolatedAsyncioTestCase):
+    """Tests for Phase 22-01 extracted constants."""
+
+    def test_constants_used_in_user_agent(self):
+        """USER_AGENT string contains APP_VERSION_SHORT."""
+        assert APP_VERSION_SHORT in USER_AGENT
+        assert "Volkswagen/" in USER_AGENT
+
+    def test_app_version_format(self):
+        """APP_VERSION matches expected format pattern."""
+        assert APP_VERSION == "2025.12.10-8414"
+
+    def test_max_redirect_depth_is_positive_int(self):
+        """MAX_REDIRECT_DEPTH is a positive integer."""
+        assert isinstance(MAX_REDIRECT_DEPTH, int)
+        assert MAX_REDIRECT_DEPTH > 0
+
+    def test_country_to_locale_has_expected_keys(self):
+        """COUNTRY_TO_LOCALE contains US, CA, GB mappings."""
+        assert "US" in COUNTRY_TO_LOCALE
+        assert "CA" in COUNTRY_TO_LOCALE
+        assert "GB" in COUNTRY_TO_LOCALE
+        assert COUNTRY_TO_LOCALE["US"] == "en-US"
+
+
+# ===========================================================================
+# Merged from na_connection_test.py
+# ===========================================================================
+
+NA_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses" / "na_vehicle"
+
+
+def _load_na_fixture(name: str) -> dict:
+    with open(NA_FIXTURE_DIR / name) as f:
+        return json.load(f)
+
+
+class NAVehicleSessionTest(IsolatedAsyncioTestCase):
+    """Tests for Connection._create_na_vehicle_session()."""
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_stores_spin_from_constructor(self, _mock_jwt):
+        """Connection stores spin parameter passed at construction time."""
+        sess = MagicMock()
+        conn = Connection(sess, "user@test.com", "password", country="US", spin=FAKE_SPIN)
+        assert conn._spin == FAKE_SPIN
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_spin_defaults_to_none(self, _mock_jwt):
+        """Connection._spin defaults to None when spin not passed."""
+        sess = MagicMock()
+        conn = Connection(sess, "user@test.com", "password", country="US")
+        assert conn._spin is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_fetches_challenge_and_includes_spinhash(self, mock_jwt):
+        """When spin is set: GET challenge with IDK Bearer + x-user-id, then POST with spinHash."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens(spin=FAKE_SPIN)
+        conn._session.get = AsyncMock(return_value=_mock_resp(200, {"challenge": FAKE_CHALLENGE, "remainingTries": 6}))
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "fake-vehicle-token"
+        assert conn._session.get.call_count == 1
+        challenge_call = conn._session.get.call_args_list[0]
+        challenge_url = challenge_call[0][0]
+        assert f"/ss/v1/user/{USER_ID}/challenge" in challenge_url
+        challenge_headers = challenge_call.kwargs.get("headers", {})
+        assert challenge_headers.get("Authorization") == f"Bearer {FAKE_IDK_ACCESS_TOKEN}"
+        assert challenge_headers.get("x-user-id") == USER_ID
+        assert conn._session.post.call_count == 1
+        post_body = conn._session.post.call_args.kwargs["json"]
+        assert post_body["spinHash"] is not None
+        assert isinstance(post_body["spinHash"], str)
+        assert len(post_body["spinHash"]) == 128
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_skips_challenge_and_sends_null_spinhash_when_no_spin(self, mock_jwt):
+        """When no spin set, skips challenge GET and sends spinHash=None."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens()
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        conn._session.get = AsyncMock()
+        await conn._create_na_vehicle_session(VIN)
+        conn._session.get.assert_not_called()
+        post_body = conn._session.post.call_args.kwargs["json"]
+        assert post_body["spinHash"] is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_create_session_returns_none_when_challenge_fetch_fails(self, _mock_jwt):
+        """Returns None when challenge GET fails (non-200)."""
+        conn = _make_na_connection_with_tokens(spin=FAKE_SPIN)
+        conn._session.get = AsyncMock(return_value=_mock_resp(401, text_data="Unauthorized"))
+        conn._session.post = AsyncMock()
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+        assert conn._session.get.call_count == 1
+        conn._session.post.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_returns_none_when_idk_missing(self, mock_jwt):
+        """Returns None immediately when no IDK id_token is present."""
+        conn = _make_na_connection()
+        conn._na_tokens = {}
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+        mock_jwt.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", side_effect=Exception("bad jwt"))
+    async def test_create_session_returns_none_on_invalid_jwt(self, _mock_jwt):
+        """Returns None when IDK id_token fails JWT decode."""
+        conn = _make_na_connection_with_tokens()
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_create_session_returns_cached_token(self, _mock_jwt):
+        """Returns the cached vehicle token without any HTTP call when cache is fresh."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN] = {
+            "vehicle_session": {
+                "token": "cached-vehicle-token",
+                "expires_at": time.time() + 3600,
+                "issued_at": time.time(),
+            }
+        }
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "cached-vehicle-token"
+        conn._session.post.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_uses_tsp_provider_from_na_tokens(self, mock_jwt):
+        """Session POST uses tsp value from _na_tokens[vin]['tsp_provider']."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["tsp_provider"] = "ATC"
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "fake-vehicle-token"
+        assert conn._session.post.call_count == 1
+        call = conn._session.post.call_args_list[0]
+        assert call.kwargs["json"]["tsp"] == "ATC"
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_defaults_to_atc_when_no_tsp_provider(self, mock_jwt):
+        """Falls back to tsp='ATC' when no tsp_provider is stored for the VIN."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection()
+        conn._na_tokens = {
+            "idk": {
+                "id_token": FAKE_IDK_ID_TOKEN,
+                "access_token": FAKE_IDK_ACCESS_TOKEN,
+            },
+        }
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "fake-vehicle-token"
+        call = conn._session.post.call_args_list[0]
+        assert call.kwargs["json"]["tsp"] == "ATC"
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_retries_without_auth_on_401(self, mock_jwt):
+        """On 401 response, retries the same tsp value without Authorization header."""
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": int(time.time()) + 3600}]
+        conn = _make_na_connection_with_tokens()
+        conn._session.post = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"}),
+        ])
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "fake-vehicle-token"
+        assert conn._session.post.call_count == 2
+        no_auth_call = conn._session.post.call_args_list[1]
+        assert "Authorization" not in no_auth_call.kwargs["headers"]
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode")
+    async def test_create_session_caches_token_with_exp(self, mock_jwt):
+        """Stores token in _na_tokens[vin]['vehicle_session'] with JWT exp as expires_at."""
+        future_exp = int(time.time()) + 3600
+        mock_jwt.side_effect = [{"sub": USER_ID}, {"exp": future_exp}]
+        conn = _make_na_connection_with_tokens()
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(200, {"carnetVehicleToken": "fake-vehicle-token"})
+        )
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result == "fake-vehicle-token"
+        cached = conn._na_tokens[VIN]["vehicle_session"]
+        assert cached["token"] == "fake-vehicle-token"
+        assert cached["expires_at"] == future_exp
+        assert "issued_at" in cached
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_create_session_returns_none_when_tsp_fails(self, _mock_jwt):
+        """Returns None when session POST returns 400."""
+        conn = _make_na_connection_with_tokens()
+        conn._session.post = AsyncMock(return_value=_mock_resp(400, text_data="Bad Request"))
+        result = await conn._create_na_vehicle_session(VIN)
+        assert result is None
+        assert conn._session.post.call_count == 1
+
+
+class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
+    """Tests for Connection._get_na_vehicle_data()."""
+
+    async def test_get_na_vehicle_data_returns_none_when_session_fails(self):
+        """Returns None when vehicle session creation fails."""
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value=None)
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is None
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_get_na_vehicle_data_returns_partial_on_location_failure(self, _mock_jwt, _mock_sleep):
+        """Returns {'na_location': None, 'na_status': {...}} when location endpoint always 500s."""
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result["na_location"] is None
+        assert result["na_status"] == status_fixture
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_get_na_vehicle_data_returns_partial_on_status_failure(self, _mock_jwt, _mock_sleep):
+        """Returns {'na_location': {...}, 'na_status': None} when status endpoint always 500s."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result["na_location"] == location_fixture
+        assert result["na_status"] is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_get_na_vehicle_data_invalidates_cache_on_401(self, _mock_jwt):
+        """On 401 from RVS: clears vehicle_session cache and retries with fresh token."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result["na_location"] == location_fixture
+        assert result["na_status"] == status_fixture
+        assert conn._create_na_vehicle_session.call_count == 2
+
+
+class NARVSCacheTest(IsolatedAsyncioTestCase):
+    """Tests for RVS TTL cache behavior in Connection._get_na_vehicle_data()."""
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_prevents_second_api_call(self, _mock_jwt):
+        """Two consecutive calls within TTL: second returns cached data with zero extra HTTP calls."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result1 = await conn._get_na_vehicle_data(VIN)
+        call_count_after_first = conn._session.get.call_count
+        result2 = await conn._get_na_vehicle_data(VIN)
+        assert conn._session.get.call_count == call_count_after_first
+        assert result1 == result2
+        assert result1 is not None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_expires_after_ttl(self, _mock_jwt):
+        """Cache entry past TTL triggers new HTTP requests on second call."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        await conn._get_na_vehicle_data(VIN)
+        call_count_after_first = conn._session.get.call_count
+        conn._na_rvs_cache[VIN]["fetched_at"] = time.time() - 31
+        await conn._get_na_vehicle_data(VIN)
+        assert conn._session.get.call_count > call_count_after_first
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_cleared_on_401(self, _mock_jwt):
+        """401 on location fetch clears the RVS cache."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._na_rvs_cache[VIN] = {
+            "data": {"na_location": location_fixture, "na_status": status_fixture},
+            "fetched_at": time.time() - 31,
+        }
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert conn._na_rvs_cache.get(VIN) is not None
+        assert conn._na_rvs_cache[VIN]["data"]["na_location"] == location_fixture
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_cache_respects_custom_ttl(self, _mock_jwt):
+        """Custom TTL of 5s: cache aged 6s triggers new fetch."""
+        location_fixture = _load_na_fixture("rvs_location.json")
+        status_fixture = _load_na_fixture("rvs_status.json")
+        conn = _make_na_connection_with_tokens()
+        conn._rvs_cache_ttl = 5
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._na_rvs_cache[VIN] = {
+            "data": {"na_location": location_fixture, "na_status": status_fixture},
+            "fetched_at": time.time() - 6,
+        }
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=location_fixture),
+            _mock_resp(200, json_data=status_fixture),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert conn._session.get.call_count == 2
+
+
+class NAErrorPathTest(IsolatedAsyncioTestCase):
+    """Tests for NA error paths: token exchange failure, garage 404, RVS 5xx."""
+
+    async def test_token_exchange_failure_raises_auth_error(self):
+        """_exchange_code_for_tokens raises AuthenticationError on HTTP 400."""
+        conn = _make_na_connection()
+        conn._pkce_verifier = "test-verifier"
+        conn._session_auth_headers = {}
+        conn._session_region_config = {"redirect_uri": "kombi:///login"}
+        conn._session.post = AsyncMock(
+            return_value=_mock_resp(400, text_data='{"error":"invalid_grant"}')
+        )
+        with self.assertRaises(AuthenticationError) as ctx:
+            await conn._exchange_code_for_tokens("bad-code", "https://example.com/token")
+        assert "400" in str(ctx.exception)
+
+    async def test_validate_tokens_false_causes_get_na_vehicle_data_to_return_none(self):
+        """When validate_tokens() returns False, _get_na_vehicle_data exits early with None."""
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=False)
+        conn._create_na_vehicle_session = AsyncMock()
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is None
+        conn._create_na_vehicle_session.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_rvs_5xx_on_both_endpoints_returns_none_values(self, _mock_jwt, _mock_sleep):
+        """RVS 5xx on both location and status returns dict with None values."""
+        conn = _make_na_connection_with_tokens()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(500, text_data="Internal Server Error"),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result == {"na_location": None, "na_status": None}
+        assert conn._session.get.call_count == 6
+
+
+class NATokenValidationTest(IsolatedAsyncioTestCase):
+    """Tests for NA token validation and IDK refresh failure paths."""
+
+    async def test_idk_refresh_failure_triggers_relogin_via_validate_tokens(self):
+        """Expired IDK + _refresh_idk_token raising AuthenticationError -> _validate_na_tokens returns False."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens["idk"]["expires_at"] = time.time() - 100
+        conn._na_tokens["idk"]["issued_at"] = time.time() - 3700
+        conn._refresh_idk_token = AsyncMock(side_effect=AuthenticationError("refresh failed"))
+        result = await conn._validate_na_tokens()
+        assert result is False
+        conn._refresh_idk_token.assert_called_once()
+
+    async def test_validate_na_tokens_returns_false_on_empty_na_tokens(self):
+        """_validate_na_tokens() returns False when _na_tokens is empty."""
+        conn = _make_na_connection()
+        conn._na_tokens = {}
+        result = await conn._validate_na_tokens()
+        assert result is False
+
+
+# ===========================================================================
+# Merged from na_vehicle_data_test.py (RVS retry tests)
+# ===========================================================================
+
+_RETRY_VIN = "TESTVIN123"
+_FAKE_IDK_ID_TOKEN_RETRY = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXItaWQifQ.sig"
+
+
+def _make_retry_connection() -> Connection:
+    """Create a minimal NA Connection pre-loaded with tokens for retry testing."""
+    sess = MagicMock()
+    conn = Connection(sess, "user@test.com", "password", country="US")
+    conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
+    conn._na_tokens = {
+        "idk": {
+            "id_token": _FAKE_IDK_ID_TOKEN_RETRY,
+            "access_token": "fake-access-token",
+        },
+        _RETRY_VIN: {
+            "vehicle_id": "test-vehicle-uuid",
+            "vehicle_session": {
+                "token": "fake.vehicle.token",
+                "expires_at": 9999999999,
+                "issued_at": 0,
+            },
+        },
+    }
+    conn.validate_tokens = AsyncMock(return_value=True)
+    conn._create_na_vehicle_session = AsyncMock(return_value="fake.vehicle.token")
+    return conn
+
+
+class RVSRetryTest(IsolatedAsyncioTestCase):
+    """Tests for RVS 5xx retry behavior in _get_na_vehicle_data()."""
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_rvs_5xx_retry_location(self, _mock_sleep):
+        """On 5xx from RVS location: retries up to RVS_MAX_RETRIES times and succeeds on 3rd attempt."""
+        conn = _make_retry_connection()
+        location_success = {"latitude": 40.0, "longitude": -74.0}
+        status_success = {"lockStatus": "LOCKED"}
+
+        conn._session.get = AsyncMock(side_effect=[
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(200, json_data=location_success),
+            _make_mock_response(200, json_data=status_success),
+        ])
+
+        result = await conn._get_na_vehicle_data(_RETRY_VIN)
+
+        assert conn._session.get.call_count >= 3
+        assert result is not None
+        assert result["na_location"] is not None
+        assert result["na_location"] == location_success
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    async def test_rvs_5xx_retry_exhausted(self, _mock_sleep):
+        """When all RVS retry attempts return 5xx, the method returns a dict with None values."""
+        conn = _make_retry_connection()
+
+        conn._session.get = AsyncMock(side_effect=[
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(503, text_data="Service Unavailable"),
+        ])
+
+        result = await conn._get_na_vehicle_data(_RETRY_VIN)
+
+        assert result is not None
+        assert isinstance(result, dict)
+        assert result.get("na_location") is None
+        assert result.get("na_status") is None

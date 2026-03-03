@@ -7,6 +7,7 @@ from unittest import TestCase
 import pytest
 from volkswagencarnet.vw_utilities import (
     camel2slug,
+    find_path,
     is_valid_path,
     json_loads,
     make_url,
@@ -147,3 +148,57 @@ class RedactTest(TestCase):
         result = redact(token)
         assert len(result) == 11  # 8 chars + "..."
         assert token not in result
+
+
+class FindPathEdgeCaseTest(TestCase):
+    """Additional edge case tests for find_path."""
+
+    def test_find_path_with_deeply_nested_key(self):
+        """find_path navigates deeply nested structures."""
+        data = {"a": {"b": {"c": {"d": {"e": 42}}}}}
+        assert find_path(data, "a.b.c.d.e") == 42
+
+    def test_find_path_with_nonexistent_key_returns_none(self):
+        """find_path returns None for nonexistent keys."""
+        data = {"a": {"b": 1}}
+        assert find_path(data, "a.x.y") is None
+
+    def test_find_path_with_list_index(self):
+        """find_path navigates through lists using numeric index."""
+        data = {"items": [{"name": "first"}, {"name": "second"}]}
+        assert find_path(data, "items.1.name") == "second"
+
+    def test_find_path_with_empty_path_returns_source(self):
+        """find_path with empty string returns the source dict."""
+        data = {"a": 1}
+        assert find_path(data, "") == data
+
+
+class Camel2SlugEdgeCaseTest(TestCase):
+    """Additional edge case tests for camel2slug."""
+
+    def test_camel2slug_with_consecutive_caps(self):
+        """Consecutive capitals are split into individual letters."""
+        assert camel2slug("HTTPSConnection") == "h_t_t_p_s_connection"
+
+    def test_camel2slug_single_letter(self):
+        """Single letter input returns lowercase."""
+        assert camel2slug("A") == "a"
+
+    def test_camel2slug_empty_string(self):
+        """Empty string returns empty string."""
+        assert camel2slug("") == ""
+
+
+class MakeUrlEdgeCaseTest(TestCase):
+    """Additional edge case tests for make_url."""
+
+    def test_make_url_with_special_characters_in_value(self):
+        """make_url handles special characters in replacement values."""
+        result = make_url("api/{endpoint}", endpoint="v1/users")
+        assert result == "api/v1/users"
+
+    def test_make_url_dollar_sign_syntax(self):
+        """make_url handles $-prefix syntax for parameters."""
+        result = make_url("api/$version/data", version="v2")
+        assert result == "api/v2/data"
