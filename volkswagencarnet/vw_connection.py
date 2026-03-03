@@ -82,7 +82,6 @@ JWT_ALGORITHMS = ["RS256"]
 class Connection:
     """Connection to VW-Group Connect services."""
 
-    # Init connection class
     def __init__(
         self,
         session: Any,
@@ -136,7 +135,7 @@ class Connection:
         self._session_region = get_region_from_country(self._session_country)
         self._session_region_config = get_region_config(self._session_region)
 
-        # Set region-specific base API (will be discovered for NA)
+        # Set region-specific base API (hardcoded for NA, no discovery)
         self._base_api = self._session_region_config.get("base_api")
 
         # Set region-specific client ID for OAuth
@@ -263,6 +262,7 @@ class Connection:
             hostname = urlparse(url).hostname or ""
             return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
         except Exception:
+            _LOGGER.debug("URL parse failed for domain check: %s", url)
             return False
 
     async def _discover_market_config(self) -> bool:
@@ -328,7 +328,6 @@ class Connection:
         self._service_status["discovery"] = "Failed"
         return False
 
-    # API Login
     async def doLogin(self, tries: int = 1) -> bool:
         """Authenticate with VW Connect and discover vehicles.
 
@@ -1373,7 +1372,7 @@ class Connection:
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
             user_id = claims.get("sub", "")
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except jwt.exceptions.InvalidTokenError as exc:
             _LOGGER.warning("NA: failed to decode IDK id_token for userId: %s", exc)
             return None
 
@@ -1497,7 +1496,7 @@ class Connection:
             #     - x-app-version: APP_VERSION
             #   The challenge endpoint (ss/v1/user/{userId}/challenge) accepts IDK access_token as
             #   Bearer when the x-user-id header is also present.
-            #   PinResponse is flat: {"challenge": "<hex>", "remainingTries": N} — no "data" wrapper.
+            #   PinResponse may be wrapped in {"data": {...}} or flat — code handles both.
             #
             #   Flow:
             #   1. GET challenge with IDK access_token Bearer + x-user-id header
@@ -1572,7 +1571,7 @@ class Connection:
         try:
             token_claims = jwt.decode(vehicle_token, options={"verify_signature": False})
             expires_at = token_claims.get("exp", time.time() + 1800)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except jwt.exceptions.InvalidTokenError as exc:
             _LOGGER.warning("NA: could not decode vehicle token JWT for exp claim: %s", exc)
             expires_at = time.time() + 600
 
@@ -1630,6 +1629,9 @@ class Connection:
                         allow_redirects=False,
                     )
                     _LOGGER.debug("NA RVS %s: retry after 401 returned status=%s for vin=%s", label, resp.status, redact(vin))
+                    if resp.status != 200:
+                        _LOGGER.warning("NA RVS %s: 401 retry failed (status=%s), giving up", label, resp.status)
+                        return None
                 if resp.status == 200:
                     data = await resp.json()
                     if isinstance(data, dict) and "data" in data:
@@ -1709,7 +1711,7 @@ class Connection:
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
             user_id = claims.get("sub", "")
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except jwt.exceptions.InvalidTokenError as exc:
             _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
             user_id = ""
 
@@ -1727,7 +1729,7 @@ class Connection:
 
         # Add x-mobile-session-id if cached from prior session response
         # TBD: field name "x-mobile-session-id" derived from APK analysis (d20/i.java),
-        # not yet confirmed from live HTTP traffic capture. See CLEAN-03.
+        # not yet confirmed from live HTTP traffic — field name from APK decompilation only.
         session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
         if session_id:
             rvs_headers["x-mobile-session-id"] = session_id
@@ -1741,8 +1743,8 @@ class Connection:
         status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
         _LOGGER.debug("NA vehicle data: fetching RVS for vin=%s urls=%s, %s", redact(vin), location_url, status_url)
 
-        location_data = await self._fetch_rvs_endpoint(location_url, vin, rvs_headers, "location")
-        status_data = await self._fetch_rvs_endpoint(status_url, vin, rvs_headers, "status")
+        location_data = await self._fetch_rvs_endpoint(location_url, vin, dict(rvs_headers), "location")
+        status_data = await self._fetch_rvs_endpoint(status_url, vin, dict(rvs_headers), "status")
 
         # Return partial data even if one endpoint failed
         result = {
@@ -1911,7 +1913,7 @@ class Connection:
             self._session_logged_in = False
             return False
         except Exception as error:
-            _LOGGER.error("NA unexpected error during login: %s", error)
+            _LOGGER.error("NA unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
 
@@ -1994,7 +1996,7 @@ class Connection:
             self._session_logged_in = False
             return False
         except Exception as error:
-            _LOGGER.error("Unexpected error during login: %s", error)
+            _LOGGER.error("Unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
 

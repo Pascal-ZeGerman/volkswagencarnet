@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 from aiohttp import ClientSession, client_exceptions
+import jwt.exceptions
 import pytest
 from volkswagencarnet import vw_connection
 from volkswagencarnet.vw_connection import Connection
@@ -2243,7 +2244,7 @@ class NAVehicleSessionTest(IsolatedAsyncioTestCase):
         assert result is None
         mock_jwt.assert_not_called()
 
-    @patch("volkswagencarnet.vw_connection.jwt.decode", side_effect=Exception("bad jwt"))
+    @patch("volkswagencarnet.vw_connection.jwt.decode", side_effect=jwt.exceptions.InvalidTokenError("bad jwt"))
     async def test_create_session_returns_none_on_invalid_jwt(self, _mock_jwt):
         """Returns None when IDK id_token fails JWT decode."""
         conn = _make_na_connection_with_tokens()
