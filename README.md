@@ -160,6 +160,51 @@ if __name__ == "__main__":
     loop.run_until_complete(main())
 ```
 
+### North America (US/CA)
+
+This library also supports North America (US and Canadian) VW Car-Net accounts. Pass `country='US'` or `country='CA'` to enable NA mode.
+
+NA support is community-contributed and may have gaps compared to EMEA.
+
+```python
+#!/usr/bin/env python3
+import asyncio
+from aiohttp import ClientSession
+from volkswagencarnet.vw_connection import Connection
+
+async def main():
+    async with ClientSession(headers={"Connection": "keep-alive"}) as session:
+        connection = Connection(session, "user@example.com", "password", country="US")
+        if await connection.doLogin():
+            await connection.update()
+            for vehicle in connection.vehicles:
+                print(f"VIN: {vehicle.vin}")
+                print(f"Position: {vehicle.position}")
+                print(f"Doors locked: {vehicle.door_locked}")
+
+asyncio.run(main())
+```
+
+Some operations require a security PIN (SPIN) configured through the VW Car-Net portal.
+
+For known NA limitations, see [docs/NA_LIMITATIONS.md](docs/NA_LIMITATIONS.md).
+
+### EMEA vs NA Comparison
+
+| Feature | EMEA | North America |
+|---------|------|---------------|
+| Auth level | IDK + Brand + MBB | IDK only |
+| Vehicle data | selectivestatus | RVS endpoints |
+| Token types | 3 (IDK, Brand, MBB) | 1 (IDK) |
+| PKCE required | No | Yes |
+
+### Architecture Notes
+
+- **Region auto-detection**: The `country` parameter determines the region. US and CA route to North America; everything else defaults to EMEA.
+- **Single token**: NA uses OAuth2 with PKCE and a single IDK token. Brand and MBB token endpoints are not available on the NA Car-Net platform.
+- **RVS data source**: Vehicle data (GPS location, lock status) comes from RVS (Remote Vehicle Status) endpoints, not the EMEA selectivestatus API.
+- **PKCE code_verifier on refresh**: IDK token refresh requires the original PKCE code_verifier from the initial login, a non-standard OAuth extension specific to VW's NA server.
+
 ## Development
 I'd strongly advise installing the git pre-commit hook using `pre-commit install`. See [pre-commit.com](https://pre-commit.com/) for details.
 Some basic checks are performed before you commit the code, so code style issues
