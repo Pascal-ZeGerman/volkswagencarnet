@@ -1662,6 +1662,47 @@ class Connection:
             _LOGGER.warning("NA RVS %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
 
+    async def _trigger_na_rvs_refresh(self, vin: str) -> bool:
+        """Ask vehicle to push fresh RVS state (optional pre-fetch wake-up).
+
+        Sends POST to ``/rvs/v1/vehicle/{vehicleId}/refresh`` to prompt the
+        vehicle to upload the latest telemetry before the next data fetch.
+        Failure is non-fatal — the caller should proceed with the existing
+        cached data.
+
+        Args:
+            vin: Vehicle Identification Number.
+
+        Returns:
+            True if the refresh request was accepted (2xx), False otherwise.
+        """
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token")
+        if not vehicle_token:
+            _LOGGER.debug("NA RVS refresh: no vehicle session token for %s, skipping", redact(vin))
+            return False
+
+        url = f"{self._base_api}/rvs/v1/vehicle/{vehicle_id}/refresh"
+        headers = {
+            "Authorization": f"Bearer {vehicle_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-app-version": APP_VERSION,
+        }
+        try:
+            resp = await self._session.post(
+                url=url,
+                headers=headers,
+                json={},
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            _LOGGER.debug("NA RVS refresh: status=%s for vin=%s", resp.status, redact(vin))
+            return resp.status in (200, 202, 204)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("NA RVS refresh failed for %s: %s", redact(vin), exc)
+            return False
+
     async def _get_na_vehicle_data(self, vin: str) -> dict | None:
         """Fetch NA vehicle telemetry from RVS endpoints.
 
