@@ -1858,6 +1858,140 @@ class Connection:
             _LOGGER.warning("NA optional endpoint %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
 
+    # NA write commands (lock/unlock, honk/flash, EV charging, climate) #
+
+    def _get_na_write_headers(self, vin: str) -> dict[str, str]:
+        """Build auth headers for NA write commands from cached vehicle session.
+
+        Reads vehicle token from ``_na_tokens[vin]["vehicle_session"]["token"]``
+        and user_id from IDK id_token JWT claims (no network calls).
+
+        Returns a headers dict suitable for PUT/POST requests to NA endpoints.
+        Returns an empty Authorization header string if no token is cached yet.
+        """
+        vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token", "")
+        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
+        try:
+            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
+            user_id = claims.get("sub", "")
+        except jwt.exceptions.InvalidTokenError:
+            user_id = ""
+
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {vehicle_token}",
+            "x-user-id": user_id,
+            "x-app-version": APP_VERSION,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
+        if session_id:
+            headers["x-mobile-session-id"] = session_id
+        return headers
+
+    async def _na_write_request(
+        self,
+        vin: str,
+        url: str,
+        method: str = "put",
+        body: dict | None = None,
+    ) -> bool:
+        """Execute a NA write command (PUT or POST) with single 401 retry.
+
+        On 401 the cached vehicle session is discarded and re-created once
+        before retrying. Non-2xx responses that are not 401 are logged and
+        return False.
+
+        Args:
+            vin: Vehicle Identification Number.
+            url: Full endpoint URL.
+            method: ``"put"`` or ``"post"``.
+            body: JSON body dict (defaults to empty dict).
+
+        Returns:
+            True on 2xx, False otherwise.
+        """
+        headers = self._get_na_write_headers(vin)
+        if not headers.get("Authorization", "Bearer ").replace("Bearer ", "").strip():
+            _LOGGER.warning("NA write: no vehicle session token for %s, skipping %s", redact(vin), url)
+            return False
+
+        aio_method = self._session.put if method == "put" else self._session.post
+        json_body = body if body is not None else {}
+
+        async def _do_request() -> Any:
+            return await aio_method(
+                url=url,
+                headers=headers,
+                json=json_body,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+
+        try:
+            resp = await _do_request()
+            if resp.status == 401:
+                _LOGGER.debug("NA write: 401 for %s — refreshing vehicle session and retrying", url)
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if not vehicle_token:
+                    return False
+                headers["Authorization"] = f"Bearer {vehicle_token}"
+                resp = await _do_request()
+            _LOGGER.debug("NA write %s %s: status=%s for vin=%s", method.upper(), url, resp.status, redact(vin))
+            return resp.status in (200, 202, 204)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("NA write %s failed for %s: %s", url, redact(vin), exc)
+            return False
+
+    async def lock_na(self, vin: str, action: str = "lock") -> bool:
+        """Remote lock or unlock via NA ``/lockunlock/v1/`` endpoint.
+
+        Args:
+            vin: Vehicle Identification Number.
+            action: ``"lock"`` or ``"unlock"``.
+
+        Returns:
+            True on success (2xx), False otherwise.
+        """
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/lockunlock/v1/vehicle/{vehicle_id}"
+        return await self._na_write_request(vin, url, method="put", body={"action": action})
+
+    async def honk_and_flash_na(self, vin: str) -> bool:
+        """Remote honk and flash via NA ``/honkflash/v1/`` endpoint.
+
+        Returns:
+            True on success (2xx), False otherwise.
+        """
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/honkflash/v1/vehicle/{vehicle_id}"
+        return await self._na_write_request(vin, url, method="put", body={})
+
+    async def start_charging_na(self, vin: str) -> bool:
+        """Start EV charging via NA ``/ev/v1/.../charging/start`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/charging/start"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def stop_charging_na(self, vin: str) -> bool:
+        """Stop EV charging via NA ``/ev/v1/.../charging/stop`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/charging/stop"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def start_climatisation_na(self, vin: str) -> bool:
+        """Start pre-trip climate via NA ``/ev/v1/.../pretripclimate/start`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/start"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def stop_climatisation_na(self, vin: str) -> bool:
+        """Stop pre-trip climate via NA ``/ev/v1/.../pretripclimate/stop`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/stop"
+        return await self._na_write_request(vin, url, method="post", body={})
+
     async def _login_na(self) -> bool:
         """Perform the NA-specific OAuth2 + PKCE login flow.
 

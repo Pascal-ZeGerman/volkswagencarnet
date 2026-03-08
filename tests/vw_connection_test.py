@@ -2570,6 +2570,123 @@ class NAErrorPathTest(IsolatedAsyncioTestCase):
         assert conn._session.get.call_count == 9
 
 
+class NAWriteCommandTest(IsolatedAsyncioTestCase):
+    """Tests for NA write commands: lock_na, honk_and_flash_na, charging, climate."""
+
+    VEHICLE_ID = "vehicle-uuid-1234"
+
+    def _make_conn(self) -> Connection:
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
+        return conn
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_success(self, _mock_jwt):
+        """lock_na sends PUT /lockunlock/v1/ with action=lock and returns True on 200."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(return_value=_mock_resp(200))
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is True
+        conn._session.put.assert_called_once()
+        call_kwargs = conn._session.put.call_args
+        assert f"/lockunlock/v1/vehicle/{self.VEHICLE_ID}" in call_kwargs.kwargs["url"]
+        assert call_kwargs.kwargs["json"] == {"action": "lock"}
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_unlock_na_success(self, _mock_jwt):
+        """lock_na with action=unlock sends unlock body."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(return_value=_mock_resp(204))
+        result = await conn.lock_na(VIN, action="unlock")
+        assert result is True
+        assert conn._session.put.call_args.kwargs["json"] == {"action": "unlock"}
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_401_retries_with_fresh_token(self, _mock_jwt):
+        """On 401, lock_na refreshes vehicle session and retries."""
+        conn = self._make_conn()
+        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+        conn._session.put = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200),
+        ])
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is True
+        assert conn._session.put.call_count == 2
+        conn._create_na_vehicle_session.assert_called_once()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_returns_false_on_error(self, _mock_jwt):
+        """lock_na returns False on non-2xx status."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(return_value=_mock_resp(500))
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is False
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_returns_false_when_no_token(self, _mock_jwt):
+        """lock_na returns False when no vehicle session token is cached."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
+        # No vehicle_session entry
+        conn._session.put = AsyncMock()
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is False
+        conn._session.put.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_honk_and_flash_na_success(self, _mock_jwt):
+        """honk_and_flash_na sends PUT /honkflash/v1/ with empty body."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(return_value=_mock_resp(202))
+        result = await conn.honk_and_flash_na(VIN)
+        assert result is True
+        call_kwargs = conn._session.put.call_args
+        assert f"/honkflash/v1/vehicle/{self.VEHICLE_ID}" in call_kwargs.kwargs["url"]
+        assert call_kwargs.kwargs["json"] == {}
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_start_charging_na_success(self, _mock_jwt):
+        """start_charging_na sends POST to charging/start endpoint."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        result = await conn.start_charging_na(VIN)
+        assert result is True
+        call_url = conn._session.post.call_args.kwargs["url"]
+        assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/charging/start" in call_url
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_stop_charging_na_success(self, _mock_jwt):
+        """stop_charging_na sends POST to charging/stop endpoint."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        result = await conn.stop_charging_na(VIN)
+        assert result is True
+        call_url = conn._session.post.call_args.kwargs["url"]
+        assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/charging/stop" in call_url
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_start_climatisation_na_success(self, _mock_jwt):
+        """start_climatisation_na sends POST to pretripclimate/start."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        result = await conn.start_climatisation_na(VIN)
+        assert result is True
+        call_url = conn._session.post.call_args.kwargs["url"]
+        assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/pretripclimate/start" in call_url
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_stop_climatisation_na_success(self, _mock_jwt):
+        """stop_climatisation_na sends POST to pretripclimate/stop."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        result = await conn.stop_climatisation_na(VIN)
+        assert result is True
+        call_url = conn._session.post.call_args.kwargs["url"]
+        assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/pretripclimate/stop" in call_url
+
+
 class NATokenValidationTest(IsolatedAsyncioTestCase):
     """Tests for NA token validation and IDK refresh failure paths."""
 

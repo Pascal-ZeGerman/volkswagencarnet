@@ -447,6 +447,23 @@ class Vehicle:
     # Charging (BATTERYCHARGE)
     async def set_charger(self, action: str) -> bool:
         """Turn on/off charging."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["start", "stop"]:
+                _LOGGER.error('Charging action "%s" is not supported', action)
+                raise Exception(f'Charging action "{action}" is not supported.')
+            self._requests["latest"] = "Batterycharge"
+            if action == "start":
+                result = await self._connection.start_charging_na(self.vin)
+            else:
+                result = await self._connection.stop_charging_na(self.vin)
+            self._requests["charging"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
@@ -666,6 +683,23 @@ class Vehicle:
 
     async def set_climatisation(self, action: str = "stop") -> bool:
         """Turn on/off climatisation with electric heater."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["start", "stop"]:
+                _LOGGER.error("Invalid climatisation action: %s", action)
+                raise Exception(f"Invalid climatisation action: {action}")
+            self._requests["latest"] = "Climatisation"
+            if action == "start":
+                result = await self._connection.start_climatisation_na(self.vin)
+            else:
+                result = await self._connection.stop_climatisation_na(self.vin)
+            self._requests["climatisation"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if self.is_electric_climatisation_supported:
             if action == "start":
                 data = {
@@ -869,6 +903,22 @@ class Vehicle:
     # Lock (RLU)
     async def set_lock(self, action: str, spin: str) -> bool:
         """Remote lock and unlock actions."""
+        # NA path: no SPIN, no service discovery
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["lock", "unlock"]:
+                _LOGGER.error("Invalid lock action: %s", action)
+                raise Exception(f"Invalid lock action: {action}")
+            if self._in_progress("lock", unknown_offset=-5):
+                return False
+            self._requests["latest"] = "Lock"
+            result = await self._connection.lock_na(self.vin, action)
+            self._requests["lock"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             _LOGGER.info("Remote lock/unlock is not supported")
             raise Exception("Remote lock/unlock is not supported.")
@@ -897,9 +947,21 @@ class Vehicle:
             }
         raise Exception("Lock action failed")
 
-    # Lock (RLU)
+    # Honk and flash
     async def set_honk_and_flash(self) -> bool:
         """Remote honk and flash actions."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if self._in_progress("honk_and_flash", unknown_offset=-5):
+                return False
+            self._requests["latest"] = "HonkAndFlash"
+            result = await self._connection.honk_and_flash_na(self.vin)
+            self._requests["honk_and_flash"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
         if not self._services.get(Services.HONK_AND_FLASH, {}).get("active", False):
             _LOGGER.info("Remote honk and flash is not supported")
             raise Exception("Remote honk and flash is not supported.")

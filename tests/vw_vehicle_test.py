@@ -1009,6 +1009,103 @@ class TestNAEVProperties:
         assert na_ev_vehicle.is_last_trip_duration_supported is True
 
 
+class TestNAWriteCommands:
+    """Tests for NA write command routing in Vehicle methods."""
+
+    def _make_na_vehicle(self) -> Vehicle:
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}
+        return vehicle
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_calls_lock_na(self):
+        """set_lock routes to connection.lock_na() for NA vehicles."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=True)
+        result = await vehicle.set_lock("lock", spin="")
+        assert result is True
+        vehicle._connection.lock_na.assert_called_once_with("TESTVIN123", "lock")
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_unlock_calls_lock_na(self):
+        """set_lock with action=unlock routes to lock_na(action='unlock')."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=True)
+        result = await vehicle.set_lock("unlock", spin="")
+        assert result is True
+        vehicle._connection.lock_na.assert_called_once_with("TESTVIN123", "unlock")
+
+    @pytest.mark.asyncio
+    async def test_set_lock_invalid_action_raises(self):
+        """set_lock raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match="Invalid lock action"):
+            await vehicle.set_lock("open", spin="")
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_routes_correctly(self):
+        """set_honk_and_flash routes to connection.honk_and_flash_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.honk_and_flash_na = AsyncMock(return_value=True)
+        result = await vehicle.set_honk_and_flash()
+        assert result is True
+        vehicle._connection.honk_and_flash_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_start_na_routes_correctly(self):
+        """set_charger('start') routes to connection.start_charging_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.start_charging_na = AsyncMock(return_value=True)
+        result = await vehicle.set_charger("start")
+        assert result is True
+        vehicle._connection.start_charging_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_stop_na_routes_correctly(self):
+        """set_charger('stop') routes to connection.stop_charging_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.stop_charging_na = AsyncMock(return_value=True)
+        result = await vehicle.set_charger("stop")
+        assert result is True
+        vehicle._connection.stop_charging_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_invalid_action_raises(self):
+        """set_charger raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match='not supported'):
+            await vehicle.set_charger("invalid")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_start_na_routes_correctly(self):
+        """set_climatisation('start') routes to start_climatisation_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.start_climatisation_na = AsyncMock(return_value=True)
+        result = await vehicle.set_climatisation("start")
+        assert result is True
+        vehicle._connection.start_climatisation_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_stop_na_routes_correctly(self):
+        """set_climatisation('stop') routes to stop_climatisation_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.stop_climatisation_na = AsyncMock(return_value=True)
+        result = await vehicle.set_climatisation("stop")
+        assert result is True
+        vehicle._connection.stop_climatisation_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_invalid_action_raises(self):
+        """set_climatisation raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match="Invalid climatisation action"):
+            await vehicle.set_climatisation("boost")
+
+
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""
 
