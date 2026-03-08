@@ -457,6 +457,8 @@ class Vehicle:
                 result = await self._connection.start_charging_na(self.vin)
             else:
                 result = await self._connection.stop_charging_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: %s_charging command failed for vin=%s", action, self.vin)
             self._requests["charging"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -693,6 +695,8 @@ class Vehicle:
                 result = await self._connection.start_climatisation_na(self.vin)
             else:
                 result = await self._connection.stop_climatisation_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: %s_climatisation command failed for vin=%s", action, self.vin)
             self._requests["climatisation"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -912,6 +916,8 @@ class Vehicle:
                 return False
             self._requests["latest"] = "Lock"
             result = await self._connection.lock_na(self.vin, action)
+            if not result:
+                _LOGGER.warning("NA: %s command failed for vin=%s", action, self.vin)
             self._requests["lock"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -956,6 +962,8 @@ class Vehicle:
                 return False
             self._requests["latest"] = "HonkAndFlash"
             result = await self._connection.honk_and_flash_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: honk_and_flash command failed for vin=%s", self.vin)
             self._requests["honk_and_flash"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),

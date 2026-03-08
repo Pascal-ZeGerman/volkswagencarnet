@@ -1629,10 +1629,10 @@ class Connection:
                         allow_redirects=False,
                     )
                     _LOGGER.debug("NA RVS %s: retry after 401 returned status=%s for vin=%s", label, resp.status, redact(vin))
-                    if resp.status != 200:
+                    if resp.status not in (200, 202, 204):
                         _LOGGER.warning("NA RVS %s: 401 retry failed (status=%s), giving up", label, resp.status)
                         return None
-                if resp.status == 200:
+                if resp.status in (200, 202, 204):
                     data = await resp.json()
                     if isinstance(data, dict) and "data" in data:
                         data = data["data"]
@@ -1763,6 +1763,10 @@ class Connection:
             user_id = ""
 
         if not user_id:
+            _LOGGER.warning(
+                "NA: IDK id_token decoded but 'sub' claim is empty for vin=%s — skipping vehicle data fetch",
+                redact(vin),
+            )
             return None
 
         # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
@@ -1861,10 +1865,18 @@ class Connection:
                 return data
             if resp.status == 404:
                 _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
-            elif resp.status in (401, 403):
+            elif resp.status == 401:
                 _LOGGER.warning(
-                    "NA optional endpoint %s: HTTP %d (auth/permissions failure) for vin=%s",
-                    label, resp.status, redact(vin),
+                    "NA optional endpoint %s: HTTP 401 (vehicle session rejected) for vin=%s "
+                    "— invalidating session cache so next poll re-authenticates",
+                    label, redact(vin),
+                )
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                self._na_rvs_cache.pop(vin, None)
+            elif resp.status == 403:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: HTTP 403 (insufficient permissions) for vin=%s",
+                    label, redact(vin),
                 )
             else:
                 _LOGGER.warning(
@@ -1932,10 +1944,11 @@ class Connection:
         Returns:
             True if HTTP response is 200, 202, or 204, False otherwise.
         """
-        headers = self._get_na_write_headers(vin)
-        if not headers.get("Authorization", "Bearer ").replace("Bearer ", "").strip():
-            _LOGGER.warning("NA write: no vehicle session token for %s, skipping %s", redact(vin), url)
+        vehicle_token_value = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token")
+        if not vehicle_token_value or not isinstance(vehicle_token_value, str):
+            _LOGGER.warning("NA write: no valid vehicle session token for %s, skipping %s", redact(vin), url)
             return False
+        headers = self._get_na_write_headers(vin)
 
         if method not in ("put", "post"):
             _LOGGER.error(
@@ -1962,6 +1975,10 @@ class Connection:
                 self._na_tokens.get(vin, {}).pop("vehicle_session", None)
                 vehicle_token = await self._create_na_vehicle_session(vin)
                 if not vehicle_token:
+                    _LOGGER.warning(
+                        "NA write %s %s: 401 received but vehicle session refresh failed for vin=%s — cannot retry",
+                        method.upper(), url, redact(vin),
+                    )
                     return False
                 headers["Authorization"] = f"Bearer {vehicle_token}"
                 resp = await _do_request()

@@ -1183,6 +1183,39 @@ class TestNAWriteCommands:
         with pytest.raises(Exception, match="Invalid climatisation action"):
             await vehicle.set_climatisation("boost")
 
+    @pytest.mark.asyncio
+    async def test_set_lock_na_logs_warning_on_failure(self, caplog):
+        """set_lock logs WARNING when lock_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_lock("lock", spin="")
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_set_charger_na_logs_warning_on_failure(self, caplog):
+        """set_charger logs WARNING when start_charging_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.start_charging_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_charger("start")
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_logs_warning_on_failure(self, caplog):
+        """set_honk_and_flash logs WARNING when honk_and_flash_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.honk_and_flash_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_honk_and_flash()
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
 
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""
@@ -1205,6 +1238,20 @@ class TestNAVehicleNoData:
         vehicle = Vehicle(conn=conn, url="TESTVIN123")
         vehicle._discovered = True
         assert vehicle.door_locked is False
+
+    def test_na_battery_level_none_when_na_ev_absent(self):
+        """battery_level returns None for non-EV NA vehicle (na_ev absent from _states)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}
+        # na_ev is intentionally absent
+        assert vehicle.battery_level is None
+        assert vehicle.is_battery_level_supported is False
+        assert vehicle.charging_cable_connected is False
+        assert vehicle.charging_time_left is None
 
 
 # ---------------------------------------------------------------------------

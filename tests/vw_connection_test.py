@@ -2424,6 +2424,32 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         assert result["na_status"] == status_fixture
         assert conn._create_na_vehicle_session.call_count == 2
 
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_get_na_vehicle_data_includes_ev_climate_trip_on_success(self, _mock_jwt):
+        """When all optional endpoints return 200, result dict contains parsed data."""
+        loc = _load_na_fixture("rvs_location.json")
+        status = _load_na_fixture("rvs_status.json")
+        ev = _load_na_fixture("ev_charge.json")
+        climate = _load_na_fixture("climate_settings.json")
+        trip = _load_na_fixture("trip_stats.json")
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = "test-vehicle-id"
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "vtoken"}
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(200, json_data=loc),
+            _mock_resp(200, json_data=status),
+            _mock_resp(200, json_data=ev),
+            _mock_resp(200, json_data=climate),
+            _mock_resp(200, json_data=trip),
+        ])
+        result = await conn._get_na_vehicle_data(VIN)
+        assert result is not None
+        assert result["na_ev"] == ev
+        assert result["na_climate"] == climate
+        assert result["na_trip"] == trip
+
 
 class NARVSCacheTest(IsolatedAsyncioTestCase):
     """Tests for RVS TTL cache behavior in Connection._get_na_vehicle_data()."""
@@ -2735,13 +2761,13 @@ class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
         assert not any("404" in msg and "ev_charge" in msg for msg in log_ctx.output)
 
     async def test_optional_endpoint_403_returns_none_with_warning(self):
-        """403 returns None and logs a WARNING about auth/permissions failure."""
+        """403 returns None and logs a WARNING about insufficient permissions."""
         conn = self._make_conn()
         conn._session.get = AsyncMock(return_value=_mock_resp(403))
         with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
             result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
         assert result is None
-        assert any("403" in msg and "auth/permissions" in msg for msg in log_ctx.output)
+        assert any("403" in msg and "insufficient permissions" in msg for msg in log_ctx.output)
 
     async def test_optional_endpoint_500_returns_none_with_warning(self):
         """500 returns None and logs a WARNING."""
@@ -2865,6 +2891,33 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
         assert any("unsupported HTTP method" in msg for msg in log_ctx.output)
         conn._session.put.assert_not_called()
         conn._session.post.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_returns_false_when_session_refresh_fails(self, _mock_jwt):
+        """On 401, if _create_na_vehicle_session returns None, lock_na returns False without retrying."""
+        conn = self._make_conn()
+        conn._create_na_vehicle_session = AsyncMock(return_value=None)
+        conn._session.put = AsyncMock(side_effect=[_mock_resp(401)])
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn.lock_na(VIN, action="lock")
+        assert result is False
+        assert conn._session.put.call_count == 1  # no retry
+        assert any("session refresh failed" in msg for msg in log_ctx.output)
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_401_retry_uses_new_token_in_headers(self, _mock_jwt):
+        """After 401 + session refresh, the retry request carries the new Authorization token."""
+        conn = self._make_conn()
+        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+        conn._session.put = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200),
+        ])
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is True
+        assert conn._session.put.call_count == 2
+        second_call_headers = conn._session.put.call_args_list[1].kwargs["headers"]
+        assert second_call_headers["Authorization"] == "Bearer new-vehicle-token"
 
 
 class NATokenValidationTest(IsolatedAsyncioTestCase):
