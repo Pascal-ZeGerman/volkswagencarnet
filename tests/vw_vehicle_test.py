@@ -840,6 +840,64 @@ class TestNAVehicleProperties:
         """NA vehicle __str__."""
         assert str(na_vehicle) == "3VV4X7B27RM030662"
 
+    def test_na_odometer(self, na_vehicle):
+        """NA odometer from currentMileage in rvs_status."""
+        assert na_vehicle.distance == 12500
+
+    def test_na_odometer_supported(self, na_vehicle):
+        """NA odometer supported when na_status present."""
+        assert na_vehicle.is_distance_supported is True
+
+    def test_na_fuel_level(self, na_vehicle):
+        """NA fuel level from powerStatus.fuelPercentRemaining."""
+        assert na_vehicle.fuel_level == 75
+
+    def test_na_fuel_level_supported(self, na_vehicle):
+        """NA fuel level supported when field present in na_status."""
+        assert na_vehicle.is_fuel_level_supported is True
+
+    def test_na_combustion_range(self, na_vehicle):
+        """NA range from powerStatus.cruiseRange."""
+        assert na_vehicle.combustion_range == 280
+
+    def test_na_combustion_range_supported(self, na_vehicle):
+        """NA combustion range supported when field present."""
+        assert na_vehicle.is_combustion_range_supported is True
+
+    def test_na_any_door_open_all_closed(self, na_vehicle):
+        """any_door_open is False when all doors CLOSED."""
+        assert na_vehicle.any_door_open is False
+
+    def test_na_any_door_open_supported(self, na_vehicle):
+        """any_door_open supported when na_status present."""
+        assert na_vehicle.is_any_door_open_supported is True
+
+    def test_na_any_door_open_true(self):
+        """any_door_open is True when a door is OPEN."""
+        import copy
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        rvs_status = load_fixture("na_vehicle", "rvs_status.json")
+        status = copy.deepcopy(rvs_status)
+        status["exteriorStatus"]["doorStatus"]["frontLeft"] = "OPEN"
+        vehicle._states["na_status"] = status
+        assert vehicle.any_door_open is True
+
+    def test_na_any_door_unlocked_all_locked(self, na_vehicle):
+        """any_door_unlocked is False when all doors LOCKED."""
+        assert na_vehicle.any_door_unlocked is False
+
+    def test_na_any_door_unlocked_supported(self, na_vehicle):
+        """any_door_unlocked supported when na_status present."""
+        assert na_vehicle.is_any_door_unlocked_supported is True
+
+    def test_na_any_window_open_supported(self, na_vehicle):
+        """any_window_open supported when na_status present (even if empty)."""
+        assert na_vehicle.is_any_window_open_supported is True
+
 
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""

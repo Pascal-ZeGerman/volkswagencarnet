@@ -1289,6 +1289,9 @@ class Vehicle:
     @property
     def distance(self) -> int | None:
         """Return vehicle odometer."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return na_status.get("currentMileage")
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
@@ -1299,6 +1302,9 @@ class Vehicle:
     @property
     def is_distance_supported(self) -> bool:
         """Return true if odometer is supported."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return "currentMileage" in na_status
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
@@ -1885,6 +1891,9 @@ class Vehicle:
     @property
     def combustion_range(self) -> int | None:
         """Return combustion engine range."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRange")
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_TOTAL)
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL):
@@ -1901,6 +1910,9 @@ class Vehicle:
     @property
     def is_combustion_range_supported(self) -> bool:
         """Return true if combustion range is supported, i.e. false for EVs."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRange") is not None
         return (
             is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL)
             or is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_GASOLINE)
@@ -1982,6 +1994,9 @@ class Vehicle:
     @property
     def fuel_level(self) -> int | None:
         """Return fuel level."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("fuelPercentRemaining")
         fuel_level_pct = None
         if (
             is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_LVL)
@@ -2007,6 +2022,9 @@ class Vehicle:
     @property
     def is_fuel_level_supported(self) -> bool:
         """Return true if fuel level reporting is supported."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("fuelPercentRemaining") is not None
         return (
             is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_LVL)
             and not self.is_primary_drive_gas()
@@ -2811,6 +2829,49 @@ class Vehicle:
             ):
                 return True
         return False
+
+    # Aggregate door/window status
+    @property
+    def any_door_open(self) -> bool:
+        """True if any door (including trunk/hood) is open."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            return any(v == "OPEN" for v in door_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_door_open_supported(self) -> bool:
+        """True if any_door_open data is available."""
+        return self._states.get("na_status") is not None
+
+    @property
+    def any_door_unlocked(self) -> bool:
+        """True if any door lock status is UNLOCKED."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+            return any(v == "UNLOCKED" for v in lock_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_door_unlocked_supported(self) -> bool:
+        """True if any_door_unlocked data is available."""
+        return self._states.get("na_status") is not None
+
+    @property
+    def any_window_open(self) -> bool:
+        """True if any window is open."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            window_status = (na_status.get("exteriorStatus") or {}).get("windowStatus") or {}
+            return any(v == "OPEN" for v in window_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_window_open_supported(self) -> bool:
+        """True if any_window_open data is available."""
+        return self._states.get("na_status") is not None
 
     # Doors, hood and trunk
     @property
