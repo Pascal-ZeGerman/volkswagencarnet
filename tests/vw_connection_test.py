@@ -2373,6 +2373,9 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         assert result is not None
         assert result["na_location"] is None
         assert result["na_status"] == status_fixture
+        assert result["na_ev"] is None
+        assert result["na_climate"] is None
+        assert result["na_trip"] is None
 
     @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
@@ -2395,6 +2398,9 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         assert result is not None
         assert result["na_location"] == location_fixture
         assert result["na_status"] is None
+        assert result["na_ev"] is None
+        assert result["na_climate"] is None
+        assert result["na_trip"] is None
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
     async def test_get_na_vehicle_data_invalidates_cache_on_401(self, _mock_jwt):
@@ -2685,6 +2691,180 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
         assert result is True
         call_url = conn._session.post.call_args.kwargs["url"]
         assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/pretripclimate/stop" in call_url
+
+
+class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
+    """Tests for Connection._fetch_na_optional_endpoint()."""
+
+    VEHICLE_ID = "vehicle-uuid-1234"
+    URL = "https://b-h-s.spr.us00.p.con-veh.net/ev/v1/vehicle/vehicle-uuid-1234/charge/summary"
+
+    def _make_conn(self) -> Connection:
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
+        return conn
+
+    async def test_optional_endpoint_200_returns_data(self):
+        """200 with JSON body returns the parsed dict."""
+        conn = self._make_conn()
+        conn._session.get = AsyncMock(return_value=_mock_resp(200, json_data={"batteryPercentageAvailable": 80}))
+        result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result == {"batteryPercentageAvailable": 80}
+
+    async def test_optional_endpoint_200_unwraps_data_envelope(self):
+        """200 with {\"data\": {...}} envelope unwraps to the inner dict."""
+        conn = self._make_conn()
+        inner = {"batteryPercentageAvailable": 60}
+        conn._session.get = AsyncMock(return_value=_mock_resp(200, json_data={"data": inner}))
+        result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result == inner
+
+    async def test_optional_endpoint_404_returns_none(self):
+        """404 returns None (non-EV vehicle) — no WARNING logged."""
+        conn = self._make_conn()
+        conn._session.get = AsyncMock(return_value=_mock_resp(404))
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            # Use a sentinel to detect that NO warning was logged — we have to provoke one
+            # to satisfy assertLogs, then confirm ours is absent.
+            import logging as _logging
+            logger = _logging.getLogger("volkswagencarnet.vw_connection")
+            logger.warning("_sentinel_warning_not_related")
+            result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result is None
+        # Only the sentinel warning should be present, not one from 404
+        assert not any("404" in msg and "ev_charge" in msg for msg in log_ctx.output)
+
+    async def test_optional_endpoint_403_returns_none_with_warning(self):
+        """403 returns None and logs a WARNING about auth/permissions failure."""
+        conn = self._make_conn()
+        conn._session.get = AsyncMock(return_value=_mock_resp(403))
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result is None
+        assert any("403" in msg and "auth/permissions" in msg for msg in log_ctx.output)
+
+    async def test_optional_endpoint_500_returns_none_with_warning(self):
+        """500 returns None and logs a WARNING."""
+        conn = self._make_conn()
+        conn._session.get = AsyncMock(return_value=_mock_resp(500))
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result is None
+        assert any("500" in msg for msg in log_ctx.output)
+
+    async def test_optional_endpoint_json_decode_error_returns_none(self):
+        """200 + invalid JSON body returns None and logs a WARNING."""
+        conn = self._make_conn()
+        mock_r = MagicMock()
+        mock_r.status = 200
+        mock_r.json = AsyncMock(side_effect=aiohttp.ContentTypeError(MagicMock(), MagicMock()))
+        mock_r.text = AsyncMock(return_value="<html>not json</html>")
+        conn._session.get = AsyncMock(return_value=mock_r)
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result is None
+        assert any("failed to decode JSON" in msg for msg in log_ctx.output)
+
+    async def test_optional_endpoint_client_error_returns_none(self):
+        """aiohttp.ClientError during GET returns None."""
+        conn = self._make_conn()
+        conn._session.get = AsyncMock(side_effect=aiohttp.ClientConnectionError("connection refused"))
+        result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
+        assert result is None
+
+
+class TestTriggerNARVSRefresh(IsolatedAsyncioTestCase):
+    """Tests for Connection._trigger_na_rvs_refresh()."""
+
+    def _make_conn_with_session_token(self) -> Connection:
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = VIN
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
+        return conn
+
+    async def test_rvs_refresh_returns_false_when_no_token(self):
+        """Returns False immediately when no vehicle session token is cached."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN].pop("vehicle_session", None)
+        conn._session.post = AsyncMock()
+        result = await conn._trigger_na_rvs_refresh(VIN)
+        assert result is False
+        conn._session.post.assert_not_called()
+
+    async def test_rvs_refresh_returns_true_on_200(self):
+        """Returns True on HTTP 200."""
+        conn = self._make_conn_with_session_token()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        result = await conn._trigger_na_rvs_refresh(VIN)
+        assert result is True
+
+    async def test_rvs_refresh_returns_true_on_202(self):
+        """Returns True on HTTP 202 (Accepted)."""
+        conn = self._make_conn_with_session_token()
+        conn._session.post = AsyncMock(return_value=_mock_resp(202))
+        result = await conn._trigger_na_rvs_refresh(VIN)
+        assert result is True
+
+    async def test_rvs_refresh_returns_false_on_non_2xx_with_warning(self):
+        """Returns False on HTTP 500 and logs WARNING about stale telemetry."""
+        conn = self._make_conn_with_session_token()
+        conn._session.post = AsyncMock(return_value=_mock_resp(500))
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn._trigger_na_rvs_refresh(VIN)
+        assert result is False
+        assert any("non-2xx" in msg and "telemetry" in msg for msg in log_ctx.output)
+
+    async def test_rvs_refresh_returns_false_on_client_error(self):
+        """Returns False when aiohttp.ClientError is raised."""
+        conn = self._make_conn_with_session_token()
+        conn._session.post = AsyncMock(side_effect=aiohttp.ClientConnectionError("no route"))
+        result = await conn._trigger_na_rvs_refresh(VIN)
+        assert result is False
+
+
+class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
+    """Edge case tests for Connection._na_write_request()."""
+
+    VEHICLE_ID = "vehicle-uuid-edge"
+
+    def _make_conn(self) -> Connection:
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
+        return conn
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_returns_false_on_network_error(self, _mock_jwt):
+        """lock_na returns False when aiohttp.ClientError is raised."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(side_effect=aiohttp.ClientConnectionError("network error"))
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is False
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_second_401_logs_warning(self, _mock_jwt):
+        """After 401 + refresh + second 401, logs WARNING and returns False."""
+        conn = self._make_conn()
+        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+        conn._session.put = AsyncMock(side_effect=[_mock_resp(401), _mock_resp(401)])
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn.lock_na(VIN, action="lock")
+        assert result is False
+        assert any("failed after 401 retry" in msg for msg in log_ctx.output)
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_na_write_request_invalid_method_returns_false(self, _mock_jwt):
+        """_na_write_request with method='delete' logs ERROR and returns False."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock()
+        conn._session.post = AsyncMock()
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        with self.assertLogs("volkswagencarnet.vw_connection", level="ERROR") as log_ctx:
+            result = await conn._na_write_request(VIN, url, method="delete")
+        assert result is False
+        assert any("unsupported HTTP method" in msg for msg in log_ctx.output)
+        conn._session.put.assert_not_called()
+        conn._session.post.assert_not_called()
 
 
 class NATokenValidationTest(IsolatedAsyncioTestCase):

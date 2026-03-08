@@ -1451,7 +1451,11 @@ class Vehicle:
     # Charger related states for EV and PHEV
     @property
     def charging(self) -> bool:
-        """Return charging state."""
+        """Return charging state.
+
+        For NA vehicles, True when chargingStatus is one of
+        ``"CHARGING"``, ``"CHARGING_AC"``, or ``"CHARGING_DC"``.
+        """
         na_ev = self._states.get("na_ev")
         if na_ev is not None:
             return na_ev.get("chargingStatus") in ("CHARGING", "CHARGING_AC", "CHARGING_DC")
@@ -1465,8 +1469,9 @@ class Vehicle:
     @property
     def is_charging_supported(self) -> bool:
         """Return true if charging is supported."""
-        if self._states.get("na_ev") is not None:
-            return True
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("chargingStatus") is not None
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
     @property
@@ -1551,8 +1556,9 @@ class Vehicle:
     @property
     def is_battery_level_supported(self) -> bool:
         """Return true if battery level is supported."""
-        if self._states.get("na_ev") is not None:
-            return True
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("batteryPercentageAvailable") is not None
         return is_valid_path(self.attrs, Paths.BATTERY_SOC)
 
     @property
@@ -1668,8 +1674,9 @@ class Vehicle:
     @property
     def is_charging_cable_connected_supported(self) -> bool:
         """Return true if supported."""
-        if self._states.get("na_ev") is not None:
-            return True
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("plugStatus") is not None
         return is_valid_path(self.attrs, Paths.PLUG_CONN)
 
     @property
@@ -1690,8 +1697,10 @@ class Vehicle:
     @property
     def is_charging_time_left_supported(self) -> bool:
         """Return true if charging time left is supported."""
-        if self._states.get("na_ev") is not None:
-            return True
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("remainingChargingTime") is not None
+        # EMEA: intentionally checks CHARGING_STATE (not CHARGING_TIME_LEFT) — preserved from original.
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
     @property
@@ -2927,7 +2936,7 @@ class Vehicle:
     # Aggregate door/window status
     @property
     def any_door_open(self) -> bool:
-        """True if any door (including trunk/hood) is open."""
+        """True if any entry in ``exteriorStatus.doorStatus`` is ``"OPEN"``."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
@@ -2937,7 +2946,10 @@ class Vehicle:
     @property
     def is_any_door_open_supported(self) -> bool:
         """True if any_door_open data is available."""
-        return self._states.get("na_status") is not None
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("doorStatus") is not None
+        return False
 
     @property
     def any_door_unlocked(self) -> bool:
@@ -2951,7 +2963,10 @@ class Vehicle:
     @property
     def is_any_door_unlocked_supported(self) -> bool:
         """True if any_door_unlocked data is available."""
-        return self._states.get("na_status") is not None
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("doorLockStatus") is not None
+        return False
 
     @property
     def any_window_open(self) -> bool:
@@ -2965,7 +2980,10 @@ class Vehicle:
     @property
     def is_any_window_open_supported(self) -> bool:
         """True if any_window_open data is available."""
-        return self._states.get("na_status") is not None
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("windowStatus") is not None
+        return False
 
     # Doors, hood and trunk
     @property

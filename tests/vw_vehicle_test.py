@@ -929,6 +929,44 @@ class TestNAVehicleProperties:
         """any_window_open supported when na_status present (even if empty)."""
         assert na_vehicle.is_any_window_open_supported is True
 
+    def test_any_window_open_true(self):
+        """any_window_open is True when windowStatus has an OPEN entry."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "windowStatus": {"frontLeft": "OPEN", "frontRight": "CLOSED"},
+            }
+        }
+        assert vehicle.any_window_open is True
+
+    def test_any_door_unlocked_true(self):
+        """any_door_unlocked is True when doorLockStatus has an UNLOCKED entry."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorLockStatus": {"frontLeft": "UNLOCKED", "frontRight": "LOCKED"},
+            }
+        }
+        assert vehicle.any_door_unlocked is True
+
+    def test_is_any_door_open_not_supported_when_exterior_status_absent(self):
+        """is_any_door_open_supported is False when na_status lacks exteriorStatus."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}  # no exteriorStatus
+        assert vehicle.is_any_door_open_supported is False
+
 
 class TestNAEVProperties:
     """Test NA EV/climate/trip properties using dedicated fixtures."""
@@ -1007,6 +1045,46 @@ class TestNAEVProperties:
     def test_na_last_trip_duration_supported(self, na_ev_vehicle):
         """last_trip_duration supported when na_trip present."""
         assert na_ev_vehicle.is_last_trip_duration_supported is True
+
+    def test_na_charging_active_ac(self):
+        """charging is True when chargingStatus is CHARGING_AC."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_AC", "batteryPercentageAvailable": 50}
+        assert vehicle.charging is True
+
+    def test_na_charging_active_dc(self):
+        """charging is True when chargingStatus is CHARGING_DC."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_DC", "batteryPercentageAvailable": 30}
+        assert vehicle.charging is True
+
+    def test_na_battery_level_not_supported_when_field_absent(self):
+        """is_battery_level_supported is False when na_ev lacks batteryPercentageAvailable."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}  # no batteryPercentageAvailable
+        assert vehicle.is_battery_level_supported is False
+
+    def test_na_charging_not_supported_when_field_absent(self):
+        """is_charging_supported is False when na_ev lacks chargingStatus."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"batteryPercentageAvailable": 80}  # no chargingStatus
+        assert vehicle.is_charging_supported is False
 
 
 class TestNAWriteCommands:

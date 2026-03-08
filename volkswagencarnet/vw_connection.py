@@ -1674,7 +1674,7 @@ class Connection:
             vin: Vehicle Identification Number.
 
         Returns:
-            True if the refresh request was accepted (2xx), False otherwise.
+            True if HTTP response is 200, 202, or 204, False otherwise.
         """
         vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
         vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token")
@@ -1698,6 +1698,11 @@ class Connection:
                 allow_redirects=False,
             )
             _LOGGER.debug("NA RVS refresh: status=%s for vin=%s", resp.status, redact(vin))
+            if resp.status not in (200, 202, 204):
+                _LOGGER.warning(
+                    "NA RVS refresh: non-2xx (status=%s) for vin=%s — vehicle telemetry may not be fresh",
+                    resp.status, redact(vin),
+                )
             return resp.status in (200, 202, 204)
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             _LOGGER.warning("NA RVS refresh failed for %s: %s", redact(vin), exc)
@@ -1724,9 +1729,10 @@ class Connection:
             vin: Vehicle Identification Number.
 
         Returns:
-            A dict with keys ``"na_location"`` and ``"na_status"`` (either may
-            be ``None`` if that particular fetch failed).  Returns ``None`` only
-            when vehicle session creation itself fails (no data at all possible).
+            A dict with keys ``"na_location"``, ``"na_status"``, ``"na_ev"``,
+            ``"na_climate"``, and ``"na_trip"`` (any may be ``None`` if that
+            endpoint failed or is unsupported).  Returns ``None`` only when
+            vehicle session creation itself fails.
         """
         # Check RVS cache — skip API roundtrip if data is fresh
         cached = self._na_rvs_cache.get(vin)
@@ -1769,8 +1775,6 @@ class Connection:
         }
 
         # Add x-mobile-session-id if cached from prior session response
-        # TBD: field name "x-mobile-session-id" derived from APK analysis (d20/i.java),
-        # not yet confirmed from live HTTP traffic — field name from APK decompilation only.
         session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
         if session_id:
             rvs_headers["x-mobile-session-id"] = session_id
@@ -1843,12 +1847,25 @@ class Connection:
             )
             _LOGGER.debug("NA optional endpoint %s: status=%s for vin=%s", label, resp.status, redact(vin))
             if resp.status == 200:
-                data = await resp.json()
+                try:
+                    data = await resp.json(content_type=None)
+                except (json.JSONDecodeError, aiohttp.ContentTypeError) as exc:
+                    body_preview = await resp.text()
+                    _LOGGER.warning(
+                        "NA optional endpoint %s: failed to decode JSON for vin=%s: %s — body: %.200s",
+                        label, redact(vin), exc, body_preview,
+                    )
+                    return None
                 if isinstance(data, dict) and "data" in data:
                     data = data["data"]
                 return data
             if resp.status == 404:
                 _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
+            elif resp.status in (401, 403):
+                _LOGGER.warning(
+                    "NA optional endpoint %s: HTTP %d (auth/permissions failure) for vin=%s",
+                    label, resp.status, redact(vin),
+                )
             else:
                 _LOGGER.warning(
                     "NA optional endpoint %s: unexpected HTTP %d for vin=%s",
@@ -1874,7 +1891,11 @@ class Connection:
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
             user_id = claims.get("sub", "")
-        except jwt.exceptions.InvalidTokenError:
+        except jwt.exceptions.InvalidTokenError as exc:
+            _LOGGER.warning(
+                "NA write headers: failed to decode IDK id_token for x-user-id "
+                "(write commands for %s will likely be rejected): %s", redact(vin), exc,
+            )
             user_id = ""
 
         headers: dict[str, str] = {
@@ -1909,13 +1930,19 @@ class Connection:
             body: JSON body dict (defaults to empty dict).
 
         Returns:
-            True on 2xx, False otherwise.
+            True if HTTP response is 200, 202, or 204, False otherwise.
         """
         headers = self._get_na_write_headers(vin)
         if not headers.get("Authorization", "Bearer ").replace("Bearer ", "").strip():
             _LOGGER.warning("NA write: no vehicle session token for %s, skipping %s", redact(vin), url)
             return False
 
+        if method not in ("put", "post"):
+            _LOGGER.error(
+                "NA write: unsupported HTTP method %r for %s — must be 'put' or 'post'",
+                method, url,
+            )
+            return False
         aio_method = self._session.put if method == "put" else self._session.post
         json_body = body if body is not None else {}
 
@@ -1938,6 +1965,11 @@ class Connection:
                     return False
                 headers["Authorization"] = f"Bearer {vehicle_token}"
                 resp = await _do_request()
+                if resp.status not in (200, 202, 204):
+                    _LOGGER.warning(
+                        "NA write %s %s: failed after 401 retry (status=%s) for vin=%s",
+                        method.upper(), url, resp.status, redact(vin),
+                    )
             _LOGGER.debug("NA write %s %s: status=%s for vin=%s", method.upper(), url, resp.status, redact(vin))
             return resp.status in (200, 202, 204)
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
