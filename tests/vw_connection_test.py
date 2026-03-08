@@ -2365,6 +2365,9 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2384,6 +2387,9 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2402,6 +2408,9 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
             _mock_resp(401),
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2424,6 +2433,9 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
         conn._session.get = AsyncMock(side_effect=[
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result1 = await conn._get_na_vehicle_data(VIN)
         call_count_after_first = conn._session.get.call_count
@@ -2443,8 +2455,14 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
         conn._session.get = AsyncMock(side_effect=[
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         await conn._get_na_vehicle_data(VIN)
         call_count_after_first = conn._session.get.call_count
@@ -2468,6 +2486,9 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
             _mock_resp(401),
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2490,10 +2511,13 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
         conn._session.get = AsyncMock(side_effect=[
             _mock_resp(200, json_data=location_fixture),
             _mock_resp(200, json_data=status_fixture),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
-        assert conn._session.get.call_count == 2
+        assert conn._session.get.call_count == 5
 
 
 class NAErrorPathTest(IsolatedAsyncioTestCase):
@@ -2535,11 +2559,15 @@ class NAErrorPathTest(IsolatedAsyncioTestCase):
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(500, text_data="Internal Server Error"),
             _mock_resp(500, text_data="Internal Server Error"),
+            _mock_resp(404),
+            _mock_resp(404),
+            _mock_resp(404),
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
-        assert result == {"na_location": None, "na_status": None}
-        assert conn._session.get.call_count == 6
+        assert result["na_location"] is None
+        assert result["na_status"] is None
+        assert conn._session.get.call_count == 9
 
 
 class NATokenValidationTest(IsolatedAsyncioTestCase):
@@ -2610,6 +2638,9 @@ class RVSRetryTest(IsolatedAsyncioTestCase):
             _make_mock_response(503, text_data="Service Unavailable"),
             _make_mock_response(200, json_data=location_success),
             _make_mock_response(200, json_data=status_success),
+            _make_mock_response(404),
+            _make_mock_response(404),
+            _make_mock_response(404),
         ])
 
         result = await conn._get_na_vehicle_data(_RETRY_VIN)
@@ -2631,6 +2662,9 @@ class RVSRetryTest(IsolatedAsyncioTestCase):
             _make_mock_response(503, text_data="Service Unavailable"),
             _make_mock_response(503, text_data="Service Unavailable"),
             _make_mock_response(503, text_data="Service Unavailable"),
+            _make_mock_response(404),
+            _make_mock_response(404),
+            _make_mock_response(404),
         ])
 
         result = await conn._get_na_vehicle_data(_RETRY_VIN)

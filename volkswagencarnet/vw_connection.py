@@ -1787,13 +1787,76 @@ class Connection:
         location_data = await self._fetch_rvs_endpoint(location_url, vin, dict(rvs_headers), "location")
         status_data = await self._fetch_rvs_endpoint(status_url, vin, dict(rvs_headers), "status")
 
+        # Fetch optional supplemental endpoints (404 expected for non-EV/non-supported vehicles)
+        ev_data = await self._fetch_na_optional_endpoint(
+            f"{base_api}/ev/v1/vehicle/{vehicle_id}/charge/summary",
+            vin, dict(rvs_headers), "ev_charge",
+        )
+        climate_data = await self._fetch_na_optional_endpoint(
+            f"{base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/settings",
+            vin, dict(rvs_headers), "climate",
+        )
+        trip_data = await self._fetch_na_optional_endpoint(
+            f"{base_api}/remotetripstats/v1/vehicle/{vehicle_id}?type=SHORT_TERM",
+            vin, dict(rvs_headers), "trip_stats",
+        )
+
         # Return partial data even if one endpoint failed
         result = {
             "na_location": location_data,
             "na_status": status_data,
+            "na_ev": ev_data,
+            "na_climate": climate_data,
+            "na_trip": trip_data,
         }
         self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
         return result
+
+    async def _fetch_na_optional_endpoint(
+        self,
+        url: str,
+        vin: str,
+        headers: dict[str, str],
+        label: str,
+    ) -> dict | None:
+        """Fetch an optional NA endpoint, returning None on 404 (non-EV/unsupported).
+
+        Unlike ``_fetch_rvs_endpoint``, a 404 is logged at DEBUG rather than
+        WARNING since these endpoints are expected to be absent for non-EV or
+        non-supported vehicles.
+
+        Args:
+            url: Full endpoint URL.
+            vin: Vehicle identification number (for logging).
+            headers: Auth headers including vehicle token.
+            label: Human-readable label for log messages.
+
+        Returns:
+            Parsed JSON dict on 200, None on 404 or any other non-200 response.
+        """
+        try:
+            resp = await self._session.get(
+                url=url,
+                headers=headers,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            _LOGGER.debug("NA optional endpoint %s: status=%s for vin=%s", label, resp.status, redact(vin))
+            if resp.status == 200:
+                data = await resp.json()
+                if isinstance(data, dict) and "data" in data:
+                    data = data["data"]
+                return data
+            if resp.status == 404:
+                _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
+            else:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: unexpected HTTP %d for vin=%s",
+                    label, resp.status, redact(vin),
+                )
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("NA optional endpoint %s fetch exception for %s: %s", label, redact(vin), exc)
+        return None
 
     async def _login_na(self) -> bool:
         """Perform the NA-specific OAuth2 + PKCE login flow.

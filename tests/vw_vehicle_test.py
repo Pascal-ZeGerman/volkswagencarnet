@@ -302,6 +302,37 @@ def na_vehicle():
 
 
 @pytest.fixture
+def na_ev_vehicle():
+    """NA vehicle with EV charge, climate and trip data loaded."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    vehicle._states["na_location"] = load_fixture("na_vehicle", "rvs_location.json")
+    vehicle._states["na_ev"] = load_fixture("na_vehicle", "ev_charge.json")
+    vehicle._states["na_climate"] = load_fixture("na_vehicle", "climate_settings.json")
+    vehicle._states["na_trip"] = load_fixture("na_vehicle", "trip_stats.json")
+    return vehicle
+
+
+@pytest.fixture
+def na_ev_charging_vehicle():
+    """NA vehicle with active charging state."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    vehicle._states["na_ev"] = load_fixture("na_vehicle", "ev_charge_active.json")
+    return vehicle
+
+
+@pytest.fixture
 def bare_vehicle():
     """Vehicle with no state data loaded."""
     vehicle = Vehicle(conn=None, url="WVWTEST000000000")
@@ -897,6 +928,85 @@ class TestNAVehicleProperties:
     def test_na_any_window_open_supported(self, na_vehicle):
         """any_window_open supported when na_status present (even if empty)."""
         assert na_vehicle.is_any_window_open_supported is True
+
+
+class TestNAEVProperties:
+    """Test NA EV/climate/trip properties using dedicated fixtures."""
+
+    # EV battery and charging
+    def test_na_battery_level(self, na_ev_vehicle):
+        """battery_level from na_ev state."""
+        assert na_ev_vehicle.battery_level == 85
+
+    def test_na_battery_level_supported(self, na_ev_vehicle):
+        """battery_level supported when na_ev present."""
+        assert na_ev_vehicle.is_battery_level_supported is True
+
+    def test_na_not_charging(self, na_ev_vehicle):
+        """charging is False when chargingStatus is NOT_CHARGING."""
+        assert na_ev_vehicle.charging is False
+
+    def test_na_charging_active(self, na_ev_charging_vehicle):
+        """charging is True when chargingStatus is CHARGING."""
+        assert na_ev_charging_vehicle.charging is True
+
+    def test_na_charging_supported(self, na_ev_vehicle):
+        """charging supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_supported is True
+
+    def test_na_charging_cable_connected(self, na_ev_vehicle):
+        """charging_cable_connected True when plugStatus is CONNECTED."""
+        assert na_ev_vehicle.charging_cable_connected is True
+
+    def test_na_charging_cable_connected_supported(self, na_ev_vehicle):
+        """charging_cable_connected supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_cable_connected_supported is True
+
+    def test_na_charging_time_left_when_not_charging(self, na_ev_vehicle):
+        """charging_time_left is 0 when not charging."""
+        assert na_ev_vehicle.charging_time_left == 0
+
+    def test_na_charging_time_left_when_charging(self, na_ev_charging_vehicle):
+        """charging_time_left returns minutes when charging."""
+        assert na_ev_charging_vehicle.charging_time_left == 45
+
+    def test_na_charging_time_left_supported(self, na_ev_vehicle):
+        """charging_time_left supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_time_left_supported is True
+
+    # Climate
+    def test_na_climatisation_state(self, na_ev_vehicle):
+        """climatisation_state from na_climate state."""
+        assert na_ev_vehicle.climatisation_state == "off"
+
+    def test_na_climatisation_state_supported(self, na_ev_vehicle):
+        """climatisation_state_supported when na_climate present."""
+        assert na_ev_vehicle.is_climatisation_state_supported is True
+
+    def test_na_climatisation_target_temperature(self, na_ev_vehicle):
+        """climatisation_target_temperature from na_climate state."""
+        assert na_ev_vehicle.climatisation_target_temperature == pytest.approx(22.0)
+
+    def test_na_climatisation_target_temperature_supported(self, na_ev_vehicle):
+        """climatisation_target_temperature supported when na_climate present."""
+        assert na_ev_vehicle.is_climatisation_target_temperature_supported is True
+
+    # Trip stats
+    def test_na_last_trip_length(self, na_ev_vehicle):
+        """last_trip_length from na_trip state."""
+        assert na_ev_vehicle.last_trip_length == 42
+
+    def test_na_last_trip_length_supported(self, na_ev_vehicle):
+        """last_trip_length supported when na_trip present."""
+        assert na_ev_vehicle.is_last_trip_length_supported is True
+
+    def test_na_last_trip_duration(self, na_ev_vehicle):
+        """last_trip_duration from na_trip state."""
+        assert na_ev_vehicle.last_trip_duration == 35
+
+    def test_na_last_trip_duration_supported(self, na_ev_vehicle):
+        """last_trip_duration supported when na_trip present."""
+        assert na_ev_vehicle.is_last_trip_duration_supported is True
 
 
 class TestNAVehicleNoData:
