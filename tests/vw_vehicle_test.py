@@ -1137,6 +1137,7 @@ class TestNAWriteCommands:
     async def test_set_charger_start_na_routes_correctly(self):
         """set_charger('start') routes to connection.start_charging_na()."""
         vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
         vehicle._connection.start_charging_na = AsyncMock(return_value=True)
         result = await vehicle.set_charger("start")
         assert result is True
@@ -1146,6 +1147,7 @@ class TestNAWriteCommands:
     async def test_set_charger_stop_na_routes_correctly(self):
         """set_charger('stop') routes to connection.stop_charging_na()."""
         vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING"}
         vehicle._connection.stop_charging_na = AsyncMock(return_value=True)
         result = await vehicle.set_charger("stop")
         assert result is True
@@ -1162,6 +1164,7 @@ class TestNAWriteCommands:
     async def test_set_climatisation_start_na_routes_correctly(self):
         """set_climatisation('start') routes to start_climatisation_na()."""
         vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "OFF"}
         vehicle._connection.start_climatisation_na = AsyncMock(return_value=True)
         result = await vehicle.set_climatisation("start")
         assert result is True
@@ -1171,6 +1174,7 @@ class TestNAWriteCommands:
     async def test_set_climatisation_stop_na_routes_correctly(self):
         """set_climatisation('stop') routes to stop_climatisation_na()."""
         vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "ON"}
         vehicle._connection.stop_climatisation_na = AsyncMock(return_value=True)
         result = await vehicle.set_climatisation("stop")
         assert result is True
@@ -1199,6 +1203,7 @@ class TestNAWriteCommands:
         """set_charger logs WARNING when start_charging_na returns False."""
         import logging
         vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
         vehicle._connection.start_charging_na = AsyncMock(return_value=False)
         with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
             result = await vehicle.set_charger("start")

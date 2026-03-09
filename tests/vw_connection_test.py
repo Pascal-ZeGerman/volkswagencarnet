@@ -2633,6 +2633,7 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
         conn = _make_na_connection_with_tokens()
         conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
         conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
+        conn.validate_tokens = AsyncMock(return_value=True)
         return conn
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
@@ -2685,6 +2686,7 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
         conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
         # Explicitly remove vehicle_session to simulate no token cached
         conn._na_tokens[VIN].pop("vehicle_session", None)
+        conn.validate_tokens = AsyncMock(return_value=True)
         conn._session.put = AsyncMock()
         result = await conn.lock_na(VIN, action="lock")
         assert result is False
@@ -2942,6 +2944,7 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
         conn = _make_na_connection_with_tokens()
         conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
         conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
+        conn.validate_tokens = AsyncMock(return_value=True)
         return conn
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})

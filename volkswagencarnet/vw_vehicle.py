@@ -285,10 +285,11 @@ class Vehicle:
         self._discovered = True
 
     async def _update_na_vehicle(self) -> bool:
-        """Fetch NA vehicle telemetry from RVS endpoints.
+        """Fetch NA vehicle telemetry from RVS and supplemental endpoints.
 
         Calls Connection._get_na_vehicle_data() and stores the result in _states.
-        Returns True if at least partial data was stored, False if all fetches failed.
+        Returns True if _get_na_vehicle_data returned a result dict (even if individual
+        endpoints failed), False only when vehicle session creation itself fails.
         """
         if self._connection is None:
             return False
@@ -452,6 +453,9 @@ class Vehicle:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
                 raise Exception(f'Charging action "{action}" is not supported.')
+            if not self.is_charging_supported:
+                _LOGGER.error("No charging support (vehicle may not be electric)")
+                raise Exception("No charging support.")
             self._requests["latest"] = "Batterycharge"
             if action == "start":
                 result = await self._connection.start_charging_na(self.vin)
@@ -690,6 +694,9 @@ class Vehicle:
             if action not in ["start", "stop"]:
                 _LOGGER.error("Invalid climatisation action: %s", action)
                 raise Exception(f"Invalid climatisation action: {action}")
+            if not self.is_climatisation_state_supported:
+                _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
+                raise Exception("No climatisation support.")
             self._requests["latest"] = "Climatisation"
             if action == "start":
                 result = await self._connection.start_climatisation_na(self.vin)
@@ -2278,17 +2285,17 @@ class Vehicle:
 
     @property
     def zone_front_right(self) -> bool | None:
-        """Return state of zone front left."""
+        """Return state of zone front right."""
         return find_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_RIGHT)
 
     @property
     def zone_front_right_last_updated(self) -> datetime:
-        """Return state of zone front left last updated."""
+        """Return state of zone front right last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_SETTINGS_TS)
 
     @property
     def is_zone_front_right_supported(self) -> bool:
-        """Return true if zone front left is supported."""
+        """Return true if zone front right is supported."""
         return is_valid_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_RIGHT)
 
     # Climatisation, electric
@@ -2446,8 +2453,9 @@ class Vehicle:
     @property
     def is_climatisation_state_supported(self) -> bool:
         """Return true if vehicle has climatisation state."""
-        if self._states.get("na_climate") is not None:
-            return True
+        na_climate = self._states.get("na_climate")
+        if na_climate:
+            return na_climate.get("climatisationStatus") is not None
         return (
             self.is_climatisation_supported
             or self.is_auxiliary_climatisation_supported
@@ -2946,7 +2954,7 @@ class Vehicle:
     # Aggregate door/window status
     @property
     def any_door_open(self) -> bool:
-        """True if any entry in ``exteriorStatus.doorStatus`` is ``"OPEN"``."""
+        """True if any entry in ``exteriorStatus.doorStatus`` is ``"OPEN"``. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
@@ -2955,7 +2963,7 @@ class Vehicle:
 
     @property
     def is_any_door_open_supported(self) -> bool:
-        """True if any_door_open data is available."""
+        """True if any_door_open data is available. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             return (na_status.get("exteriorStatus") or {}).get("doorStatus") is not None
@@ -2963,7 +2971,7 @@ class Vehicle:
 
     @property
     def any_door_unlocked(self) -> bool:
-        """True if any door lock status is UNLOCKED."""
+        """True if any door lock status is UNLOCKED. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
@@ -2972,7 +2980,7 @@ class Vehicle:
 
     @property
     def is_any_door_unlocked_supported(self) -> bool:
-        """True if any_door_unlocked data is available."""
+        """True if any_door_unlocked data is available. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             return (na_status.get("exteriorStatus") or {}).get("doorLockStatus") is not None
@@ -2980,7 +2988,7 @@ class Vehicle:
 
     @property
     def any_window_open(self) -> bool:
-        """True if any window is open."""
+        """True if any window is open. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             window_status = (na_status.get("exteriorStatus") or {}).get("windowStatus") or {}
@@ -2989,7 +2997,7 @@ class Vehicle:
 
     @property
     def is_any_window_open_supported(self) -> bool:
-        """True if any_window_open data is available."""
+        """True if any_window_open data is available. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
             return (na_status.get("exteriorStatus") or {}).get("windowStatus") is not None
