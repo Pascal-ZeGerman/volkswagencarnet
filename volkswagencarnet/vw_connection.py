@@ -1445,7 +1445,15 @@ class Connection:
                     status = resp.status
 
                 if status == 200:
-                    data = await resp.json()
+                    try:
+                        data = await resp.json(content_type=None)
+                    except (json.JSONDecodeError, ValueError) as exc:
+                        body_text = await resp.text()
+                        _LOGGER.warning(
+                            "NA vehicle session: got 200 but body is not valid JSON: %s — body: %.300s",
+                            exc, body_text,
+                        )
+                        return None
                     _LOGGER.debug("NA vehicle session 200 response keys: %s", list(data.keys()))
                     # Support both flat {"carnetVehicleToken": "..."} and wrapped {"data": {"carnetVehicleToken": "..."}}
                     payload = data.get("data") if "data" in data else data
@@ -1755,18 +1763,21 @@ class Connection:
 
         # Parse userId from IDK id_token for RVS headers
         idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
+        decode_failed = False
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
             user_id = claims.get("sub", "")
         except jwt.exceptions.InvalidTokenError as exc:
             _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
             user_id = ""
+            decode_failed = True
 
         if not user_id:
-            _LOGGER.warning(
-                "NA: IDK id_token decoded but 'sub' claim is empty for vin=%s — skipping vehicle data fetch",
-                redact(vin),
-            )
+            if not decode_failed:
+                _LOGGER.warning(
+                    "NA: IDK id_token has no 'sub' claim for vin=%s — skipping vehicle data fetch",
+                    redact(vin),
+                )
             return None
 
         # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
@@ -1817,7 +1828,9 @@ class Connection:
             "na_climate": climate_data,
             "na_trip": trip_data,
         }
-        self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
+        # Only cache if vehicle session is still valid (not invalidated by a 401)
+        if self._na_tokens.get(vin, {}).get("vehicle_session"):
+            self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
         return result
 
     async def _fetch_na_optional_endpoint(
@@ -1826,6 +1839,8 @@ class Connection:
         vin: str,
         headers: dict[str, str],
         label: str,
+        *,
+        _retry: bool = False,
     ) -> dict | None:
         """Fetch an optional NA endpoint, returning None on 404 (non-EV/unsupported).
 
@@ -1833,14 +1848,21 @@ class Connection:
         WARNING since these endpoints are expected to be absent for non-EV or
         non-supported vehicles.
 
+        On 401, the vehicle session cache is invalidated and one retry is
+        attempted (consistent with ``_fetch_rvs_endpoint``). The ``_retry``
+        flag prevents infinite recursion.
+
         Args:
             url: Full endpoint URL.
             vin: Vehicle identification number (for logging).
             headers: Auth headers including vehicle token.
             label: Human-readable label for log messages.
+            _retry: Internal flag — do not pass from outside. True on the
+                retry pass to prevent recursive re-entry.
 
         Returns:
-            Parsed JSON dict on 200, None on 404 or any other non-200 response.
+            Parsed JSON dict on 200/202, ``{}`` on 204, None on 404 or any
+            other non-2xx response.
         """
         try:
             resp = await self._session.get(
@@ -1850,7 +1872,7 @@ class Connection:
                 allow_redirects=False,
             )
             _LOGGER.debug("NA optional endpoint %s: status=%s for vin=%s", label, resp.status, redact(vin))
-            if resp.status == 200:
+            if resp.status in (200, 202):
                 try:
                     data = await resp.json(content_type=None)
                 except (json.JSONDecodeError, aiohttp.ContentTypeError) as exc:
@@ -1863,8 +1885,26 @@ class Connection:
                 if isinstance(data, dict) and "data" in data:
                     data = data["data"]
                 return data
+            if resp.status == 204:
+                return {}  # No content — empty success
             if resp.status == 404:
                 _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
+            elif resp.status == 401 and not _retry:
+                _LOGGER.debug(
+                    "NA optional endpoint %s: 401 for vin=%s — refreshing session and retrying once",
+                    label, redact(vin),
+                )
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                self._na_rvs_cache.pop(vin, None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if vehicle_token:
+                    retry_headers = dict(headers)
+                    retry_headers["Authorization"] = f"Bearer {vehicle_token}"
+                    return await self._fetch_na_optional_endpoint(url, vin, retry_headers, label, _retry=True)
+                _LOGGER.warning(
+                    "NA optional endpoint %s: 401 session refresh failed for vin=%s",
+                    label, redact(vin),
+                )
             elif resp.status == 401:
                 _LOGGER.warning(
                     "NA optional endpoint %s: HTTP 401 (vehicle session rejected) for vin=%s "
@@ -1889,14 +1929,14 @@ class Connection:
 
     # NA write commands (lock/unlock, honk/flash, EV charging, climate) #
 
-    def _get_na_write_headers(self, vin: str) -> dict[str, str]:
+    def _get_na_write_headers(self, vin: str) -> dict[str, str] | None:
         """Build auth headers for NA write commands from cached vehicle session.
 
         Reads vehicle token from ``_na_tokens[vin]["vehicle_session"]["token"]``
         and user_id from IDK id_token JWT claims (no network calls).
 
         Returns a headers dict suitable for PUT/POST requests to NA endpoints.
-        Returns an empty Authorization header string if no token is cached yet.
+        Returns None if the IDK id_token cannot be decoded (re-login required).
         """
         vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token", "")
         idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
@@ -1905,10 +1945,10 @@ class Connection:
             user_id = claims.get("sub", "")
         except jwt.exceptions.InvalidTokenError as exc:
             _LOGGER.warning(
-                "NA write headers: failed to decode IDK id_token for x-user-id "
-                "(write commands for %s will likely be rejected): %s", redact(vin), exc,
+                "NA write headers: failed to decode IDK id_token for %s — aborting command (re-login required): %s",
+                redact(vin), exc,
             )
-            user_id = ""
+            return None
 
         headers: dict[str, str] = {
             "Authorization": f"Bearer {vehicle_token}",
@@ -1949,6 +1989,8 @@ class Connection:
             _LOGGER.warning("NA write: no valid vehicle session token for %s, skipping %s", redact(vin), url)
             return False
         headers = self._get_na_write_headers(vin)
+        if headers is None:
+            return False
 
         if method not in ("put", "post"):
             _LOGGER.error(
@@ -1980,16 +2022,27 @@ class Connection:
                         method.upper(), url, redact(vin),
                     )
                     return False
-                headers["Authorization"] = f"Bearer {vehicle_token}"
+                # Rebuild ALL headers (not just Authorization) so x-mobile-session-id is fresh
+                new_headers = self._get_na_write_headers(vin)
+                if not new_headers:
+                    _LOGGER.warning("NA write: failed to build headers after session refresh for %s", redact(vin))
+                    return False
+                headers.clear()
+                headers.update(new_headers)
                 resp = await _do_request()
                 if resp.status not in (200, 202, 204):
                     _LOGGER.warning(
                         "NA write %s %s: failed after 401 retry (status=%s) for vin=%s",
                         method.upper(), url, resp.status, redact(vin),
                     )
+            elif resp.status not in (200, 202, 204):
+                _LOGGER.warning(
+                    "NA write %s %s: non-2xx response (status=%s) for vin=%s",
+                    method.upper(), url, resp.status, redact(vin),
+                )
             _LOGGER.debug("NA write %s %s: status=%s for vin=%s", method.upper(), url, resp.status, redact(vin))
             return resp.status in (200, 202, 204)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as exc:
             _LOGGER.warning("NA write %s failed for %s: %s", url, redact(vin), exc)
             return False
 

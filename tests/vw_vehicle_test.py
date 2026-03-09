@@ -1216,6 +1216,35 @@ class TestNAWriteCommands:
         assert result is False
         assert any("failed" in msg.lower() for msg in caplog.messages)
 
+    @pytest.mark.asyncio
+    async def test_set_lock_na_skips_when_in_progress(self):
+        """set_lock returns False immediately if lock is already in progress."""
+        vehicle = self._make_na_vehicle()
+        # Seed a recent in-progress request (id key required by _in_progress check)
+        vehicle._requests["lock"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.lock_na = AsyncMock()
+        result = await vehicle.set_lock("lock", spin="")
+        assert result is False
+        vehicle._connection.lock_na.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_skips_when_in_progress(self):
+        """set_honk_and_flash returns False immediately if honk_and_flash is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._requests["honk_and_flash"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.honk_and_flash_na = AsyncMock()
+        result = await vehicle.set_honk_and_flash()
+        assert result is False
+        vehicle._connection.honk_and_flash_na.assert_not_called()
+
 
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""

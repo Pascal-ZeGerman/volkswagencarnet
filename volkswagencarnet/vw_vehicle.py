@@ -913,6 +913,7 @@ class Vehicle:
                 _LOGGER.error("Invalid lock action: %s", action)
                 raise Exception(f"Invalid lock action: {action}")
             if self._in_progress("lock", unknown_offset=-5):
+                _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
             self._requests["latest"] = "Lock"
             result = await self._connection.lock_na(self.vin, action)
@@ -959,6 +960,7 @@ class Vehicle:
         # NA path
         if self._connection is not None and self._connection.is_na:
             if self._in_progress("honk_and_flash", unknown_offset=-5):
+                _LOGGER.debug("NA: honk_and_flash command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
             self._requests["latest"] = "HonkAndFlash"
             result = await self._connection.honk_and_flash_na(self.vin)

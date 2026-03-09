@@ -1,5 +1,6 @@
 """Tests for main connection class."""
 
+import asyncio
 import inspect
 import json
 import logging
@@ -1652,7 +1653,12 @@ def _make_na_connection() -> Connection:
 
 
 def _make_na_connection_with_tokens(spin: str | None = None) -> Connection:
-    """Create an NA Connection with IDK tokens pre-populated."""
+    """Create an NA Connection with IDK tokens pre-populated.
+
+    Pre-populates a vehicle_session entry for VIN with an already-expired token
+    so that _create_na_vehicle_session bypasses the cache on the first call,
+    while still satisfying the Fix 2 guard in _get_na_vehicle_data (the key exists).
+    """
     conn = _make_na_connection()
     if spin:
         conn._spin = spin
@@ -1663,6 +1669,11 @@ def _make_na_connection_with_tokens(spin: str | None = None) -> Connection:
         },
         VIN: {
             "tsp_provider": "ATC",
+            "vehicle_session": {
+                "token": "expired-vehicle-token",
+                "expires_at": time.time() - 3600,  # already expired
+                "issued_at": time.time() - 7200,
+            },
         },
     }
     return conn
@@ -2361,13 +2372,13 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
         conn._session.get = AsyncMock(side_effect=[
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(200, json_data=status_fixture),
-            _mock_resp(404),
-            _mock_resp(404),
-            _mock_resp(404),
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 1/3 (500)
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 2/3 (500)
+            _mock_resp(500, text_data="Internal Server Error"),  # location attempt 3/3 (500 → give up)
+            _mock_resp(200, json_data=status_fixture),           # status (200)
+            _mock_resp(404),                                     # ev_charge (404 → None)
+            _mock_resp(404),                                     # climate_settings (404 → None)
+            _mock_resp(404),                                     # trip_stats (404 → None)
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2386,13 +2397,13 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
         conn._session.get = AsyncMock(side_effect=[
-            _mock_resp(200, json_data=location_fixture),
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(500, text_data="Internal Server Error"),
-            _mock_resp(404),
-            _mock_resp(404),
-            _mock_resp(404),
+            _mock_resp(200, json_data=location_fixture),         # location (200)
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 1/3 (500)
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 2/3 (500)
+            _mock_resp(500, text_data="Internal Server Error"),  # status attempt 3/3 (500 → give up)
+            _mock_resp(404),                                     # ev_charge (404 → None)
+            _mock_resp(404),                                     # climate_settings (404 → None)
+            _mock_resp(404),                                     # trip_stats (404 → None)
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2411,12 +2422,12 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
         conn._session.get = AsyncMock(side_effect=[
-            _mock_resp(401),
-            _mock_resp(200, json_data=location_fixture),
-            _mock_resp(200, json_data=status_fixture),
-            _mock_resp(404),
-            _mock_resp(404),
-            _mock_resp(404),
+            _mock_resp(401),                             # location attempt 1 (401 → refresh session)
+            _mock_resp(200, json_data=location_fixture), # location retry after 401 (200)
+            _mock_resp(200, json_data=status_fixture),   # status (200)
+            _mock_resp(404),                             # ev_charge (404 → None)
+            _mock_resp(404),                             # climate_settings (404 → None)
+            _mock_resp(404),                             # trip_stats (404 → None)
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2438,11 +2449,11 @@ class NAVehicleDataFetchTest(IsolatedAsyncioTestCase):
         conn.validate_tokens = AsyncMock(return_value=True)
         conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
         conn._session.get = AsyncMock(side_effect=[
-            _mock_resp(200, json_data=loc),
-            _mock_resp(200, json_data=status),
-            _mock_resp(200, json_data=ev),
-            _mock_resp(200, json_data=climate),
-            _mock_resp(200, json_data=trip),
+            _mock_resp(200, json_data=loc),     # location (200)
+            _mock_resp(200, json_data=status),  # status (200)
+            _mock_resp(200, json_data=ev),      # ev_charge (200)
+            _mock_resp(200, json_data=climate), # climate_settings (200)
+            _mock_resp(200, json_data=trip),    # trip_stats (200)
         ])
         result = await conn._get_na_vehicle_data(VIN)
         assert result is not None
@@ -2504,12 +2515,23 @@ class NARVSCacheTest(IsolatedAsyncioTestCase):
 
     @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
     async def test_rvs_cache_cleared_on_401(self, _mock_jwt):
-        """401 on location fetch clears the RVS cache."""
+        """401 on location fetch clears the RVS cache, new session re-establishes it."""
         location_fixture = _load_na_fixture("rvs_location.json")
         status_fixture = _load_na_fixture("rvs_status.json")
         conn = _make_na_connection_with_tokens()
         conn.validate_tokens = AsyncMock(return_value=True)
-        conn._create_na_vehicle_session = AsyncMock(return_value="fake-vehicle-token")
+
+        # Simulate _create_na_vehicle_session storing the token back in _na_tokens
+        # (real implementation writes to _na_tokens[vin]["vehicle_session"])
+        async def _fake_create_session(vin):
+            conn._na_tokens.setdefault(vin, {})["vehicle_session"] = {
+                "token": "fake-vehicle-token",
+                "expires_at": time.time() + 3600,
+                "issued_at": time.time(),
+            }
+            return "fake-vehicle-token"
+
+        conn._create_na_vehicle_session = _fake_create_session
         conn._na_rvs_cache[VIN] = {
             "data": {"na_location": location_fixture, "na_status": status_fixture},
             "fetched_at": time.time() - 31,
@@ -2661,7 +2683,8 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
         """lock_na returns False when no vehicle session token is cached."""
         conn = _make_na_connection_with_tokens()
         conn._na_tokens[VIN]["vehicle_id"] = self.VEHICLE_ID
-        # No vehicle_session entry
+        # Explicitly remove vehicle_session to simulate no token cached
+        conn._na_tokens[VIN].pop("vehicle_session", None)
         conn._session.put = AsyncMock()
         result = await conn.lock_na(VIN, action="lock")
         assert result is False
@@ -2717,6 +2740,50 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
         assert result is True
         call_url = conn._session.post.call_args.kwargs["url"]
         assert f"/ev/v1/vehicle/{self.VEHICLE_ID}/pretripclimate/stop" in call_url
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_start_charging_na_uses_post(self, _mock_jwt):
+        """start_charging_na uses POST, not PUT."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        conn._session.put = AsyncMock()
+        result = await conn.start_charging_na(VIN)
+        assert result is True
+        conn._session.post.assert_called_once()
+        conn._session.put.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_stop_charging_na_uses_post(self, _mock_jwt):
+        """stop_charging_na uses POST, not PUT."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        conn._session.put = AsyncMock()
+        result = await conn.stop_charging_na(VIN)
+        assert result is True
+        conn._session.post.assert_called_once()
+        conn._session.put.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_start_climatisation_na_uses_post(self, _mock_jwt):
+        """start_climatisation_na uses POST, not PUT."""
+        conn = self._make_conn()
+        conn._session.post = AsyncMock(return_value=_mock_resp(200))
+        conn._session.put = AsyncMock()
+        result = await conn.start_climatisation_na(VIN)
+        assert result is True
+        conn._session.post.assert_called_once()
+        conn._session.put.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_uses_put(self, _mock_jwt):
+        """lock_na uses PUT, not POST."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(return_value=_mock_resp(200))
+        conn._session.post = AsyncMock()
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is True
+        conn._session.put.assert_called_once()
+        conn._session.post.assert_not_called()
 
 
 class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
@@ -2797,6 +2864,24 @@ class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
         conn._session.get = AsyncMock(side_effect=aiohttp.ClientConnectionError("connection refused"))
         result = await conn._fetch_na_optional_endpoint(self.URL, VIN, {}, "ev_charge")
         assert result is None
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_optional_endpoint_401_invalidates_session_and_cache(self, _mock_jwt):
+        """On 401, vehicle session is popped and RVS cache is cleared."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "old-token"}
+        conn._na_rvs_cache[VIN] = {"data": {}, "fetched_at": 0.0}
+        conn._create_na_vehicle_session = AsyncMock(return_value=None)  # retry fails
+        conn._session.get = AsyncMock(return_value=_mock_resp(401))
+
+        headers = {"Authorization": "Bearer old-token"}
+        result = await conn._fetch_na_optional_endpoint(
+            f"{BASE_API}/ev/v1/vehicle/test-id/charge/summary", VIN, headers, "ev_charge"
+        )
+
+        assert result is None
+        assert "vehicle_session" not in conn._na_tokens.get(VIN, {})
+        assert VIN not in conn._na_rvs_cache
 
 
 class TestTriggerNARVSRefresh(IsolatedAsyncioTestCase):
@@ -2908,7 +2993,14 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
     async def test_lock_na_401_retry_uses_new_token_in_headers(self, _mock_jwt):
         """After 401 + session refresh, the retry request carries the new Authorization token."""
         conn = self._make_conn()
-        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+
+        # Simulate _create_na_vehicle_session storing the new token in _na_tokens
+        # (real implementation writes to _na_tokens[vin]["vehicle_session"])
+        async def _fake_create_session(vin):
+            conn._na_tokens.setdefault(vin, {})["vehicle_session"] = {"token": "new-vehicle-token"}
+            return "new-vehicle-token"
+
+        conn._create_na_vehicle_session = _fake_create_session
         conn._session.put = AsyncMock(side_effect=[
             _mock_resp(401),
             _mock_resp(200),
@@ -2918,6 +3010,14 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
         assert conn._session.put.call_count == 2
         second_call_headers = conn._session.put.call_args_list[1].kwargs["headers"]
         assert second_call_headers["Authorization"] == "Bearer new-vehicle-token"
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_lock_na_returns_false_on_timeout(self, _mock_jwt):
+        """asyncio.TimeoutError from the network call returns False."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(side_effect=asyncio.TimeoutError())
+        result = await conn.lock_na(VIN, action="lock")
+        assert result is False
 
 
 class NATokenValidationTest(IsolatedAsyncioTestCase):
