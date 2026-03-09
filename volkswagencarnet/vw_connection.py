@@ -1640,8 +1640,18 @@ class Connection:
                     if resp.status not in (200, 202, 204):
                         _LOGGER.warning("NA RVS %s: 401 retry failed (status=%s), giving up", label, resp.status)
                         return None
-                if resp.status in (200, 202, 204):
-                    data = await resp.json()
+                if resp.status == 204:
+                    return None  # No content — RVS endpoints always return JSON on success
+                if resp.status in (200, 202):
+                    try:
+                        data = await resp.json(content_type=None)
+                    except (json.JSONDecodeError, aiohttp.ContentTypeError) as exc:
+                        body_preview = await resp.text()
+                        _LOGGER.warning(
+                            "NA RVS %s: failed to decode JSON for vin=%s: %s — body: %.200s",
+                            label, redact(vin), exc, body_preview,
+                        )
+                        return None
                     if isinstance(data, dict) and "data" in data:
                         data = data["data"]
                     _LOGGER.debug("NA RVS %s response: %s", label, data)

@@ -1467,7 +1467,7 @@ class Vehicle:
         ``"CHARGING"``, ``"CHARGING_AC"``, or ``"CHARGING_DC"``.
         """
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("chargingStatus") in ("CHARGING", "CHARGING_AC", "CHARGING_DC")
         return find_path(self.attrs, Paths.CHARGING_STATE) == "charging"
 
@@ -1480,7 +1480,7 @@ class Vehicle:
     def is_charging_supported(self) -> bool:
         """Return true if charging is supported."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("chargingStatus") is not None
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
@@ -1554,7 +1554,7 @@ class Vehicle:
     def battery_level(self) -> int | None:
         """Return battery level."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("batteryPercentageAvailable")
         return find_path(self.attrs, Paths.BATTERY_SOC)
 
@@ -1567,7 +1567,7 @@ class Vehicle:
     def is_battery_level_supported(self) -> bool:
         """Return true if battery level is supported."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("batteryPercentageAvailable") is not None
         return is_valid_path(self.attrs, Paths.BATTERY_SOC)
 
@@ -1671,7 +1671,7 @@ class Vehicle:
     def charging_cable_connected(self) -> bool:
         """Return plug connected state."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("plugStatus") in ("CONNECTED", "CHARGING")
         response = find_path(self.attrs, Paths.PLUG_CONN)
         return response == "connected"
@@ -1685,7 +1685,7 @@ class Vehicle:
     def is_charging_cable_connected_supported(self) -> bool:
         """Return true if supported."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("plugStatus") is not None
         return is_valid_path(self.attrs, Paths.PLUG_CONN)
 
@@ -1693,7 +1693,7 @@ class Vehicle:
     def charging_time_left(self) -> int | None:
         """Return minutes to charging complete."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("remainingChargingTime")
         if is_valid_path(self.attrs, Paths.CHARGING_TIME_LEFT):
             return find_path(self.attrs, Paths.CHARGING_TIME_LEFT)
@@ -1708,7 +1708,7 @@ class Vehicle:
     def is_charging_time_left_supported(self) -> bool:
         """Return true if charging time left is supported."""
         na_ev = self._states.get("na_ev")
-        if na_ev is not None:
+        if na_ev:
             return na_ev.get("remainingChargingTime") is not None
         # EMEA: intentionally checks CHARGING_STATE (not CHARGING_TIME_LEFT) — preserved from original.
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
@@ -2197,7 +2197,7 @@ class Vehicle:
     def climatisation_target_temperature(self) -> float | None:
         """Return the target temperature from climater."""
         na_climate = self._states.get("na_climate")
-        if na_climate is not None:
+        if na_climate:
             temp = na_climate.get("targetTemperature_C")
             return float(temp) if temp is not None else None
         temp = find_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
@@ -2212,7 +2212,7 @@ class Vehicle:
     def is_climatisation_target_temperature_supported(self) -> bool:
         """Return true if climatisation target temperature is supported."""
         na_climate = self._states.get("na_climate")
-        if na_climate is not None:
+        if na_climate:
             return na_climate.get("targetTemperature_C") is not None
         return is_valid_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
 
@@ -2425,7 +2425,7 @@ class Vehicle:
     def climatisation_state(self) -> str | None:
         """Return state of climatisation."""
         na_climate = self._states.get("na_climate")
-        if na_climate is not None:
+        if na_climate:
             return na_climate.get("climatisationStatus")
         climatisation_state = None
         if is_valid_path(self.attrs, Paths.CLIMATISATION_AUX_STATE):
@@ -3453,7 +3453,7 @@ class Vehicle:
     @property
     def last_trip_duration(self) -> Any:
         na_trip = self._states.get("na_trip")
-        if na_trip is not None:
+        if na_trip:
             return na_trip.get("tripDuration")
         return self._get_trip_value(Services.TRIP_LAST, "travelTime")
 
@@ -3470,7 +3470,7 @@ class Vehicle:
     @property
     def last_trip_length(self) -> Any:
         na_trip = self._states.get("na_trip")
-        if na_trip is not None:
+        if na_trip:
             return na_trip.get("tripDistance")
         return self._get_trip_value(Services.TRIP_LAST, "mileage_km")
 
