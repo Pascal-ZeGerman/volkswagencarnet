@@ -2891,55 +2891,6 @@ class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
         assert VIN not in conn._na_rvs_cache
 
 
-class TestTriggerNARVSRefresh(IsolatedAsyncioTestCase):
-    """Tests for Connection._trigger_na_rvs_refresh()."""
-
-    def _make_conn_with_session_token(self) -> Connection:
-        conn = _make_na_connection_with_tokens()
-        conn._na_tokens[VIN]["vehicle_id"] = VIN
-        conn._na_tokens[VIN]["vehicle_session"] = {"token": "fake-vehicle-token"}
-        return conn
-
-    async def test_rvs_refresh_returns_false_when_no_token(self):
-        """Returns False immediately when no vehicle session token is cached."""
-        conn = _make_na_connection_with_tokens()
-        conn._na_tokens[VIN].pop("vehicle_session", None)
-        conn._session.post = AsyncMock()
-        result = await conn._trigger_na_rvs_refresh(VIN)
-        assert result is False
-        conn._session.post.assert_not_called()
-
-    async def test_rvs_refresh_returns_true_on_200(self):
-        """Returns True on HTTP 200."""
-        conn = self._make_conn_with_session_token()
-        conn._session.post = AsyncMock(return_value=_mock_resp(200))
-        result = await conn._trigger_na_rvs_refresh(VIN)
-        assert result is True
-
-    async def test_rvs_refresh_returns_true_on_202(self):
-        """Returns True on HTTP 202 (Accepted)."""
-        conn = self._make_conn_with_session_token()
-        conn._session.post = AsyncMock(return_value=_mock_resp(202))
-        result = await conn._trigger_na_rvs_refresh(VIN)
-        assert result is True
-
-    async def test_rvs_refresh_returns_false_on_non_2xx_with_warning(self):
-        """Returns False on HTTP 500 and logs WARNING about stale telemetry."""
-        conn = self._make_conn_with_session_token()
-        conn._session.post = AsyncMock(return_value=_mock_resp(500))
-        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
-            result = await conn._trigger_na_rvs_refresh(VIN)
-        assert result is False
-        assert any("non-2xx" in msg and "telemetry" in msg for msg in log_ctx.output)
-
-    async def test_rvs_refresh_returns_false_on_client_error(self):
-        """Returns False when aiohttp.ClientError is raised."""
-        conn = self._make_conn_with_session_token()
-        conn._session.post = AsyncMock(side_effect=aiohttp.ClientConnectionError("no route"))
-        result = await conn._trigger_na_rvs_refresh(VIN)
-        assert result is False
-
-
 class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
     """Edge case tests for Connection._na_write_request()."""
 

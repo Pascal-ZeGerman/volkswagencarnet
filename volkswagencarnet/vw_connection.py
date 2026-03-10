@@ -1680,77 +1680,6 @@ class Connection:
             _LOGGER.warning("NA RVS %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
 
-    async def _trigger_na_rvs_refresh(self, vin: str) -> bool:
-        """Ask vehicle to push fresh RVS state (optional pre-fetch wake-up).
-
-        Sends POST to ``/rvs/v1/vehicle/{vehicleId}/refresh`` to prompt the
-        vehicle to upload the latest telemetry before the next data fetch.
-        Failure is non-fatal — the caller should proceed with the existing
-        cached data.
-
-        Args:
-            vin: Vehicle Identification Number.
-
-        Returns:
-            True if HTTP response is 200, 202, or 204, False otherwise.
-        """
-        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
-        vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token")
-        if not vehicle_token:
-            _LOGGER.debug("NA RVS refresh: no vehicle session token for %s, skipping", redact(vin))
-            return False
-
-        # Derive user_id from IDK id_token (same pattern as _get_na_vehicle_data)
-        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
-        user_id = ""
-        try:
-            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
-            user_id = claims.get("sub", "")
-        except jwt.exceptions.InvalidTokenError as exc:
-            _LOGGER.debug(
-                "NA RVS refresh: failed to decode IDK id_token for x-user-id: %s — proceeding without it",
-                exc,
-            )
-
-        url = f"{self._base_api}/rvs/v1/vehicle/{vehicle_id}/refresh"
-        headers: dict[str, str] = {
-            "Authorization": f"Bearer {vehicle_token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "x-app-version": APP_VERSION,
-        }
-        if user_id:
-            headers["x-user-id"] = user_id
-        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
-        if session_id:
-            headers["x-mobile-session-id"] = session_id
-        try:
-            resp = await self._session.post(
-                url=url,
-                headers=headers,
-                json={},
-                timeout=ClientTimeout(total=TIMEOUT.seconds),
-                allow_redirects=False,
-            )
-            _LOGGER.debug("NA RVS refresh: status=%s for vin=%s", resp.status, redact(vin))
-            if resp.status == 401:
-                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
-                self._na_rvs_cache.pop(vin, None)
-                _LOGGER.warning(
-                    "NA RVS refresh: HTTP 401 for vin=%s — invalidated vehicle session",
-                    redact(vin),
-                )
-                return False
-            if resp.status not in (200, 202, 204):
-                _LOGGER.warning(
-                    "NA RVS refresh: non-2xx (status=%s) for vin=%s — vehicle telemetry may not be fresh",
-                    resp.status, redact(vin),
-                )
-            return resp.status in (200, 202, 204)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            _LOGGER.warning("NA RVS refresh failed for %s: %s", redact(vin), exc)
-            return False
-
     async def _get_na_vehicle_data(self, vin: str) -> dict | None:
         """Fetch NA vehicle telemetry from RVS and supplemental endpoints.
 
@@ -1929,7 +1858,7 @@ class Connection:
                     data = data["data"]
                 return data
             if resp.status == 204:
-                return {}  # No content — empty success
+                return None  # No content — consistent with _fetch_rvs_endpoint
             if resp.status == 404:
                 _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
             elif resp.status == 401 and not _retry:
@@ -2071,6 +2000,21 @@ class Connection:
 
         try:
             resp = await _do_request()
+            # Rate-limit retry (429) with exponential backoff
+            if resp.status == 429:
+                for attempt in range(1, MAX_RETRIES_ON_RATE_LIMIT + 1):
+                    delay = min(2**attempt, 30)
+                    _LOGGER.warning(
+                        "NA write %s %s: rate limited (429) for vin=%s, retrying in %.0fs (attempt %d/%d)",
+                        method.upper(), url, redact(vin), delay, attempt, MAX_RETRIES_ON_RATE_LIMIT,
+                    )
+                    await asyncio.sleep(delay)
+                    resp = await _do_request()
+                    if resp.status != 429:
+                        break
+                if resp.status == 429:
+                    _LOGGER.warning("NA write %s %s: rate limited after %d retries for vin=%s", method.upper(), url, MAX_RETRIES_ON_RATE_LIMIT, redact(vin))
+                    return False
             if resp.status == 401:
                 _LOGGER.warning("NA write %s %s: HTTP 401 (vehicle session expired) for vin=%s — refreshing and retrying once", method.upper(), url, redact(vin))
                 self._na_tokens.get(vin, {}).pop("vehicle_session", None)

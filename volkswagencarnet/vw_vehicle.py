@@ -456,7 +456,11 @@ class Vehicle:
             if not self.is_charging_supported:
                 _LOGGER.error("No charging support (vehicle may not be electric)")
                 raise Exception("No charging support.")
+            if self._in_progress("charging", unknown_offset=-5):
+                _LOGGER.debug("NA: charging command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
             self._requests["latest"] = "Batterycharge"
+            self._requests["charging"] = {"id": "na-charging-in-flight", "timestamp": datetime.now(UTC)}
             if action == "start":
                 result = await self._connection.start_charging_na(self.vin)
             else:
@@ -697,7 +701,11 @@ class Vehicle:
             if not self.is_climatisation_state_supported:
                 _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
                 raise Exception("No climatisation support.")
+            if self._in_progress("climatisation", unknown_offset=-5):
+                _LOGGER.debug("NA: climatisation command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
             self._requests["latest"] = "Climatisation"
+            self._requests["climatisation"] = {"id": "na-climatisation-in-flight", "timestamp": datetime.now(UTC)}
             if action == "start":
                 result = await self._connection.start_climatisation_na(self.vin)
             else:
@@ -923,6 +931,7 @@ class Vehicle:
                 _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
             self._requests["latest"] = "Lock"
+            self._requests["lock"] = {"id": "na-lock-in-flight", "timestamp": datetime.now(UTC)}
             result = await self._connection.lock_na(self.vin, action)
             if not result:
                 _LOGGER.warning("NA: %s command failed for vin=%s", action, self.vin)
@@ -970,6 +979,7 @@ class Vehicle:
                 _LOGGER.debug("NA: honk_and_flash command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
             self._requests["latest"] = "HonkAndFlash"
+            self._requests["honk_and_flash"] = {"id": "na-honk-in-flight", "timestamp": datetime.now(UTC)}
             result = await self._connection.honk_and_flash_na(self.vin)
             if not result:
                 _LOGGER.warning("NA: honk_and_flash command failed for vin=%s", self.vin)
