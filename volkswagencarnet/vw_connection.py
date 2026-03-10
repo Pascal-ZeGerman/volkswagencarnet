@@ -1833,8 +1833,8 @@ class Connection:
                 retry pass to prevent recursive re-entry.
 
         Returns:
-            Parsed JSON dict on 200/202, ``{}`` on 204, None on 404 or any
-            other non-2xx response.
+            Parsed JSON dict on 200/202, None on 204/404 or any other
+            non-2xx response.
         """
         try:
             resp = await self._session.get(
