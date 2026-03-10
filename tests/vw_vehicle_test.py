@@ -1250,6 +1250,36 @@ class TestNAWriteCommands:
         assert result is False
         vehicle._connection.honk_and_flash_na.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_set_charger_na_skips_when_in_progress(self):
+        """set_charger returns False immediately if charging is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
+        vehicle._requests["charging"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.start_charging_na = AsyncMock()
+        result = await vehicle.set_charger("start")
+        assert result is False
+        vehicle._connection.start_charging_na.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_na_skips_when_in_progress(self):
+        """set_climatisation returns False immediately if climatisation is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "OFF"}
+        vehicle._requests["climatisation"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.start_climatisation_na = AsyncMock()
+        result = await vehicle.set_climatisation("start")
+        assert result is False
+        vehicle._connection.start_climatisation_na.assert_not_called()
+
 
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""

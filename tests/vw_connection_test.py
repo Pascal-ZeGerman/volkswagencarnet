@@ -2890,6 +2890,30 @@ class TestFetchNAOptionalEndpoint(IsolatedAsyncioTestCase):
         assert "vehicle_session" not in conn._na_tokens.get(VIN, {})
         assert VIN not in conn._na_rvs_cache
 
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_optional_endpoint_401_retries_with_new_token_on_success(self, _mock_jwt):
+        """401 → session refresh succeeds → retry returns 200 with data."""
+        conn = _make_na_connection_with_tokens()
+        conn._na_tokens[VIN]["vehicle_session"] = {"token": "old-token"}
+
+        async def _fake_create_session(vin):
+            conn._na_tokens.setdefault(vin, {})["vehicle_session"] = {"token": "new-vehicle-token"}
+            return "new-vehicle-token"
+
+        conn._create_na_vehicle_session = AsyncMock(side_effect=_fake_create_session)
+        conn._session.get = AsyncMock(side_effect=[
+            _mock_resp(401),
+            _mock_resp(200, json_data={"batteryPercentageAvailable": 75}),
+        ])
+
+        headers = {"Authorization": "Bearer old-token"}
+        result = await conn._fetch_na_optional_endpoint(
+            f"{BASE_API}/ev/v1/vehicle/test-id/charge/summary", VIN, headers, "ev_charge"
+        )
+
+        assert result == {"batteryPercentageAvailable": 75}
+        assert conn._session.get.call_count == 2
+
 
 class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
     """Edge case tests for Connection._na_write_request()."""
@@ -2982,6 +3006,61 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
         conn._session.put = AsyncMock(side_effect=asyncio.TimeoutError())
         result = await conn.lock_na(VIN, action="lock")
         assert result is False
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_na_write_429_retries_then_succeeds(self, _mock_jwt, _mock_sleep):
+        """429 on first attempt, 200 on retry → returns True."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock(side_effect=[_mock_resp(429), _mock_resp(200)])
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        result = await conn._na_write_request(VIN, url, method="put")
+        assert result is True
+        assert conn._session.put.call_count == 2
+
+    @patch("volkswagencarnet.vw_connection.asyncio.sleep", new_callable=AsyncMock)
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"sub": USER_ID})
+    async def test_na_write_429_exhausts_retries_returns_false(self, _mock_jwt, _mock_sleep):
+        """All attempts return 429 → returns False."""
+        conn = self._make_conn()
+        # Initial + MAX_RETRIES_ON_RATE_LIMIT retries all return 429
+        conn._session.put = AsyncMock(return_value=_mock_resp(429))
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
+            result = await conn._na_write_request(VIN, url, method="put")
+        assert result is False
+        assert any("rate limited after" in msg for msg in log_ctx.output)
+
+    async def test_na_write_returns_false_when_validate_tokens_fails(self):
+        """validate_tokens returns False → returns False, no HTTP call made."""
+        conn = self._make_conn()
+        conn.validate_tokens = AsyncMock(return_value=False)
+        conn._session.put = AsyncMock()
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        result = await conn._na_write_request(VIN, url, method="put")
+        assert result is False
+        conn._session.put.assert_not_called()
+
+    async def test_na_write_returns_false_when_jwt_decode_fails(self):
+        """Corrupt id_token causes jwt.decode to raise → returns False."""
+        conn = self._make_conn()
+        conn._na_tokens["idk"]["id_token"] = "not-a-jwt"
+        conn._session.put = AsyncMock()
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        # Let real jwt.decode run — "not-a-jwt" will raise DecodeError
+        result = await conn._na_write_request(VIN, url, method="put")
+        assert result is False
+        conn._session.put.assert_not_called()
+
+    @patch("volkswagencarnet.vw_connection.jwt.decode", return_value={"iss": "vw"})
+    async def test_na_write_returns_false_when_sub_claim_missing(self, _mock_jwt):
+        """jwt.decode returns claims without 'sub' → returns False."""
+        conn = self._make_conn()
+        conn._session.put = AsyncMock()
+        url = f"{conn._base_api}/lockunlock/v1/vehicle/{self.VEHICLE_ID}"
+        result = await conn._na_write_request(VIN, url, method="put")
+        assert result is False
+        conn._session.put.assert_not_called()
 
 
 class NATokenValidationTest(IsolatedAsyncioTestCase):

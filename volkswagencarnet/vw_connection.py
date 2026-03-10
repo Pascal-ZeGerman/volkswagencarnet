@@ -1641,7 +1641,7 @@ class Connection:
                         _LOGGER.warning("NA RVS %s: 401 retry failed (status=%s), giving up", label, resp.status)
                         return None
                 if resp.status == 204:
-                    return None  # No content — RVS endpoints always return JSON on success
+                    return None  # 204 No Content — nothing to parse
                 if resp.status in (200, 202):
                     try:
                         data = await resp.json(content_type=None)
@@ -1858,7 +1858,7 @@ class Connection:
                     data = data["data"]
                 return data
             if resp.status == 204:
-                return None  # No content — consistent with _fetch_rvs_endpoint
+                return None  # 204 No Content — nothing to parse
             if resp.status == 404:
                 _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
             elif resp.status == 401 and not _retry:
@@ -1908,7 +1908,8 @@ class Connection:
         and user_id from IDK id_token JWT claims (no network calls).
 
         Returns a headers dict suitable for PUT/POST requests to NA endpoints.
-        Returns None if the IDK id_token cannot be decoded (re-login required).
+        Returns None if the vehicle session token is missing, the IDK id_token
+        cannot be decoded (JWT error), or the ``sub`` claim is absent (re-login required).
         """
         vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token", "")
         if not vehicle_token:
@@ -1954,10 +1955,11 @@ class Connection:
         method: str = "put",
         body: dict | None = None,
     ) -> bool:
-        """Execute a NA write command (PUT or POST) with single 401 retry.
+        """Execute a NA write command (PUT or POST) with 401 retry and 429 rate-limit backoff.
 
         On 401 the cached vehicle session is discarded and re-created once
-        before retrying. Non-2xx responses that are not 401 are logged and
+        before retrying. On 429 (rate limited), retries up to ``MAX_RETRIES_ON_RATE_LIMIT``
+        times with exponential backoff. Other non-2xx responses are logged and
         return False.
 
         Args:
@@ -2042,14 +2044,15 @@ class Connection:
                         self._na_tokens.get(vin, {}).pop("vehicle_session", None)
                         self._na_rvs_cache.pop(vin, None)
             elif resp.status not in (200, 202, 204):
+                body_preview = await resp.text()
                 _LOGGER.warning(
-                    "NA write %s %s: non-2xx response (status=%s) for vin=%s",
-                    method.upper(), url, resp.status, redact(vin),
+                    "NA write %s %s: non-2xx response (status=%s) for vin=%s — body: %.200s",
+                    method.upper(), url, resp.status, redact(vin), body_preview,
                 )
             _LOGGER.debug("NA write %s %s: status=%s for vin=%s", method.upper(), url, resp.status, redact(vin))
             return resp.status in (200, 202, 204)
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            _LOGGER.warning("NA write %s failed for %s: %s", url, redact(vin), exc)
+            _LOGGER.warning("NA write %s %s failed for %s: %s", method.upper(), url, redact(vin), exc)
             return False
 
     async def lock_na(self, vin: str, action: str = "lock") -> bool:
