@@ -302,6 +302,37 @@ def na_vehicle():
 
 
 @pytest.fixture
+def na_ev_vehicle():
+    """NA vehicle with EV charge, climate and trip data loaded."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    vehicle._states["na_location"] = load_fixture("na_vehicle", "rvs_location.json")
+    vehicle._states["na_ev"] = load_fixture("na_vehicle", "ev_charge.json")
+    vehicle._states["na_climate"] = load_fixture("na_vehicle", "climate_settings.json")
+    vehicle._states["na_trip"] = load_fixture("na_vehicle", "trip_stats.json")
+    return vehicle
+
+
+@pytest.fixture
+def na_ev_charging_vehicle():
+    """NA vehicle with active charging state."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    vehicle._states["na_ev"] = load_fixture("na_vehicle", "ev_charge_active.json")
+    return vehicle
+
+
+@pytest.fixture
 def bare_vehicle():
     """Vehicle with no state data loaded."""
     vehicle = Vehicle(conn=None, url="WVWTEST000000000")
@@ -840,6 +871,415 @@ class TestNAVehicleProperties:
         """NA vehicle __str__."""
         assert str(na_vehicle) == "3VV4X7B27RM030662"
 
+    def test_na_odometer(self, na_vehicle):
+        """NA odometer from currentMileage in rvs_status."""
+        assert na_vehicle.distance == 12500
+
+    def test_na_odometer_supported(self, na_vehicle):
+        """NA odometer supported when na_status present."""
+        assert na_vehicle.is_distance_supported is True
+
+    def test_na_fuel_level(self, na_vehicle):
+        """NA fuel level from powerStatus.fuelPercentRemaining."""
+        assert na_vehicle.fuel_level == 75
+
+    def test_na_fuel_level_supported(self, na_vehicle):
+        """NA fuel level supported when field present in na_status."""
+        assert na_vehicle.is_fuel_level_supported is True
+
+    def test_na_combustion_range(self, na_vehicle):
+        """NA range from powerStatus.cruiseRange."""
+        assert na_vehicle.combustion_range == 280
+
+    def test_na_combustion_range_supported(self, na_vehicle):
+        """NA combustion range supported when field present."""
+        assert na_vehicle.is_combustion_range_supported is True
+
+    def test_na_any_door_open_all_closed(self, na_vehicle):
+        """any_door_open is False when all doors CLOSED."""
+        assert na_vehicle.any_door_open is False
+
+    def test_na_any_door_open_supported(self, na_vehicle):
+        """any_door_open supported when na_status present."""
+        assert na_vehicle.is_any_door_open_supported is True
+
+    def test_na_any_door_open_true(self):
+        """any_door_open is True when a door is OPEN."""
+        import copy
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        rvs_status = load_fixture("na_vehicle", "rvs_status.json")
+        status = copy.deepcopy(rvs_status)
+        status["exteriorStatus"]["doorStatus"]["frontLeft"] = "OPEN"
+        vehicle._states["na_status"] = status
+        assert vehicle.any_door_open is True
+
+    def test_na_any_door_unlocked_all_locked(self, na_vehicle):
+        """any_door_unlocked is False when all doors LOCKED."""
+        assert na_vehicle.any_door_unlocked is False
+
+    def test_na_any_door_unlocked_supported(self, na_vehicle):
+        """any_door_unlocked supported when na_status present."""
+        assert na_vehicle.is_any_door_unlocked_supported is True
+
+    def test_na_any_window_open_supported(self, na_vehicle):
+        """any_window_open supported when na_status present (even if empty)."""
+        assert na_vehicle.is_any_window_open_supported is True
+
+    def test_any_window_open_true(self):
+        """any_window_open is True when windowStatus has an OPEN entry."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "windowStatus": {"frontLeft": "OPEN", "frontRight": "CLOSED"},
+            }
+        }
+        assert vehicle.any_window_open is True
+
+    def test_any_door_unlocked_true(self):
+        """any_door_unlocked is True when doorLockStatus has an UNLOCKED entry."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorLockStatus": {"frontLeft": "UNLOCKED", "frontRight": "LOCKED"},
+            }
+        }
+        assert vehicle.any_door_unlocked is True
+
+    def test_is_any_door_open_not_supported_when_exterior_status_absent(self):
+        """is_any_door_open_supported is False when na_status lacks exteriorStatus."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}  # no exteriorStatus
+        assert vehicle.is_any_door_open_supported is False
+
+
+class TestNAEVProperties:
+    """Test NA EV/climate/trip properties using dedicated fixtures."""
+
+    # EV battery and charging
+    def test_na_battery_level(self, na_ev_vehicle):
+        """battery_level from na_ev state."""
+        assert na_ev_vehicle.battery_level == 85
+
+    def test_na_battery_level_supported(self, na_ev_vehicle):
+        """battery_level supported when na_ev present."""
+        assert na_ev_vehicle.is_battery_level_supported is True
+
+    def test_na_not_charging(self, na_ev_vehicle):
+        """charging is False when chargingStatus is NOT_CHARGING."""
+        assert na_ev_vehicle.charging is False
+
+    def test_na_charging_active(self, na_ev_charging_vehicle):
+        """charging is True when chargingStatus is CHARGING."""
+        assert na_ev_charging_vehicle.charging is True
+
+    def test_na_charging_supported(self, na_ev_vehicle):
+        """charging supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_supported is True
+
+    def test_na_charging_cable_connected(self, na_ev_vehicle):
+        """charging_cable_connected True when plugStatus is CONNECTED."""
+        assert na_ev_vehicle.charging_cable_connected is True
+
+    def test_na_charging_cable_connected_supported(self, na_ev_vehicle):
+        """charging_cable_connected supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_cable_connected_supported is True
+
+    def test_na_charging_time_left_when_not_charging(self, na_ev_vehicle):
+        """charging_time_left is 0 when not charging."""
+        assert na_ev_vehicle.charging_time_left == 0
+
+    def test_na_charging_time_left_when_charging(self, na_ev_charging_vehicle):
+        """charging_time_left returns minutes when charging."""
+        assert na_ev_charging_vehicle.charging_time_left == 45
+
+    def test_na_charging_time_left_supported(self, na_ev_vehicle):
+        """charging_time_left supported when na_ev present."""
+        assert na_ev_vehicle.is_charging_time_left_supported is True
+
+    # Climate
+    def test_na_climatisation_state(self, na_ev_vehicle):
+        """climatisation_state from na_climate state."""
+        assert na_ev_vehicle.climatisation_state == "off"
+
+    def test_na_climatisation_state_supported(self, na_ev_vehicle):
+        """climatisation_state_supported when na_climate present."""
+        assert na_ev_vehicle.is_climatisation_state_supported is True
+
+    def test_na_climatisation_target_temperature(self, na_ev_vehicle):
+        """climatisation_target_temperature from na_climate state."""
+        assert na_ev_vehicle.climatisation_target_temperature == pytest.approx(22.0)
+
+    def test_na_climatisation_target_temperature_supported(self, na_ev_vehicle):
+        """climatisation_target_temperature supported when na_climate present."""
+        assert na_ev_vehicle.is_climatisation_target_temperature_supported is True
+
+    # Trip stats
+    def test_na_last_trip_length(self, na_ev_vehicle):
+        """last_trip_length from na_trip state."""
+        assert na_ev_vehicle.last_trip_length == 42
+
+    def test_na_last_trip_length_supported(self, na_ev_vehicle):
+        """last_trip_length supported when na_trip present."""
+        assert na_ev_vehicle.is_last_trip_length_supported is True
+
+    def test_na_last_trip_duration(self, na_ev_vehicle):
+        """last_trip_duration from na_trip state."""
+        assert na_ev_vehicle.last_trip_duration == 35
+
+    def test_na_last_trip_duration_supported(self, na_ev_vehicle):
+        """last_trip_duration supported when na_trip present."""
+        assert na_ev_vehicle.is_last_trip_duration_supported is True
+
+    def test_na_charging_active_ac(self):
+        """charging is True when chargingStatus is CHARGING_AC."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_AC", "batteryPercentageAvailable": 50}
+        assert vehicle.charging is True
+
+    def test_na_charging_active_dc(self):
+        """charging is True when chargingStatus is CHARGING_DC."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_DC", "batteryPercentageAvailable": 30}
+        assert vehicle.charging is True
+
+    def test_na_battery_level_not_supported_when_field_absent(self):
+        """is_battery_level_supported is False when na_ev lacks batteryPercentageAvailable."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}  # no batteryPercentageAvailable
+        assert vehicle.is_battery_level_supported is False
+
+    def test_na_charging_not_supported_when_field_absent(self):
+        """is_charging_supported is False when na_ev lacks chargingStatus."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"batteryPercentageAvailable": 80}  # no chargingStatus
+        assert vehicle.is_charging_supported is False
+
+
+class TestNAWriteCommands:
+    """Tests for NA write command routing in Vehicle methods."""
+
+    def _make_na_vehicle(self) -> Vehicle:
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}
+        return vehicle
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_calls_lock_na(self):
+        """set_lock routes to connection.lock_na() for NA vehicles."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=True)
+        result = await vehicle.set_lock("lock", spin="")
+        assert result is True
+        vehicle._connection.lock_na.assert_called_once_with("TESTVIN123", "lock")
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_unlock_calls_lock_na(self):
+        """set_lock with action=unlock routes to lock_na(action='unlock')."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=True)
+        result = await vehicle.set_lock("unlock", spin="")
+        assert result is True
+        vehicle._connection.lock_na.assert_called_once_with("TESTVIN123", "unlock")
+
+    @pytest.mark.asyncio
+    async def test_set_lock_invalid_action_raises(self):
+        """set_lock raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match="Invalid lock action"):
+            await vehicle.set_lock("open", spin="")
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_routes_correctly(self):
+        """set_honk_and_flash routes to connection.honk_and_flash_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.honk_and_flash_na = AsyncMock(return_value=True)
+        result = await vehicle.set_honk_and_flash()
+        assert result is True
+        vehicle._connection.honk_and_flash_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_start_na_routes_correctly(self):
+        """set_charger('start') routes to connection.start_charging_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
+        vehicle._connection.start_charging_na = AsyncMock(return_value=True)
+        result = await vehicle.set_charger("start")
+        assert result is True
+        vehicle._connection.start_charging_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_stop_na_routes_correctly(self):
+        """set_charger('stop') routes to connection.stop_charging_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING"}
+        vehicle._connection.stop_charging_na = AsyncMock(return_value=True)
+        result = await vehicle.set_charger("stop")
+        assert result is True
+        vehicle._connection.stop_charging_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_charger_invalid_action_raises(self):
+        """set_charger raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match='not supported'):
+            await vehicle.set_charger("invalid")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_start_na_routes_correctly(self):
+        """set_climatisation('start') routes to start_climatisation_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "OFF"}
+        vehicle._connection.start_climatisation_na = AsyncMock(return_value=True)
+        result = await vehicle.set_climatisation("start")
+        assert result is True
+        vehicle._connection.start_climatisation_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_stop_na_routes_correctly(self):
+        """set_climatisation('stop') routes to stop_climatisation_na()."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "ON"}
+        vehicle._connection.stop_climatisation_na = AsyncMock(return_value=True)
+        result = await vehicle.set_climatisation("stop")
+        assert result is True
+        vehicle._connection.stop_climatisation_na.assert_called_once_with("TESTVIN123")
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_invalid_action_raises(self):
+        """set_climatisation raises for invalid action regardless of region."""
+        vehicle = self._make_na_vehicle()
+        with pytest.raises(Exception, match="Invalid climatisation action"):
+            await vehicle.set_climatisation("boost")
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_logs_warning_on_failure(self, caplog):
+        """set_lock logs WARNING when lock_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.lock_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_lock("lock", spin="")
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_set_charger_na_logs_warning_on_failure(self, caplog):
+        """set_charger logs WARNING when start_charging_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
+        vehicle._connection.start_charging_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_charger("start")
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_logs_warning_on_failure(self, caplog):
+        """set_honk_and_flash logs WARNING when honk_and_flash_na returns False."""
+        import logging
+        vehicle = self._make_na_vehicle()
+        vehicle._connection.honk_and_flash_na = AsyncMock(return_value=False)
+        with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
+            result = await vehicle.set_honk_and_flash()
+        assert result is False
+        assert any("failed" in msg.lower() for msg in caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_set_lock_na_skips_when_in_progress(self):
+        """set_lock returns False immediately if lock is already in progress."""
+        vehicle = self._make_na_vehicle()
+        # Seed a recent in-progress request (id key required by _in_progress check)
+        vehicle._requests["lock"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.lock_na = AsyncMock()
+        result = await vehicle.set_lock("lock", spin="")
+        assert result is False
+        vehicle._connection.lock_na.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_honk_and_flash_na_skips_when_in_progress(self):
+        """set_honk_and_flash returns False immediately if honk_and_flash is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._requests["honk_and_flash"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.honk_and_flash_na = AsyncMock()
+        result = await vehicle.set_honk_and_flash()
+        assert result is False
+        vehicle._connection.honk_and_flash_na.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_charger_na_skips_when_in_progress(self):
+        """set_charger returns False immediately if charging is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
+        vehicle._requests["charging"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.start_charging_na = AsyncMock()
+        result = await vehicle.set_charger("start")
+        assert result is False
+        vehicle._connection.start_charging_na.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_climatisation_na_skips_when_in_progress(self):
+        """set_climatisation returns False immediately if climatisation is already in progress."""
+        vehicle = self._make_na_vehicle()
+        vehicle._states["na_climate"] = {"climatisationStatus": "OFF"}
+        vehicle._requests["climatisation"] = {
+            "id": "request-in-flight",
+            "status": "In Progress",
+            "timestamp": datetime.now(UTC),
+        }
+        vehicle._connection.start_climatisation_na = AsyncMock()
+        result = await vehicle.set_climatisation("start")
+        assert result is False
+        vehicle._connection.start_climatisation_na.assert_not_called()
+
 
 class TestNAVehicleNoData:
     """Test NA vehicle with missing data returns safe defaults."""
@@ -862,6 +1302,20 @@ class TestNAVehicleNoData:
         vehicle = Vehicle(conn=conn, url="TESTVIN123")
         vehicle._discovered = True
         assert vehicle.door_locked is False
+
+    def test_na_battery_level_none_when_na_ev_absent(self):
+        """battery_level returns None for non-EV NA vehicle (na_ev absent from _states)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN123")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {"lockStatus": "LOCKED"}
+        # na_ev is intentionally absent
+        assert vehicle.battery_level is None
+        assert vehicle.is_battery_level_supported is False
+        assert vehicle.charging_cable_connected is False
+        assert vehicle.charging_time_left is None
 
 
 # ---------------------------------------------------------------------------

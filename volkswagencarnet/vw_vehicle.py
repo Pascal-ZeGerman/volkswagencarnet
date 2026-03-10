@@ -285,10 +285,11 @@ class Vehicle:
         self._discovered = True
 
     async def _update_na_vehicle(self) -> bool:
-        """Fetch NA vehicle telemetry from RVS endpoints.
+        """Fetch NA vehicle telemetry from RVS and supplemental endpoints.
 
         Calls Connection._get_na_vehicle_data() and stores the result in _states.
-        Returns True if at least partial data was stored, False if all fetches failed.
+        Returns True if _get_na_vehicle_data returned a result dict (even if individual
+        endpoints failed), False only when vehicle session creation itself fails.
         """
         if self._connection is None:
             return False
@@ -447,6 +448,32 @@ class Vehicle:
     # Charging (BATTERYCHARGE)
     async def set_charger(self, action: str) -> bool:
         """Turn on/off charging."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["start", "stop"]:
+                _LOGGER.error('Charging action "%s" is not supported', action)
+                raise Exception(f'Charging action "{action}" is not supported.')
+            if not self.is_charging_supported:
+                _LOGGER.error("No charging support (vehicle may not be electric)")
+                raise Exception("No charging support.")
+            if self._in_progress("charging", unknown_offset=-5):
+                _LOGGER.debug("NA: charging command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
+            self._requests["latest"] = "Batterycharge"
+            self._requests["charging"] = {"id": "na-charging-in-flight", "timestamp": datetime.now(UTC)}
+            if action == "start":
+                result = await self._connection.start_charging_na(self.vin)
+            else:
+                result = await self._connection.stop_charging_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: %s_charging command failed for vin=%s", action, self.vin)
+            self._requests["charging"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
@@ -666,6 +693,32 @@ class Vehicle:
 
     async def set_climatisation(self, action: str = "stop") -> bool:
         """Turn on/off climatisation with electric heater."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["start", "stop"]:
+                _LOGGER.error("Invalid climatisation action: %s", action)
+                raise Exception(f"Invalid climatisation action: {action}")
+            if not self.is_climatisation_state_supported:
+                _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
+                raise Exception("No climatisation support.")
+            if self._in_progress("climatisation", unknown_offset=-5):
+                _LOGGER.debug("NA: climatisation command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
+            self._requests["latest"] = "Climatisation"
+            self._requests["climatisation"] = {"id": "na-climatisation-in-flight", "timestamp": datetime.now(UTC)}
+            if action == "start":
+                result = await self._connection.start_climatisation_na(self.vin)
+            else:
+                result = await self._connection.stop_climatisation_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: %s_climatisation command failed for vin=%s", action, self.vin)
+            self._requests["climatisation"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if self.is_electric_climatisation_supported:
             if action == "start":
                 data = {
@@ -869,6 +922,26 @@ class Vehicle:
     # Lock (RLU)
     async def set_lock(self, action: str, spin: str) -> bool:
         """Remote lock and unlock actions."""
+        # NA path: no SPIN, no service discovery
+        if self._connection is not None and self._connection.is_na:
+            if action not in ["lock", "unlock"]:
+                _LOGGER.error("Invalid lock action: %s", action)
+                raise Exception(f"Invalid lock action: {action}")
+            if self._in_progress("lock", unknown_offset=-5):
+                _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
+            self._requests["latest"] = "Lock"
+            self._requests["lock"] = {"id": "na-lock-in-flight", "timestamp": datetime.now(UTC)}
+            result = await self._connection.lock_na(self.vin, action)
+            if not result:
+                _LOGGER.warning("NA: %s command failed for vin=%s", action, self.vin)
+            self._requests["lock"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
+        # EMEA path — preserves original check order
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             _LOGGER.info("Remote lock/unlock is not supported")
             raise Exception("Remote lock/unlock is not supported.")
@@ -897,9 +970,25 @@ class Vehicle:
             }
         raise Exception("Lock action failed")
 
-    # Lock (RLU)
+    # Honk and flash
     async def set_honk_and_flash(self) -> bool:
         """Remote honk and flash actions."""
+        # NA path
+        if self._connection is not None and self._connection.is_na:
+            if self._in_progress("honk_and_flash", unknown_offset=-5):
+                _LOGGER.debug("NA: honk_and_flash command already in progress for vin=%s, ignoring duplicate", self.vin)
+                return False
+            self._requests["latest"] = "HonkAndFlash"
+            self._requests["honk_and_flash"] = {"id": "na-honk-in-flight", "timestamp": datetime.now(UTC)}
+            result = await self._connection.honk_and_flash_na(self.vin)
+            if not result:
+                _LOGGER.warning("NA: honk_and_flash command failed for vin=%s", self.vin)
+            self._requests["honk_and_flash"] = {
+                "status": "Completed" if result else "Failed",
+                "timestamp": datetime.now(UTC),
+            }
+            return result
+
         if not self._services.get(Services.HONK_AND_FLASH, {}).get("active", False):
             _LOGGER.info("Remote honk and flash is not supported")
             raise Exception("Remote honk and flash is not supported.")
@@ -1289,6 +1378,9 @@ class Vehicle:
     @property
     def distance(self) -> int | None:
         """Return vehicle odometer."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return na_status.get("currentMileage")
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
@@ -1299,6 +1391,9 @@ class Vehicle:
     @property
     def is_distance_supported(self) -> bool:
         """Return true if odometer is supported."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return "currentMileage" in na_status
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
@@ -1383,7 +1478,14 @@ class Vehicle:
     # Charger related states for EV and PHEV
     @property
     def charging(self) -> bool:
-        """Return charging state."""
+        """Return charging state.
+
+        For NA vehicles, True when chargingStatus is one of
+        ``"CHARGING"``, ``"CHARGING_AC"``, or ``"CHARGING_DC"``.
+        """
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("chargingStatus") in ("CHARGING", "CHARGING_AC", "CHARGING_DC")
         return find_path(self.attrs, Paths.CHARGING_STATE) == "charging"
 
     @property
@@ -1394,6 +1496,9 @@ class Vehicle:
     @property
     def is_charging_supported(self) -> bool:
         """Return true if charging is supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("chargingStatus") is not None
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
     @property
@@ -1465,6 +1570,9 @@ class Vehicle:
     @property
     def battery_level(self) -> int | None:
         """Return battery level."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("batteryPercentageAvailable")
         return find_path(self.attrs, Paths.BATTERY_SOC)
 
     @property
@@ -1475,6 +1583,9 @@ class Vehicle:
     @property
     def is_battery_level_supported(self) -> bool:
         """Return true if battery level is supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("batteryPercentageAvailable") is not None
         return is_valid_path(self.attrs, Paths.BATTERY_SOC)
 
     @property
@@ -1576,6 +1687,9 @@ class Vehicle:
     @property
     def charging_cable_connected(self) -> bool:
         """Return plug connected state."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("plugStatus") in ("CONNECTED", "CHARGING")
         response = find_path(self.attrs, Paths.PLUG_CONN)
         return response == "connected"
 
@@ -1587,11 +1701,17 @@ class Vehicle:
     @property
     def is_charging_cable_connected_supported(self) -> bool:
         """Return true if supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("plugStatus") is not None
         return is_valid_path(self.attrs, Paths.PLUG_CONN)
 
     @property
     def charging_time_left(self) -> int | None:
         """Return minutes to charging complete."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("remainingChargingTime")
         if is_valid_path(self.attrs, Paths.CHARGING_TIME_LEFT):
             return find_path(self.attrs, Paths.CHARGING_TIME_LEFT)
         return None
@@ -1604,6 +1724,10 @@ class Vehicle:
     @property
     def is_charging_time_left_supported(self) -> bool:
         """Return true if charging time left is supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("remainingChargingTime") is not None
+        # EMEA: intentionally checks CHARGING_STATE (not CHARGING_TIME_LEFT) — preserved from original.
         return is_valid_path(self.attrs, Paths.CHARGING_STATE)
 
     @property
@@ -1885,6 +2009,9 @@ class Vehicle:
     @property
     def combustion_range(self) -> int | None:
         """Return combustion engine range."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRange")
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_TOTAL)
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL):
@@ -1901,6 +2028,9 @@ class Vehicle:
     @property
     def is_combustion_range_supported(self) -> bool:
         """Return true if combustion range is supported, i.e. false for EVs."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRange") is not None
         return (
             is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL)
             or is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_GASOLINE)
@@ -1982,6 +2112,9 @@ class Vehicle:
     @property
     def fuel_level(self) -> int | None:
         """Return fuel level."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("fuelPercentRemaining")
         fuel_level_pct = None
         if (
             is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_LVL)
@@ -2007,6 +2140,9 @@ class Vehicle:
     @property
     def is_fuel_level_supported(self) -> bool:
         """Return true if fuel level reporting is supported."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("fuelPercentRemaining") is not None
         return (
             is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_LVL)
             and not self.is_primary_drive_gas()
@@ -2077,6 +2213,10 @@ class Vehicle:
     @property
     def climatisation_target_temperature(self) -> float | None:
         """Return the target temperature from climater."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            temp = na_climate.get("targetTemperature_C")
+            return float(temp) if temp is not None else None
         temp = find_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
         return float(temp) if temp is not None else None
 
@@ -2088,6 +2228,9 @@ class Vehicle:
     @property
     def is_climatisation_target_temperature_supported(self) -> bool:
         """Return true if climatisation target temperature is supported."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            return na_climate.get("targetTemperature_C") is not None
         return is_valid_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
 
     @property
@@ -2152,17 +2295,17 @@ class Vehicle:
 
     @property
     def zone_front_right(self) -> bool | None:
-        """Return state of zone front left."""
+        """Return state of zone front right."""
         return find_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_RIGHT)
 
     @property
     def zone_front_right_last_updated(self) -> datetime:
-        """Return state of zone front left last updated."""
+        """Return state of zone front right last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_SETTINGS_TS)
 
     @property
     def is_zone_front_right_supported(self) -> bool:
-        """Return true if zone front left is supported."""
+        """Return true if zone front right is supported."""
         return is_valid_path(self.attrs, Paths.CLIMATISATION_ZONE_FRONT_RIGHT)
 
     # Climatisation, electric
@@ -2298,6 +2441,9 @@ class Vehicle:
     @property
     def climatisation_state(self) -> str | None:
         """Return state of climatisation."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            return na_climate.get("climatisationStatus")
         climatisation_state = None
         if is_valid_path(self.attrs, Paths.CLIMATISATION_AUX_STATE):
             climatisation_state = find_path(self.attrs, Paths.CLIMATISATION_AUX_STATE)
@@ -2317,6 +2463,9 @@ class Vehicle:
     @property
     def is_climatisation_state_supported(self) -> bool:
         """Return true if vehicle has climatisation state."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            return na_climate.get("climatisationStatus") is not None
         return (
             self.is_climatisation_supported
             or self.is_auxiliary_climatisation_supported
@@ -2812,6 +2961,58 @@ class Vehicle:
                 return True
         return False
 
+    # Aggregate door/window status
+    @property
+    def any_door_open(self) -> bool:
+        """True if any entry in ``exteriorStatus.doorStatus`` is ``"OPEN"``. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            return any(v == "OPEN" for v in door_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_door_open_supported(self) -> bool:
+        """True if any_door_open data is available. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("doorStatus") is not None
+        return False
+
+    @property
+    def any_door_unlocked(self) -> bool:
+        """True if any door lock status is UNLOCKED. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+            return any(v == "UNLOCKED" for v in lock_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_door_unlocked_supported(self) -> bool:
+        """True if any_door_unlocked data is available. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("doorLockStatus") is not None
+        return False
+
+    @property
+    def any_window_open(self) -> bool:
+        """True if any window is open. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            window_status = (na_status.get("exteriorStatus") or {}).get("windowStatus") or {}
+            return any(v == "OPEN" for v in window_status.values() if isinstance(v, str))
+        return False
+
+    @property
+    def is_any_window_open_supported(self) -> bool:
+        """True if any_window_open data is available. NA region only."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("windowStatus") is not None
+        return False
+
     # Doors, hood and trunk
     @property
     def hood_closed(self) -> bool | None:
@@ -3269,6 +3470,9 @@ class Vehicle:
 
     @property
     def last_trip_duration(self) -> Any:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return na_trip.get("tripDuration")
         return self._get_trip_value(Services.TRIP_LAST, "travelTime")
 
     @property
@@ -3277,10 +3481,15 @@ class Vehicle:
 
     @property
     def is_last_trip_duration_supported(self) -> bool:
+        if self._states.get("na_trip") is not None:
+            return self._states["na_trip"].get("tripDuration") is not None
         return self._is_trip_supported(Services.TRIP_LAST, "travelTime")
 
     @property
     def last_trip_length(self) -> Any:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return na_trip.get("tripDistance")
         return self._get_trip_value(Services.TRIP_LAST, "mileage_km")
 
     @property
@@ -3289,6 +3498,8 @@ class Vehicle:
 
     @property
     def is_last_trip_length_supported(self) -> bool:
+        if self._states.get("na_trip") is not None:
+            return self._states["na_trip"].get("tripDistance") is not None
         return self._is_trip_supported(Services.TRIP_LAST, "mileage_km")
 
     @property
