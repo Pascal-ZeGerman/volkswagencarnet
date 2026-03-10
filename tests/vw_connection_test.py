@@ -2661,7 +2661,12 @@ class NAWriteCommandTest(IsolatedAsyncioTestCase):
     async def test_lock_na_401_retries_with_fresh_token(self, _mock_jwt):
         """On 401, lock_na refreshes vehicle session and retries."""
         conn = self._make_conn()
-        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+
+        async def _fake_create_session(vin):
+            conn._na_tokens[vin]["vehicle_session"] = {"token": "new-vehicle-token"}
+            return "new-vehicle-token"
+
+        conn._create_na_vehicle_session = AsyncMock(side_effect=_fake_create_session)
         conn._session.put = AsyncMock(side_effect=[
             _mock_resp(401),
             _mock_resp(200),
@@ -2959,7 +2964,12 @@ class TestNAWriteRequestEdgeCases(IsolatedAsyncioTestCase):
     async def test_lock_na_second_401_logs_warning(self, _mock_jwt):
         """After 401 + refresh + second 401, logs WARNING and returns False."""
         conn = self._make_conn()
-        conn._create_na_vehicle_session = AsyncMock(return_value="new-vehicle-token")
+
+        async def _fake_create_session(vin):
+            conn._na_tokens.setdefault(vin, {})["vehicle_session"] = {"token": "new-vehicle-token"}
+            return "new-vehicle-token"
+
+        conn._create_na_vehicle_session = AsyncMock(side_effect=_fake_create_session)
         conn._session.put = AsyncMock(side_effect=[_mock_resp(401), _mock_resp(401)])
         with self.assertLogs("volkswagencarnet.vw_connection", level="WARNING") as log_ctx:
             result = await conn.lock_na(VIN, action="lock")

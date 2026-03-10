@@ -1706,8 +1706,11 @@ class Connection:
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
             user_id = claims.get("sub", "")
-        except jwt.exceptions.InvalidTokenError:
-            pass  # Best-effort — refresh is non-fatal
+        except jwt.exceptions.InvalidTokenError as exc:
+            _LOGGER.debug(
+                "NA RVS refresh: failed to decode IDK id_token for x-user-id: %s — proceeding without it",
+                exc,
+            )
 
         url = f"{self._base_api}/rvs/v1/vehicle/{vehicle_id}/refresh"
         headers: dict[str, str] = {
@@ -1730,6 +1733,14 @@ class Connection:
                 allow_redirects=False,
             )
             _LOGGER.debug("NA RVS refresh: status=%s for vin=%s", resp.status, redact(vin))
+            if resp.status == 401:
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                self._na_rvs_cache.pop(vin, None)
+                _LOGGER.warning(
+                    "NA RVS refresh: HTTP 401 for vin=%s — invalidated vehicle session",
+                    redact(vin),
+                )
+                return False
             if resp.status not in (200, 202, 204):
                 _LOGGER.warning(
                     "NA RVS refresh: non-2xx (status=%s) for vin=%s — vehicle telemetry may not be fresh",
@@ -1971,6 +1982,12 @@ class Connection:
         Returns None if the IDK id_token cannot be decoded (re-login required).
         """
         vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token", "")
+        if not vehicle_token:
+            _LOGGER.warning(
+                "NA write headers: no vehicle session token for vin=%s — aborting command",
+                redact(vin),
+            )
+            return None
         idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
         try:
             claims = jwt.decode(idk_id_token, options={"verify_signature": False})
