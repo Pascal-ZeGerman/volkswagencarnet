@@ -119,7 +119,10 @@ Plans:
   3. NA user sees odometer update timestamp from na_status.currentMileageTimestamp
   4. NA user sees vehicle_moving correctly derived (inverted) from na_location.parked
   5. NA user sees climatisation duration from na_climate.climatisationDuration
-**Plans**: TBD
+**Plans:** 1/2 plans executed
+Plans:
+- [ ] 35-01-PLAN.md — Write 15 failing tests for Phase 35 properties (RED)
+- [ ] 35-02-PLAN.md — Implement NA branches and climatisation_duration triple (GREEN)
 
 ### Phase 36: NA-Specific Properties
 **Goal**: NA users can access properties unique to the NA API that have no EMEA equivalent
@@ -200,8 +203,8 @@ Plans:
 | 31. Honk & Flash | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 32. EV Charging Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 33. Climate Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 34. Door & Access Parity | 1/1 | Complete   | 2026-03-13 | - |
-| 35. EV Range, Trip & Metadata Parity | v1.4 | 0/? | Not started | - |
+| 34. Door & Access Parity | 1/1 | Complete    | 2026-03-13 | - |
+| 35. EV Range, Trip & Metadata Parity | 1/2 | In Progress|  | - |
 | 36. NA-Specific Properties | v1.4 | 0/? | Not started | - |
 | 37. Critical Fixes | v1.5 | 0/? | Not started | - |
 | 38. Exception Hygiene & Data Integrity | v1.5 | 0/? | Not started | - |

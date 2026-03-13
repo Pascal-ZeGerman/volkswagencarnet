@@ -8,8 +8,8 @@
 
 ### EV / Range Parity
 
-- [ ] **EVRNG-01**: `electric_range` property returns NA EV electric range from `na_ev.electricRange` when EMEA path is unavailable
-- [ ] **EVRNG-02**: `electric_range` returns None gracefully for non-EV NA vehicles
+- [x] **EVRNG-01**: `electric_range` property returns NA EV electric range from `na_ev.electricRange` when EMEA path is unavailable
+- [x] **EVRNG-02**: `electric_range` returns None gracefully for non-EV NA vehicles
 
 ### Door / Access Parity
 
@@ -23,13 +23,13 @@
 
 ### Trip Parity
 
-- [ ] **TRIP-01**: `last_trip_average_speed` property returns value from `na_trip.averageSpeed`
+- [x] **TRIP-01**: `last_trip_average_speed` property returns value from `na_trip.averageSpeed`
 
 ### Timestamps / Metadata
 
-- [ ] **META-01**: Odometer update timestamp surfaced from `na_status.currentMileageTimestamp`
-- [ ] **META-02**: Vehicle parked status derived from `na_location.parked` (maps to `vehicle_moving` inverted)
-- [ ] **META-03**: Climatisation duration surfaced from `na_climate.climatisationDuration`
+- [x] **META-01**: Odometer update timestamp surfaced from `na_status.currentMileageTimestamp`
+- [x] **META-02**: Vehicle parked status derived from `na_location.parked` (maps to `vehicle_moving` inverted)
+- [x] **META-03**: Climatisation duration surfaced from `na_climate.climatisationDuration`
 
 ### NA-Specific Properties
 
@@ -65,8 +65,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EVRNG-01 | Phase 35 | Pending |
-| EVRNG-02 | Phase 35 | Pending |
+| EVRNG-01 | Phase 35 | Complete |
+| EVRNG-02 | Phase 35 | Complete |
 | DOOR-01 | Phase 34 | Complete |
 | DOOR-02 | Phase 34 | Complete |
 | DOOR-03 | Phase 34 | Complete |
@@ -74,10 +74,10 @@
 | DOOR-05 | Phase 34 | Complete |
 | DOOR-06 | Phase 34 | Complete |
 | DOOR-07 | Phase 34 | Complete |
-| TRIP-01 | Phase 35 | Pending |
-| META-01 | Phase 35 | Pending |
-| META-02 | Phase 35 | Pending |
-| META-03 | Phase 35 | Pending |
+| TRIP-01 | Phase 35 | Complete |
+| META-01 | Phase 35 | Complete |
+| META-02 | Phase 35 | Complete |
+| META-03 | Phase 35 | Complete |
 | NASPEC-01 | Phase 36 | Pending |
 | NASPEC-02 | Phase 36 | Pending |
 

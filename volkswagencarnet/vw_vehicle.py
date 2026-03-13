@@ -1395,8 +1395,17 @@ class Vehicle:
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
-    def distance_last_updated(self) -> datetime:
+    def distance_last_updated(self) -> datetime | None:
         """Return last updated timestamp."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            ts = na_status.get("currentMileageTimestamp")
+            if ts is not None:
+                try:
+                    return datetime.fromisoformat(ts)
+                except ValueError:
+                    return None
+            return None
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO_TS)
 
     @property
@@ -1965,6 +1974,9 @@ class Vehicle:
     @property
     def vehicle_moving(self) -> bool:
         """Return true if vehicle is moving."""
+        na_location = self._states.get("na_location")
+        if na_location is not None:
+            return not na_location.get("parked", True)
         return self.attrs.get("isMoving", False)
 
     @property
@@ -1975,6 +1987,9 @@ class Vehicle:
     @property
     def is_vehicle_moving_supported(self) -> bool:
         """Return true if vehicle supports position."""
+        na_location = self._states.get("na_location")
+        if na_location is not None:
+            return "parked" in na_location
         return self.is_position_supported
 
     @property
@@ -1998,6 +2013,9 @@ class Vehicle:
     @property
     def electric_range(self) -> int | None:
         """Return electric range."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("electricRange")
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC)
         return find_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_RNG)
@@ -2012,6 +2030,9 @@ class Vehicle:
     @property
     def is_electric_range_supported(self) -> bool:
         """Return true if electric range is supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("electricRange") is not None
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC) or (
             self.is_car_type_electric
             and is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_RNG)
@@ -2243,6 +2264,25 @@ class Vehicle:
         if na_climate is not None:
             return na_climate.get("targetTemperature_C") is not None
         return is_valid_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
+
+    @property
+    def climatisation_duration(self) -> int | None:
+        """Return climatisation duration in seconds (NA only)."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            return na_climate.get("climatisationDuration")
+        return None
+
+    @property
+    def climatisation_duration_last_updated(self) -> datetime | None:
+        """Return climatisation duration last updated."""
+        return None
+
+    @property
+    def is_climatisation_duration_supported(self) -> bool:
+        """Return true if climatisation duration is supported."""
+        na_climate = self._states.get("na_climate")
+        return na_climate is not None and "climatisationDuration" in na_climate
 
     @property
     def climatisation_without_external_power(self) -> bool | None:
@@ -3508,6 +3548,9 @@ class Vehicle:
     # Trip last data
     @property
     def last_trip_average_speed(self) -> Any:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return na_trip.get("averageSpeed")
         return self._get_trip_value(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property
@@ -3516,6 +3559,9 @@ class Vehicle:
 
     @property
     def is_last_trip_average_speed_supported(self) -> bool:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return "averageSpeed" in na_trip
         return self._is_trip_supported(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property
