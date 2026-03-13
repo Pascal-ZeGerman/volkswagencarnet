@@ -1225,6 +1225,118 @@ class TestNAEVProperties:
         vehicle._states["na_ev"] = {"batteryPercentageAvailable": 80}  # no chargingStatus
         assert vehicle.is_charging_supported is False
 
+    # ---------------------------------------------------------------------------
+    # Phase 35: EV range (EVRNG-01, EVRNG-02)
+    # ---------------------------------------------------------------------------
+
+    def test_na_electric_range(self, na_ev_vehicle):
+        """electric_range returns 180 from na_ev fixture (EVRNG-01)."""
+        assert na_ev_vehicle.electric_range == 180
+
+    def test_na_electric_range_supported(self, na_ev_vehicle):
+        """is_electric_range_supported is True when electricRange present (EVRNG-01)."""
+        assert na_ev_vehicle.is_electric_range_supported is True
+
+    def test_na_electric_range_none_for_non_ev(self):
+        """electric_range is None when na_ev has no electricRange key (EVRNG-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {}  # no electricRange key
+        assert vehicle.electric_range is None
+
+    def test_na_electric_range_not_supported_non_ev(self):
+        """is_electric_range_supported is False when na_ev lacks electricRange (EVRNG-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {}  # no electricRange key
+        assert vehicle.is_electric_range_supported is False
+
+    def test_na_electric_range_zero_valid(self):
+        """electric_range == 0 is valid (depleted battery) — not treated as None (EVRNG-01 edge)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"electricRange": 0}
+        assert vehicle.electric_range == 0
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Trip average speed (TRIP-01)
+    # ---------------------------------------------------------------------------
+
+    def test_na_last_trip_average_speed(self, na_ev_vehicle):
+        """last_trip_average_speed returns 72 from na_trip fixture (TRIP-01)."""
+        assert na_ev_vehicle.last_trip_average_speed == 72
+
+    def test_na_last_trip_average_speed_supported(self, na_ev_vehicle):
+        """is_last_trip_average_speed_supported is True when averageSpeed present (TRIP-01)."""
+        assert na_ev_vehicle.is_last_trip_average_speed_supported is True
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Odometer timestamp (META-01)
+    # ---------------------------------------------------------------------------
+
+    def test_na_distance_last_updated(self, na_ev_vehicle):
+        """distance_last_updated returns a datetime parsed from currentMileageTimestamp (META-01)."""
+        result = na_ev_vehicle.distance_last_updated
+        assert isinstance(result, datetime)
+
+    def test_na_distance_last_updated_missing(self):
+        """distance_last_updated returns None when na_status has no timestamp key (META-01 edge)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {}  # no currentMileageTimestamp key
+        assert vehicle.distance_last_updated is None
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Vehicle moving / parked (META-02)
+    # ---------------------------------------------------------------------------
+
+    def test_na_vehicle_moving_parked(self, na_ev_vehicle):
+        """vehicle_moving is False when parked=True in na_location fixture (META-02)."""
+        assert na_ev_vehicle.vehicle_moving is False
+
+    def test_na_vehicle_moving_not_parked(self):
+        """vehicle_moving is True when na_location has parked=False (META-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_location"] = {"parked": False}
+        assert vehicle.vehicle_moving is True
+
+    def test_na_vehicle_moving_supported(self, na_ev_vehicle):
+        """is_vehicle_moving_supported is True when na_location has parked key (META-02)."""
+        assert na_ev_vehicle.is_vehicle_moving_supported is True
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Climatisation duration (META-03)
+    # ---------------------------------------------------------------------------
+
+    def test_na_climatisation_duration(self, na_ev_vehicle):
+        """climatisation_duration returns 30 from na_climate fixture (META-03)."""
+        assert na_ev_vehicle.climatisation_duration == 30
+
+    def test_na_climatisation_duration_supported(self, na_ev_vehicle):
+        """is_climatisation_duration_supported is True when climatisationDuration present (META-03)."""
+        assert na_ev_vehicle.is_climatisation_duration_supported is True
+
+    def test_na_climatisation_duration_not_supported_emea(self, bare_vehicle):
+        """climatisation_duration is None and is_*_supported is False for EMEA vehicle (META-03)."""
+        assert bare_vehicle.climatisation_duration is None
+        assert bare_vehicle.is_climatisation_duration_supported is False
+
 
 class TestNAWriteCommands:
     """Tests for NA write command routing in Vehicle methods."""
