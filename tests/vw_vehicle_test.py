@@ -968,6 +968,145 @@ class TestNAVehicleProperties:
         assert vehicle.is_any_door_open_supported is False
 
 
+class TestNaDoorAccessParity:
+    """Test per-door open/closed and per-door lock properties for NA vehicles."""
+
+    # NA door closed -- 6 doors
+    def test_na_door_closed_left_front(self, na_vehicle):
+        """door_closed_left_front is True when frontLeft is CLOSED."""
+        assert na_vehicle.door_closed_left_front is True
+
+    def test_na_door_closed_right_front(self, na_vehicle):
+        """door_closed_right_front is True when frontRight is CLOSED."""
+        assert na_vehicle.door_closed_right_front is True
+
+    def test_na_door_closed_left_back(self, na_vehicle):
+        """door_closed_left_back is True when rearLeft is CLOSED."""
+        assert na_vehicle.door_closed_left_back is True
+
+    def test_na_door_closed_right_back(self, na_vehicle):
+        """door_closed_right_back is True when rearRight is CLOSED."""
+        assert na_vehicle.door_closed_right_back is True
+
+    def test_na_trunk_closed(self, na_vehicle):
+        """trunk_closed is True when trunk is CLOSED."""
+        assert na_vehicle.trunk_closed is True
+
+    def test_na_hood_closed(self, na_vehicle):
+        """hood_closed is True when hood is CLOSED (NA uses 'hood', not 'bonnet')."""
+        assert na_vehicle.hood_closed is True
+
+    # NA door closed supported -- 6 doors
+    def test_na_is_door_closed_left_front_supported(self, na_vehicle):
+        """is_door_closed_left_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_left_front_supported is True
+
+    def test_na_is_door_closed_right_front_supported(self, na_vehicle):
+        """is_door_closed_right_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_right_front_supported is True
+
+    def test_na_is_door_closed_left_back_supported(self, na_vehicle):
+        """is_door_closed_left_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_left_back_supported is True
+
+    def test_na_is_door_closed_right_back_supported(self, na_vehicle):
+        """is_door_closed_right_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_right_back_supported is True
+
+    def test_na_is_trunk_closed_supported(self, na_vehicle):
+        """is_trunk_closed_supported is True for NA vehicle."""
+        assert na_vehicle.is_trunk_closed_supported is True
+
+    def test_na_is_hood_closed_supported(self, na_vehicle):
+        """is_hood_closed_supported is True for NA vehicle."""
+        assert na_vehicle.is_hood_closed_supported is True
+
+    # NA per-door lock -- 4 doors
+    def test_na_door_locked_left_front(self, na_vehicle):
+        """door_locked_left_front is True when frontLeft is LOCKED."""
+        assert na_vehicle.door_locked_left_front is True
+
+    def test_na_door_locked_right_front(self, na_vehicle):
+        """door_locked_right_front is True when frontRight is LOCKED."""
+        assert na_vehicle.door_locked_right_front is True
+
+    def test_na_door_locked_left_back(self, na_vehicle):
+        """door_locked_left_back is True when rearLeft is LOCKED."""
+        assert na_vehicle.door_locked_left_back is True
+
+    def test_na_door_locked_right_back(self, na_vehicle):
+        """door_locked_right_back is True when rearRight is LOCKED."""
+        assert na_vehicle.door_locked_right_back is True
+
+    # NA per-door lock supported -- 4 doors
+    def test_na_is_door_locked_left_front_supported(self, na_vehicle):
+        """is_door_locked_left_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_left_front_supported is True
+
+    def test_na_is_door_locked_right_front_supported(self, na_vehicle):
+        """is_door_locked_right_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_right_front_supported is True
+
+    def test_na_is_door_locked_left_back_supported(self, na_vehicle):
+        """is_door_locked_left_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_left_back_supported is True
+
+    def test_na_is_door_locked_right_back_supported(self, na_vehicle):
+        """is_door_locked_right_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_right_back_supported is True
+
+    # EMEA per-door lock returns None
+    def test_emea_door_locked_per_door_returns_none(self, egolf_vehicle):
+        """Per-door lock properties return None on EMEA vehicles (NA-only)."""
+        assert egolf_vehicle.door_locked_left_front is None
+
+    # Edge case: NOTAVAILABLE returns None
+    def test_na_door_closed_notavailable_returns_none(self):
+        """door_closed_left_front is None when frontLeft is NOTAVAILABLE."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {"frontLeft": "NOTAVAILABLE"},
+            }
+        }
+        assert vehicle.door_closed_left_front is None
+        assert vehicle.is_door_closed_left_front_supported is False
+
+    # Edge case: empty doorStatus returns None
+    def test_na_door_closed_empty_door_status_returns_none(self):
+        """door_closed_left_front is None when doorStatus is empty."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {},
+            }
+        }
+        assert vehicle.door_closed_left_front is None
+
+    # Edge case: OPEN returns False
+    def test_na_door_closed_open_returns_false(self):
+        """door_closed_left_front is False when frontLeft is OPEN."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {"frontLeft": "OPEN"},
+            }
+        }
+        assert vehicle.door_closed_left_front is False
+
+
 class TestNAEVProperties:
     """Test NA EV/climate/trip properties using dedicated fixtures."""
 
