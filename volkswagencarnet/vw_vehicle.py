@@ -28,6 +28,17 @@ BACKEND_RECEIVED_TIMESTAMP = "BACKEND_RECEIVED_TIMESTAMP"
 
 _LOGGER = logging.getLogger(__name__)
 
+# Mapping from EMEA door names (used by existing properties) to NA doorStatus keys.
+# NA uses "hood" where EMEA uses "bonnet"; all other front/rear names match.
+_NA_DOOR_NAMES: dict[str, str] = {
+    "frontLeft": "frontLeft",
+    "frontRight": "frontRight",
+    "rearLeft": "rearLeft",
+    "rearRight": "rearRight",
+    "trunk": "trunk",
+    "bonnet": "hood",  # EMEA calls it "bonnet"; NA calls it "hood"
+}
+
 ENGINE_TYPE_ELECTRIC = "electric"
 ENGINE_TYPE_DIESEL = "diesel"
 ENGINE_TYPE_GASOLINE = "gasoline"
@@ -2679,6 +2690,18 @@ class Vehicle:
         return False
 
     def _get_door_state(self, door_name: str) -> bool | None:
+        # NA region: read individual door state from na_status exteriorStatus.doorStatus
+        if self._connection is not None and self._connection.is_na:
+            na_status = self._states.get("na_status")
+            if na_status is None:
+                return None
+            na_key = _NA_DOOR_NAMES.get(door_name, door_name)
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            value = door_status.get(na_key)
+            if value is None or value == "NOTAVAILABLE":
+                return None
+            return value == "CLOSED"
+        # EMEA: existing logic unchanged
         doors = find_path(self.attrs, Paths.ACCESS_DOORS) or []
         for door in doors:
             if door.get("name") == door_name:
@@ -2701,6 +2724,16 @@ class Vehicle:
 
     def _is_door_supported(self, door_name: str) -> bool:
         """Check if a door is supported by name."""
+        # NA region: supported when the door has a non-NOTAVAILABLE value in doorStatus
+        if self._connection is not None and self._connection.is_na:
+            na_status = self._states.get("na_status")
+            if na_status is None:
+                return False
+            na_key = _NA_DOOR_NAMES.get(door_name, door_name)
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            value = door_status.get(na_key)
+            return value is not None and value != "NOTAVAILABLE"
+        # EMEA: existing logic unchanged
         if not is_valid_path(self.attrs, Paths.ACCESS_DOORS):
             return False
         doors = find_path(self.attrs, Paths.ACCESS_DOORS) or []
@@ -2708,6 +2741,43 @@ class Vehicle:
             d.get("name") == door_name and "unsupported" not in (d.get("status") or [])
             for d in doors
         )
+
+    def _get_na_door_lock_state(self, door_name: str) -> bool | None:
+        """Return per-door lock state for NA vehicles; None for EMEA or missing data.
+
+        Args:
+            door_name: NA doorLockStatus key (e.g. "frontLeft", "rearRight").
+
+        Returns:
+            True if LOCKED, False if UNLOCKED, None if data unavailable or not NA.
+        """
+        if self._connection is None or not self._connection.is_na:
+            return None
+        na_status = self._states.get("na_status")
+        if na_status is None:
+            return None
+        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        value = lock_status.get(door_name)
+        if value is None:
+            return None
+        return value == "LOCKED"
+
+    def _is_na_door_lock_supported(self, door_name: str) -> bool:
+        """Return True when per-door lock data is available for NA vehicles.
+
+        Args:
+            door_name: NA doorLockStatus key (e.g. "frontLeft", "rearRight").
+
+        Returns:
+            True if data present, False otherwise (always False for EMEA).
+        """
+        if self._connection is None or not self._connection.is_na:
+            return False
+        na_status = self._states.get("na_status")
+        if na_status is None:
+            return False
+        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        return door_name in lock_status
 
     def _get_trip_value(self, trip_type: str, key: str, default: Any = None) -> Any:
         """Generic getter for trip statistics."""
@@ -2896,6 +2966,48 @@ class Vehicle:
         if self._services.get(Services.ACCESS, {}).get("active", False):
             return False
         return is_valid_path(self.attrs, Paths.ACCESS_DOOR_LOCK)
+
+    # Per-door lock properties (NA only; EMEA always returns None/False)
+
+    @property
+    def door_locked_left_front(self) -> bool | None:
+        """Return left-front door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("frontLeft")
+
+    @property
+    def is_door_locked_left_front_supported(self) -> bool:
+        """Return True when left-front door lock data is available."""
+        return self._is_na_door_lock_supported("frontLeft")
+
+    @property
+    def door_locked_right_front(self) -> bool | None:
+        """Return right-front door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("frontRight")
+
+    @property
+    def is_door_locked_right_front_supported(self) -> bool:
+        """Return True when right-front door lock data is available."""
+        return self._is_na_door_lock_supported("frontRight")
+
+    @property
+    def door_locked_left_back(self) -> bool | None:
+        """Return left-rear door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("rearLeft")
+
+    @property
+    def is_door_locked_left_back_supported(self) -> bool:
+        """Return True when left-rear door lock data is available."""
+        return self._is_na_door_lock_supported("rearLeft")
+
+    @property
+    def door_locked_right_back(self) -> bool | None:
+        """Return right-rear door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("rearRight")
+
+    @property
+    def is_door_locked_right_back_supported(self) -> bool:
+        """Return True when right-rear door lock data is available."""
+        return self._is_na_door_lock_supported("rearRight")
 
     @property
     def trunk_locked(self) -> bool:
