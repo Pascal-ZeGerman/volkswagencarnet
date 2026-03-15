@@ -12,6 +12,7 @@ from freezegun import freeze_time
 import pytest
 from volkswagencarnet.vw_connection import Connection
 from volkswagencarnet.vw_const import Services
+from volkswagencarnet.vw_exceptions import APIError
 from volkswagencarnet.vw_vehicle import (
     ENGINE_TYPE_DIESEL,
     ENGINE_TYPE_ELECTRIC,
@@ -4455,3 +4456,68 @@ class TestPlan2402EMEAPositionFallback:
         assert pos["lat"] is None
         assert pos["lng"] is None
         assert pos["timestamp"] is None
+
+
+# ---------------------------------------------------------------------------
+# CFIX-01 / CFIX-02: Action method control-flow and APIError tests
+# ---------------------------------------------------------------------------
+class TestCFIX01ActionMethods(IsolatedAsyncioTestCase):
+    """Tests for CFIX-01 (action methods always raise) and CFIX-02 (_handle_response raises APIError)."""
+
+    def _make_vehicle(self):
+        """Create a Vehicle with a mocked EMEA connection."""
+        conn = AsyncMock(spec=Connection)
+        conn._session_region = "EMEA"
+        conn.is_na = False
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+        return vehicle
+
+    async def test_set_refresh_happy_path(self):
+        """set_refresh should return True on 204 + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        mock_response = MagicMock()
+        mock_response.status = 204
+        vehicle._connection.wakeUpVehicle = AsyncMock(return_value=mock_response)
+        vehicle.wait_for_data_refresh = AsyncMock(return_value="Completed")
+        result = await vehicle.set_refresh()
+        assert result is True
+
+    async def test_set_lock_happy_path(self):
+        """set_lock should return True on Queued + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        vehicle._services[Services.ACCESS] = {"active": True}
+        vehicle._connection.setLock = AsyncMock(
+            return_value={"state": "Queued", "id": 1}
+        )
+        vehicle.wait_for_request = AsyncMock(return_value="Completed")
+        result = await vehicle.set_lock("lock", "1234")
+        assert result is True
+
+    async def test_set_honk_and_flash_happy_path(self):
+        """set_honk_and_flash should return True on Queued + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        vehicle._services[Services.HONK_AND_FLASH] = {"active": True}
+        vehicle._position = {"lat": 52.0, "lng": 13.0}
+        vehicle._connection.setHonkAndFlash = AsyncMock(
+            return_value={"state": "Queued", "id": 1}
+        )
+        vehicle.wait_for_request = AsyncMock(return_value="Completed")
+        result = await vehicle.set_honk_and_flash()
+        assert result is True
+
+    async def test_set_refresh_unbound_status(self):
+        """set_refresh with non-204/429 status should not raise UnboundLocalError."""
+        vehicle = self._make_vehicle()
+        mock_response = MagicMock()
+        mock_response.status = 500
+        vehicle._connection.wakeUpVehicle = AsyncMock(return_value=mock_response)
+        # Should not raise UnboundLocalError for undefined 'status' variable
+        result = await vehicle.set_refresh()
+        assert result is True
+
+    async def test_handle_response_raises_api_error(self):
+        """_handle_response should raise APIError, not bare Exception."""
+        vehicle = self._make_vehicle()
+        with pytest.raises(APIError):
+            await vehicle._handle_response(None, "test")

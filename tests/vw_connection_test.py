@@ -7,6 +7,7 @@ import logging
 import re
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -4573,3 +4574,75 @@ class TestNATokenExchangeXQMAuth:
         call_kwargs = conn._session.post.call_args
         post_headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
         assert "X-QMAuth" in post_headers
+
+
+# ---------------------------------------------------------------------------
+# CFIX-03 / CFIX-04: JWT guard and timeout tests
+# ---------------------------------------------------------------------------
+class TestCFIX03ValidateTokens(IsolatedAsyncioTestCase):
+    """Tests for CFIX-03: validate_tokens should handle malformed JWT gracefully."""
+
+    async def test_validate_tokens_malformed_jwt(self):
+        """validate_tokens should return False for malformed JWT, not crash."""
+        conn = _make_connection(country="DE")
+        conn._session_region = "EMEA"
+        conn._session_tokens = {
+            "identity": {
+                "id_token": "not-a-jwt",
+                "access_token": "also-not-a-jwt",
+            }
+        }
+        conn._session_refresh_interval = timedelta(minutes=10)
+        result = await conn.validate_tokens()
+        assert result is False
+
+    async def test_validate_tokens_missing_exp(self):
+        """validate_tokens should return False when exp claim is missing, not TypeError."""
+        conn = _make_connection(country="DE")
+        conn._session_region = "EMEA"
+        conn._session_tokens = {
+            "identity": {
+                "id_token": "dummy.token.value",
+                "access_token": "dummy.token.value",
+            }
+        }
+        conn._session_refresh_interval = timedelta(minutes=10)
+        # Mock jwt.decode to return dict without exp claim
+        with patch("volkswagencarnet.vw_connection.jwt.decode", return_value={}):
+            result = await conn.validate_tokens()
+        assert result is False
+
+
+class TestCFIX04Timeouts(IsolatedAsyncioTestCase):
+    """Tests for CFIX-04: session calls must pass explicit timeout."""
+
+    async def test_get_openid_config_passes_timeout(self):
+        """get_openid_config should pass timeout= to session.get."""
+        conn = _make_connection(country="DE")
+        conn._session_region = "EMEA"
+        conn._session_region_config = {}  # No hardcoded endpoints -> falls through to session.get
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"authorization_endpoint": "x", "token_endpoint": "y"})
+        conn._session.get = AsyncMock(return_value=mock_resp)
+        await conn.get_openid_config()
+        call_kwargs = conn._session.get.call_args
+        assert "timeout" in call_kwargs.kwargs, "get_openid_config must pass timeout= to session.get"
+
+    async def test_refresh_tokens_passes_timeout(self):
+        """refresh_tokens should pass timeout= to session.post."""
+        conn = _make_connection(country="DE")
+        conn._session_region = "EMEA"
+        conn._session_tokens = {
+            "identity": {
+                "refresh_token": "some-refresh-token",
+                "access_token": "some-access-token",
+            }
+        }
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"access_token": "new-at", "id_token": "new-id"})
+        conn._session.post = AsyncMock(return_value=mock_resp)
+        await conn.refresh_tokens()
+        call_kwargs = conn._session.post.call_args
+        assert "timeout" in call_kwargs.kwargs, "refresh_tokens must pass timeout= to session.post"
