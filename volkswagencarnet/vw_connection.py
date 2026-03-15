@@ -451,7 +451,7 @@ class Connection:
 
         config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
         _LOGGER.debug("Requesting openid config from base API: %s", config_url)
-        req = await self._session.get(url=config_url)
+        req = await self._session.get(url=config_url, timeout=ClientTimeout(total=TIMEOUT.seconds))
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
             raise AuthenticationError(
@@ -3109,16 +3109,23 @@ class Connection:
         except KeyError as error:
             _LOGGER.warning("Token validation failed - missing token data: %s", error)
             return False
-        id_exp = jwt.decode(
-            idtoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
-        at_exp = jwt.decode(
-            atoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
+        try:
+            id_exp = jwt.decode(
+                idtoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+            at_exp = jwt.decode(
+                atoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+        except jwt.InvalidTokenError as exc:
+            _LOGGER.warning("Token validation failed - malformed token: %s", exc)
+            return False
+        if id_exp is None or at_exp is None:
+            _LOGGER.warning("Token validation failed - missing exp claim")
+            return False
         id_dt = datetime.fromtimestamp(int(id_exp))
         at_dt = datetime.fromtimestamp(int(at_exp))
         now = datetime.now()
@@ -3160,6 +3167,7 @@ class Connection:
                 url=f"{self._base_api}/login/v1/idk/token",
                 headers=tHeaders,
                 data=body,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
             )
             await self.update_service_status("token", response.status)
             if response.status == 200:

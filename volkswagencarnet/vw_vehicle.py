@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from aiohttp import ClientTimeout
 
 from .vw_const import Services, VehicleStatusParameter as P, Paths
+from .vw_exceptions import APIError
 from .vw_utilities import find_path, is_valid_path
 
 # TODO
@@ -128,7 +129,7 @@ class Vehicle:
                 else f"Failed to perform {topic} action"
             )
 
-            raise Exception(
+            raise APIError(
                 error_msg
                 if error_msg is not None
                 else f"Failed to perform {topic} action"
@@ -979,7 +980,7 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Lock action failed")
+            raise APIError("Lock action failed") from error
 
     # Honk and flash
     async def set_honk_and_flash(self) -> bool:
@@ -1021,7 +1022,7 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Honk and flash action failed")
+            raise APIError("Honk and flash action failed") from error
 
     # Refresh vehicle data (VSR)
     async def set_refresh(self) -> bool:
@@ -1045,6 +1046,7 @@ class Vehicle:
                     status = "Throttled"
                     _LOGGER.debug("Server side throttled. Try again later")
                 else:
+                    status = f"Error {response.status}"
                     _LOGGER.debug(
                         "Unable to refresh the data. Incorrect response code: %s",
                         response.status,
@@ -1062,7 +1064,7 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Data refresh failed")
+            raise APIError("Data refresh failed") from error
 
     # Vehicle class helpers #
     # Vehicle info
