@@ -2070,6 +2070,25 @@ class Vehicle:
         )
 
     @property
+    def cruise_range_units(self) -> str | None:
+        """Return cruise range units indicator (NA only)."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRangeUnits")
+        return None
+
+    @property
+    def cruise_range_units_last_updated(self) -> datetime | None:
+        """Return cruise range units last updated (no timestamp available)."""
+        return None
+
+    @property
+    def is_cruise_range_units_supported(self) -> bool:
+        """Return true if cruise range units is supported."""
+        na_status = self._states.get("na_status")
+        return na_status is not None and (na_status.get("powerStatus") or {}).get("cruiseRangeUnits") is not None
+
+    @property
     def fuel_range(self) -> int | None:
         """Return fuel engine range."""
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_DIESEL):
@@ -3048,6 +3067,33 @@ class Vehicle:
     def is_door_locked_right_back_supported(self) -> bool:
         """Return True when right-rear door lock data is available."""
         return self._is_na_door_lock_supported("rearRight")
+
+    @property
+    def security_status(self) -> str | None:
+        """Return aggregate vehicle security status (NA only)."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("secure")
+        return None
+
+    @property
+    def security_status_last_updated(self) -> datetime | None:
+        """Return security status last updated timestamp."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            ts = (na_status.get("exteriorStatus") or {}).get("doorStatus", {}).get("doorStatusTimestamp")
+            if ts is not None:
+                try:
+                    return datetime.fromisoformat(ts)
+                except ValueError:
+                    return None
+        return None
+
+    @property
+    def is_security_status_supported(self) -> bool:
+        """Return true if aggregate security status is supported."""
+        na_status = self._states.get("na_status")
+        return na_status is not None and (na_status.get("exteriorStatus") or {}).get("secure") is not None
 
     @property
     def trunk_locked(self) -> bool:
