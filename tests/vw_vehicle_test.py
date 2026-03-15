@@ -967,6 +967,43 @@ class TestNAVehicleProperties:
         vehicle._states["na_status"] = {"lockStatus": "LOCKED"}  # no exteriorStatus
         assert vehicle.is_any_door_open_supported is False
 
+    # NA security_status (NASPEC-01)
+    def test_na_security_status(self, na_vehicle):
+        """security_status returns 'LOCKED' from rvs_status fixture (NASPEC-01)."""
+        assert na_vehicle.security_status == "LOCKED"
+
+    def test_na_security_status_supported(self, na_vehicle):
+        """is_security_status_supported is True for NA vehicle (NASPEC-01)."""
+        assert na_vehicle.is_security_status_supported is True
+
+    def test_na_security_status_last_updated(self, na_vehicle):
+        """security_status_last_updated is a datetime from doorStatusTimestamp (NASPEC-01)."""
+        result = na_vehicle.security_status_last_updated
+        assert isinstance(result, datetime)
+
+    def test_na_security_status_emea(self, bare_vehicle):
+        """security_status returns None and not supported for EMEA (NASPEC-01)."""
+        assert bare_vehicle.security_status is None
+        assert bare_vehicle.is_security_status_supported is False
+
+    # NA cruise_range_units (NASPEC-02)
+    def test_na_cruise_range_units(self, na_vehicle):
+        """cruise_range_units returns 'MI' from rvs_status fixture (NASPEC-02)."""
+        assert na_vehicle.cruise_range_units == "MI"
+
+    def test_na_cruise_range_units_supported(self, na_vehicle):
+        """is_cruise_range_units_supported is True for NA vehicle (NASPEC-02)."""
+        assert na_vehicle.is_cruise_range_units_supported is True
+
+    def test_na_cruise_range_units_last_updated(self, na_vehicle):
+        """cruise_range_units_last_updated returns None (no timestamp) (NASPEC-02)."""
+        assert na_vehicle.cruise_range_units_last_updated is None
+
+    def test_na_cruise_range_units_emea(self, bare_vehicle):
+        """cruise_range_units returns None and not supported for EMEA (NASPEC-02)."""
+        assert bare_vehicle.cruise_range_units is None
+        assert bare_vehicle.is_cruise_range_units_supported is False
+
 
 class TestNaDoorAccessParity:
     """Test per-door open/closed and per-door lock properties for NA vehicles."""

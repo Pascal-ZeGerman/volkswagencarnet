@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Variable Parity & Enrichment
 status: planning
-stopped_at: Completed 35-01-PLAN.md
-last_updated: "2026-03-13T15:34:19.383Z"
+stopped_at: Completed 35-02-PLAN.md
+last_updated: "2026-03-13T15:41:21.499Z"
 last_activity: 2026-03-12 -- Roadmap created for v1.4 (3 phases, 15 requirements)
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -49,6 +49,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 34-door-access-parity]: NA branch added at top of _get_door_state/_is_door_supported; EMEA paths untouched
 - [Phase 34-door-access-parity]: _NA_DOOR_NAMES maps bonnet->hood for hood_closed; NOTAVAILABLE returns None not False
 - [Phase 35]: 5 of 15 RED tests pass coincidentally via EMEA fallback — acceptable; Plan 02 implementation will keep them green
+- [Phase 35]: is_electric_range_supported uses is not None guard (not truthiness) so depleted battery (0) returns True
+- [Phase 35]: climatisation_duration_last_updated returns None (no standalone timestamp in na_climate payload)
 
 ### Pending Todos
 
@@ -60,6 +62,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T15:34:19.377Z
-Stopped at: Completed 35-01-PLAN.md
+Last session: 2026-03-13T15:41:21.490Z
+Stopped at: Completed 35-02-PLAN.md
 Resume file: None

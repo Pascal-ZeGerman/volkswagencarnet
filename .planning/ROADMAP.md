@@ -81,7 +81,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 **Milestone Goal:** Surface all remaining NA API response fields as vehicle properties, achieving parity with EMEA where data exists and exposing NA-specific fields.
 
 - [x] **Phase 34: Door & Access Parity** - Wire per-door open/closed and per-door lock status from NA exteriorStatus (completed 2026-03-13)
-- [ ] **Phase 35: EV Range, Trip & Metadata Parity** - Map electric range, trip speed, timestamps, parked status, and climate duration from existing NA data
+- [x] **Phase 35: EV Range, Trip & Metadata Parity** - Map electric range, trip speed, timestamps, parked status, and climate duration from existing NA data (completed 2026-03-13)
 - [ ] **Phase 36: NA-Specific Properties** - Expose aggregate security status and range units indicator unique to NA
 
 ### v1.5 Error Resilience & Code Hardening (Planned)
@@ -119,7 +119,7 @@ Plans:
   3. NA user sees odometer update timestamp from na_status.currentMileageTimestamp
   4. NA user sees vehicle_moving correctly derived (inverted) from na_location.parked
   5. NA user sees climatisation duration from na_climate.climatisationDuration
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 35-01-PLAN.md — Write 15 failing tests for Phase 35 properties (RED)
 - [ ] 35-02-PLAN.md — Implement NA branches and climatisation_duration triple (GREEN)
@@ -204,7 +204,7 @@ Plans:
 | 32. EV Charging Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 33. Climate Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 34. Door & Access Parity | 1/1 | Complete    | 2026-03-13 | - |
-| 35. EV Range, Trip & Metadata Parity | 1/2 | In Progress|  | - |
+| 35. EV Range, Trip & Metadata Parity | 2/2 | Complete   | 2026-03-13 | - |
 | 36. NA-Specific Properties | v1.4 | 0/? | Not started | - |
 | 37. Critical Fixes | v1.5 | 0/? | Not started | - |
 | 38. Exception Hygiene & Data Integrity | v1.5 | 0/? | Not started | - |
