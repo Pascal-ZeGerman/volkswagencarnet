@@ -17,7 +17,7 @@ import aiohttp
 from aiohttp import ClientTimeout
 
 from .vw_const import Services, VehicleStatusParameter as P, Paths
-from .vw_exceptions import APIError, UnsupportedOperationError
+from .vw_exceptions import APIError, UnsupportedOperationError, VWError
 from .vw_utilities import find_path, is_valid_path
 
 # TODO
@@ -415,47 +415,40 @@ class Vehicle:
 
     async def wait_for_request(self, request: Any, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
-        retry_count -= 1
-        if retry_count == 0:
-            _LOGGER.info("Timeout while waiting for result of %s", request.requestId)
-            return "Timeout"
-        try:
-            if self._connection is None:
-                return "Exception"
-            status = await self._connection.get_request_status(self.vin, request)
-            _LOGGER.debug("Request ID %s: %s", request, status)
-            self._requests["state"] = status
-            if status == "In Progress":
+        for _ in range(retry_count - 1):
+            try:
+                if self._connection is None:
+                    return "Exception"
+                status = await self._connection.get_request_status(self.vin, request)
+                _LOGGER.debug("Request ID %s: %s", request, status)
+                self._requests["state"] = status
+                if status != "In Progress":
+                    return status
                 await asyncio.sleep(10)
-                return await self.wait_for_request(request, retry_count)
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning(
-                "Exception encountered while waiting for request status: %s", error
-            )
-            return "Exception"
-        else:
-            return status
+            except (asyncio.TimeoutError, aiohttp.ClientError, VWError) as error:
+                _LOGGER.warning(
+                    "Exception encountered while waiting for request status: %s", error
+                )
+                return "Exception"
+        _LOGGER.info("Timeout while waiting for result of %s", request.requestId)
+        return "Timeout"
 
     async def wait_for_data_refresh(self, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
-        retry_count -= 1
-        if retry_count == 0:
-            _LOGGER.info("Timeout while waiting for data refresh")
-            return "Timeout"
-        try:
-            await self.get_selectivestatus([Services.MEASUREMENTS])
-            refresh_trigger_time = self._requests.get("refresh", {}).get("timestamp")
-            if self.last_connected < refresh_trigger_time:
+        for _ in range(retry_count - 1):
+            try:
+                await self.get_selectivestatus([Services.MEASUREMENTS])
+                refresh_trigger_time = self._requests.get("refresh", {}).get("timestamp")
+                if self.last_connected >= refresh_trigger_time:
+                    return "successful"
                 await asyncio.sleep(10)
-                return await self.wait_for_data_refresh(retry_count)
-
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning(
-                "Exception encountered while waiting for data refresh: %s", error
-            )
-            return "Exception"
-        else:
-            return "successful"
+            except (asyncio.TimeoutError, aiohttp.ClientError, VWError) as error:
+                _LOGGER.warning(
+                    "Exception encountered while waiting for data refresh: %s", error
+                )
+                return "Exception"
+        _LOGGER.info("Timeout while waiting for data refresh")
+        return "Timeout"
 
     # Data set functions
     # Charging (BATTERYCHARGE)
@@ -491,7 +484,8 @@ class Vehicle:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
                 raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setCharging(self.vin, (action == "start"))
             return await self._handle_response(
@@ -558,7 +552,8 @@ class Vehicle:
                     if setting == "max_charge_amperage"
                     else self.charge_max_ac_ampere
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingSettings(self.vin, data)
             return await self._handle_response(
@@ -576,7 +571,8 @@ class Vehicle:
                 _LOGGER.error('Charging care mode "%s" is not supported', value)
                 raise UnsupportedOperationError(f'Charging care mode "{value}" is not supported.')
             data = {"batteryCareMode": value}
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingCareModeSettings(
                 self.vin, data
@@ -596,7 +592,8 @@ class Vehicle:
                 _LOGGER.error('Battery support mode "%s" is not supported', value)
                 raise UnsupportedOperationError(f'Battery support mode "{value}" is not supported.')
             data = {"batterySupportEnabled": value}
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setReadinessBatterySupport(self.vin, data)
             return await self._handle_response(
@@ -672,7 +669,8 @@ class Vehicle:
                         if setting == "zone_front_right"
                         else self.zone_front_right
                     )
-                assert self._connection is not None
+                if self._connection is None:
+                    raise RuntimeError("Vehicle not associated with a connection")
                 self._requests["latest"] = "Climatisation"
                 response = await self._connection.setClimaterSettings(self.vin, data)
                 return await self._handle_response(
@@ -691,7 +689,8 @@ class Vehicle:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Window heater action "%s" is not supported', action)
                 raise UnsupportedOperationError(f'Window heater action "{action}" is not supported.')
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setWindowHeater(
                 self.vin, (action == "start")
@@ -755,7 +754,8 @@ class Vehicle:
             else:
                 _LOGGER.error("Invalid climatisation action: %s", action)
                 raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setClimater(
                 self.vin, data, (action == "start")
@@ -781,7 +781,8 @@ class Vehicle:
             else:
                 _LOGGER.error("Invalid auxiliary heater action: %s", action)
                 raise UnsupportedOperationError(f"Invalid auxiliary heater action: {action}")
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setAuxiliary(
                 self.vin, data, (action == "start")
@@ -800,7 +801,8 @@ class Vehicle:
             if not isinstance(enable, bool):
                 _LOGGER.error("Charging departure timers setting is not supported")
                 raise UnsupportedOperationError("Charging departure timers setting is not supported.")
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             if is_valid_path(
@@ -843,7 +845,8 @@ class Vehicle:
             if timer_data is None:
                 _LOGGER.error("Charging departure timers setting is not supported")
                 raise UnsupportedOperationError("Charging departure timers setting is not supported.")
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             if is_valid_path(
@@ -890,7 +893,8 @@ class Vehicle:
                 raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
             for index, timer in enumerate(timers):
                 if timer.get("id", 0) == timer_id:
@@ -915,7 +919,8 @@ class Vehicle:
                 raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
@@ -964,7 +969,8 @@ class Vehicle:
             _LOGGER.error("Invalid lock action: %s", action)
             raise UnsupportedOperationError(f"Invalid lock action: {action}")
 
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "Lock"
             response = await self._connection.setLock(
@@ -1008,7 +1014,8 @@ class Vehicle:
         if self._in_progress("honk_and_flash", unknown_offset=-5):
             return False
 
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "HonkAndFlash"
             response = await self._connection.setHonkAndFlash(self.vin, self.position)
@@ -1030,7 +1037,8 @@ class Vehicle:
         """Wake up vehicle and update status data."""
         if self._in_progress("refresh", unknown_offset=-5):
             return False
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "Refresh"
             response = await self._connection.wakeUpVehicle(self.vin)
@@ -1203,7 +1211,7 @@ class Vehicle:
         return self.attrs.get("vehicle", {}).get("modelName", False) is not False
 
     @property
-    def model_year(self) -> bool | None:
+    def model_year(self) -> int | None:
         """Return model year."""
         return self.attrs.get("vehicle", {}).get("modelYear", None)
 
