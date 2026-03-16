@@ -161,8 +161,8 @@ Plans:
   5. Data-fetch methods return `None` (not `False`) on error, and `expired()` compares datetimes consistently (both aware or both naive)
 **Plans**: 2 plans
 Plans:
-- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
-- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
+- [x] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
+- [x] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
 
 ### Phase 39: Concurrency & Code Quality
 **Goal**: Concurrent `update()` calls are safe, recursive wait methods are iterative, and type annotations are correct throughout
@@ -176,8 +176,8 @@ Plans:
   5. `model_year` type annotation is `int | None` and dead try/except in `_is_allowed_vw_domain()` is removed
 **Plans**: 2 plans
 Plans:
-- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
-- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
+- [x] 39-01-PLAN.md — Add update lock, remove dead 429 check and dead try/except (TDD) (completed 2026-03-16)
+- [ ] 39-02-PLAN.md — Convert recursion to iteration, replace assert guards, fix model_year type (TDD)
 
 ### Phase 40: Code Review Gate
 **Goal**: Full codebase passes a comprehensive code review with zero critical findings remaining
@@ -187,10 +187,7 @@ Plans:
   1. `/review-pr` run against the full codebase produces zero critical-severity recommendations
   2. All critical findings from the review are fixed and verified in subsequent review iterations
   3. All existing tests continue to pass after review-driven fixes (no regressions)
-**Plans**: 2 plans
-Plans:
-- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
-- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
+**Plans**: [To be planned]
 
 ## Progress
 
@@ -220,6 +217,6 @@ Plans:
 | 35. EV Range, Trip & Metadata Parity | 2/2 | Complete    | 2026-03-13 | - |
 | 36. NA-Specific Properties | 1/1 | Complete    | 2026-03-15 | - |
 | 37. Critical Fixes | v1.5 | Complete    | 2026-03-15 | 2026-03-15 |
-| 38. Exception Hygiene & Data Integrity | 2/2 | Complete   | 2026-03-16 | - |
-| 39. Concurrency & Code Quality | v1.5 | 0/? | Not started | - |
+| 38. Exception Hygiene & Data Integrity | 2/2 | Complete    | 2026-03-16 | - |
+| 39. Concurrency & Code Quality | v1.5 | 1/2 | In progress | - |
 | 40. Code Review Gate | v1.5 | 0/? | Not started | - |

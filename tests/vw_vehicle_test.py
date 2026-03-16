@@ -1,5 +1,6 @@
 """Vehicle class tests."""
 
+import ast
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -4540,3 +4541,86 @@ class TestCFIX01ActionMethods(IsolatedAsyncioTestCase):
         vehicle = self._make_vehicle()
         with pytest.raises(APIError):
             await vehicle._handle_response(None, "test")
+
+
+# ---------------------------------------------------------------------------
+# Wait method tests: recursion elimination, behavior, except narrowing
+# ---------------------------------------------------------------------------
+VW_VEHICLE_SRC = Path(__file__).parent.parent / "volkswagencarnet" / "vw_vehicle.py"
+
+
+class TestWaitMethods(IsolatedAsyncioTestCase):
+    """Verify wait_for_request/wait_for_data_refresh are iterative with narrowed except."""
+
+    def _get_method_ast(self, method_name: str) -> ast.AsyncFunctionDef:
+        """Parse vw_vehicle.py and return the AST node for the given method."""
+        source = VW_VEHICLE_SRC.read_text()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == method_name:
+                return node
+        raise AssertionError(f"{method_name} not found in vw_vehicle.py")
+
+    def _has_recursive_call(self, method_name: str) -> bool:
+        """Check if method contains a recursive self.method_name() call."""
+        node = self._get_method_ast(method_name)
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                func = child.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == method_name
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "self"
+                ):
+                    return True
+        return False
+
+    def test_wait_for_request_no_recursion(self):
+        """wait_for_request contains no recursive call to self.wait_for_request."""
+        assert not self._has_recursive_call("wait_for_request"), (
+            "wait_for_request still contains a recursive call"
+        )
+
+    def test_wait_for_data_refresh_no_recursion(self):
+        """wait_for_data_refresh contains no recursive call to self.wait_for_data_refresh."""
+        assert not self._has_recursive_call("wait_for_data_refresh"), (
+            "wait_for_data_refresh still contains a recursive call"
+        )
+
+    async def test_wait_for_request_returns_timeout_after_retries(self):
+        """wait_for_request returns 'Timeout' when status is always 'In Progress'."""
+        vehicle = Vehicle(None, "https://example.com")
+        mock_conn = MagicMock()
+        mock_conn.get_request_status = AsyncMock(return_value="In Progress")
+        vehicle._connection = mock_conn
+
+        mock_request = MagicMock()
+        mock_request.requestId = "test-123"
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await vehicle.wait_for_request(mock_request, retry_count=3)
+        assert result == "Timeout"
+
+    async def test_wait_for_request_returns_status_on_completion(self):
+        """wait_for_request returns status when not 'In Progress'."""
+        vehicle = Vehicle(None, "https://example.com")
+        mock_conn = MagicMock()
+        mock_conn.get_request_status = AsyncMock(return_value="Completed")
+        vehicle._connection = mock_conn
+
+        mock_request = MagicMock()
+        mock_request.requestId = "test-456"
+
+        result = await vehicle.wait_for_request(mock_request)
+        assert result == "Completed"
+
+    def test_wait_for_request_narrowed_except(self):
+        """wait_for_request except clause does not catch bare Exception."""
+        node = self._get_method_ast("wait_for_request")
+        for child in ast.walk(node):
+            if isinstance(child, ast.ExceptHandler):
+                if child.type is not None and isinstance(child.type, ast.Name):
+                    assert child.type.id != "Exception", (
+                        "wait_for_request still catches bare Exception"
+                    )

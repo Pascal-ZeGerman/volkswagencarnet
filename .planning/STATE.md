@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Variable Parity & Enrichment
-status: completed
-stopped_at: Completed 38-02-PLAN.md
-last_updated: "2026-03-16T02:38:14Z"
-last_activity: 2026-03-16 -- Phase 38-02 executed (data integrity fixes)
+status: in-progress
+stopped_at: Completed 39-01-PLAN.md
+last_updated: "2026-03-16T18:59:15.000Z"
+last_activity: 2026-03-16 -- Phase 39-01 executed (concurrency lock + dead code removal)
 progress:
-  total_phases: 8
+  total_phases: 7
   completed_phases: 5
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** NA users can authenticate with VW CarNet and retrieve full vehicle data for homelab integration without breaking EMEA functionality.
-**Current focus:** v1.6 Exception Hygiene & Data Integrity
+**Current focus:** v1.7 Concurrency & Code Quality
 
 ## Current Position
 
-Phase: 38 (Exception Hygiene & Data Integrity)
-Plan: 02 of 02 -- COMPLETE
-Status: Phase 38 complete
-Last activity: 2026-03-16 -- Phase 38-02 executed (data integrity fixes)
+Phase: 39 (Concurrency & Code Quality)
+Plan: 01 of 01 -- COMPLETE
+Status: Phase 39-01 complete
+Last activity: 2026-03-16 -- Phase 39-01 executed (concurrency lock + dead code removal)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9 (v1.4: 6, v1.5: 1, v1.6: 2)
+- Total plans completed: 10 (v1.4: 6, v1.5: 1, v1.6: 2, v1.7: 1)
 - Average duration: ~4 min
-- Total execution time: ~33 min
+- Total execution time: ~36 min
 
 ## Accumulated Context
 
@@ -59,6 +59,8 @@ Progress: [██████████] 100%
 - [Phase 38-02]: Data-fetch methods return None (not False) -- Python convention for "no value"
 - [Phase 38-02]: _request() uses bare raise (not from None) to preserve traceback chains
 - [Phase 38-02]: expired() sets naive datetimes to UTC instead of stripping tzinfo
+- [Phase 39-01]: _update_lock follows same pattern as existing _login_lock
+- [Phase 39-01]: AST tests verify dead code stays removed -- regression-proof
 
 ### Pending Todos
 
@@ -70,6 +72,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T02:38:14Z
-Stopped at: Completed 38-02-PLAN.md
-Resume file: .planning/phases/38-exception-hygiene-data-integrity/38-02-SUMMARY.md
+Last session: 2026-03-16T18:59:15.000Z
+Stopped at: Completed 39-01-PLAN.md
+Resume file: .planning/phases/39-concurrency-code-quality/39-01-SUMMARY.md
