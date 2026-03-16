@@ -89,7 +89,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 **Milestone Goal:** Fix critical control flow bugs, clean up exception patterns, add data integrity guards, and pass a full code review gate with zero critical findings.
 
 - [x] **Phase 37: Critical Fixes** - Fix control flow bugs where exceptions always raise, add missing timeouts and JWT guards (completed 2026-03-15)
-- [ ] **Phase 38: Exception Hygiene & Data Integrity** - Replace bare Exception raises with domain types, fix return type inconsistencies, add None guards
+- [x] **Phase 38: Exception Hygiene & Data Integrity** - Replace bare Exception raises with domain types, fix return type inconsistencies, add None guards (completed 2026-03-16)
 - [ ] **Phase 39: Concurrency & Code Quality** - Add update lock, remove dead code, convert recursion to iteration, fix type annotations
 - [ ] **Phase 40: Code Review Gate** - Run /review-pr on full codebase, fix all critical findings iteratively until zero remain
 
@@ -220,6 +220,6 @@ Plans:
 | 35. EV Range, Trip & Metadata Parity | 2/2 | Complete    | 2026-03-13 | - |
 | 36. NA-Specific Properties | 1/1 | Complete    | 2026-03-15 | - |
 | 37. Critical Fixes | v1.5 | Complete    | 2026-03-15 | 2026-03-15 |
-| 38. Exception Hygiene & Data Integrity | 1/2 | In Progress|  | - |
+| 38. Exception Hygiene & Data Integrity | 2/2 | Complete   | 2026-03-16 | - |
 | 39. Concurrency & Code Quality | v1.5 | 0/? | Not started | - |
 | 40. Code Review Gate | v1.5 | 0/? | Not started | - |

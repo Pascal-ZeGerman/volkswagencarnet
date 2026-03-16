@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Variable Parity & Enrichment
 status: completed
-stopped_at: Completed 38-01-PLAN.md
-last_updated: "2026-03-16T02:29:24Z"
-last_activity: 2026-03-16 -- Phase 38-01 executed (exception hygiene)
+stopped_at: Completed 38-02-PLAN.md
+last_updated: "2026-03-16T02:38:14Z"
+last_activity: 2026-03-16 -- Phase 38-02 executed (data integrity fixes)
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 7
+  completed_plans: 7
   percent: 100
 ---
 
@@ -26,18 +26,18 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 38 (Exception Hygiene & Data Integrity)
-Plan: 01 of 01 -- COMPLETE
+Plan: 02 of 02 -- COMPLETE
 Status: Phase 38 complete
-Last activity: 2026-03-16 -- Phase 38-01 executed (exception hygiene)
+Last activity: 2026-03-16 -- Phase 38-02 executed (data integrity fixes)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8 (v1.4: 6, v1.5: 1, v1.6: 1)
+- Total plans completed: 9 (v1.4: 6, v1.5: 1, v1.6: 2)
 - Average duration: ~4 min
-- Total execution time: ~27 min
+- Total execution time: ~33 min
 
 ## Accumulated Context
 
@@ -56,6 +56,9 @@ Progress: [██████████] 100%
 - [Phase 37]: Kept bare Exception in unsupported-service guards (pre-existing, out of scope); used APIError with from error chain for action failures
 - [Phase 38]: All 33 bare Exception raises in vw_vehicle.py replaced with UnsupportedOperationError(VWError)
 - [Phase 38]: Except clauses narrowed: _ensure_home_region to network errors, parking_position to parse errors, dashboard to VWError
+- [Phase 38-02]: Data-fetch methods return None (not False) -- Python convention for "no value"
+- [Phase 38-02]: _request() uses bare raise (not from None) to preserve traceback chains
+- [Phase 38-02]: expired() sets naive datetimes to UTC instead of stripping tzinfo
 
 ### Pending Todos
 
@@ -67,6 +70,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T02:25:29Z
-Stopped at: Completed 38-01-PLAN.md
-Resume file: .planning/phases/38-exception-hygiene-data-integrity/38-01-SUMMARY.md
+Last session: 2026-03-16T02:38:14Z
+Stopped at: Completed 38-02-PLAN.md
+Resume file: .planning/phases/38-exception-hygiene-data-integrity/38-02-SUMMARY.md

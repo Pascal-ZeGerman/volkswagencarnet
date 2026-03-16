@@ -31,6 +31,7 @@ from volkswagencarnet.vw_dashboard import (
 )
 from volkswagencarnet.vw_vehicle import Vehicle
 from volkswagencarnet.vw_connection import Connection
+from volkswagencarnet.vw_exceptions import VWError
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses"
 
@@ -638,7 +639,7 @@ class TestSpecializedSubclasses:
     @pytest.mark.asyncio
     async def test_door_lock_lock_failure(self):
         vehicle = MagicMock(spec=Vehicle)
-        vehicle.set_lock = AsyncMock(side_effect=Exception("failed"))
+        vehicle.set_lock = AsyncMock(side_effect=VWError("failed"))
         vehicle.update = AsyncMock()
         dl = DoorLock()
         dl.vehicle = vehicle
