@@ -1569,13 +1569,55 @@ class TestDataFetchMethods:
         assert result == "Unknown"
 
     @pytest.mark.asyncio
-    async def test_data_fetch_returns_false_on_exception(self):
-        """Test that data fetch methods return False on exceptions."""
+    async def test_data_fetch_returns_none_on_exception(self):
+        """Test that data fetch methods return None (not False) on exceptions."""
         conn = _make_connection()
         conn.validate_tokens = AsyncMock(return_value=True)
-        conn.get = AsyncMock(side_effect=Exception("network error"))
+        conn.get = AsyncMock(side_effect=aiohttp.client_exceptions.ClientError("network error"))
         result = await conn.getTripLast(VIN)
-        assert result is False
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_request_preserves_traceback_chain(self):
+        """Test that _request() preserves traceback chain (no from None suppression)."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn._session_auth_headers = {"Authorization": "Bearer test"}
+        mock_resp = AsyncMock()
+        mock_resp.status = 500
+        mock_resp.raise_for_status = MagicMock(
+            side_effect=aiohttp.client_exceptions.ClientResponseError(
+                request_info=MagicMock(), history=(), status=500, message="Server Error"
+            )
+        )
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        conn._session.request = MagicMock(return_value=mock_resp)
+        with pytest.raises(aiohttp.client_exceptions.ClientResponseError) as exc_info:
+            await conn._request("GET", "https://example.com/test")
+        # from None sets __suppress_context__ = True; bare raise preserves it as False
+        assert exc_info.value.__suppress_context__ is False
+
+    @pytest.mark.asyncio
+    async def test_getVehicleData_missing_data_key(self):
+        """Test getVehicleData handles response with no 'data' key without crashing."""
+        conn = _make_connection()
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.get = AsyncMock(return_value={"status": "ok"})
+        # Should not raise TypeError; response.get("data") returns None, iterating crashes
+        result = await conn.getVehicleData(VIN)
+        # Should return None (no matching VIN found in empty iteration)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_request_status_handles_none_response(self):
+        """Test get_request_status returns Unknown when getPendingRequests returns None."""
+        conn = _make_connection()
+        conn._session_logged_in = True
+        conn.validate_tokens = AsyncMock(return_value=True)
+        conn.getPendingRequests = AsyncMock(return_value=None)
+        result = await conn.get_request_status(VIN, requestId="req-1")
+        assert result == "Unknown"
 
 
 # ---------------------------------------------------------------------------

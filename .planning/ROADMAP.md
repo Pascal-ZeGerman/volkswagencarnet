@@ -82,13 +82,13 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 - [x] **Phase 34: Door & Access Parity** - Wire per-door open/closed and per-door lock status from NA exteriorStatus (completed 2026-03-13)
 - [x] **Phase 35: EV Range, Trip & Metadata Parity** - Map electric range, trip speed, timestamps, parked status, and climate duration from existing NA data (completed 2026-03-13)
-- [ ] **Phase 36: NA-Specific Properties** - Expose aggregate security status and range units indicator unique to NA
+- [x] **Phase 36: NA-Specific Properties** - Expose aggregate security status and range units indicator unique to NA (completed 2026-03-15)
 
 ### v1.5 Error Resilience & Code Hardening (Planned)
 
 **Milestone Goal:** Fix critical control flow bugs, clean up exception patterns, add data integrity guards, and pass a full code review gate with zero critical findings.
 
-- [ ] **Phase 37: Critical Fixes** - Fix control flow bugs where exceptions always raise, add missing timeouts and JWT guards
+- [x] **Phase 37: Critical Fixes** - Fix control flow bugs where exceptions always raise, add missing timeouts and JWT guards (completed 2026-03-15)
 - [ ] **Phase 38: Exception Hygiene & Data Integrity** - Replace bare Exception raises with domain types, fix return type inconsistencies, add None guards
 - [ ] **Phase 39: Concurrency & Code Quality** - Add update lock, remove dead code, convert recursion to iteration, fix type annotations
 - [ ] **Phase 40: Code Review Gate** - Run /review-pr on full codebase, fix all critical findings iteratively until zero remain
@@ -121,7 +121,7 @@ Plans:
   5. NA user sees climatisation duration from na_climate.climatisationDuration
 **Plans:** 2/2 plans complete
 Plans:
-- [ ] 35-01-PLAN.md — Write 15 failing tests for Phase 35 properties (RED)
+- [x] 35-01-PLAN.md — Write 15 failing tests for Phase 35 properties (RED) (completed 2026-03-13)
 - [ ] 35-02-PLAN.md — Implement NA branches and climatisation_duration triple (GREEN)
 
 ### Phase 36: NA-Specific Properties
@@ -132,7 +132,9 @@ Plans:
   1. NA user can read aggregate security status (secure/locked/unlocked) from exteriorStatus.secure
   2. NA user can read cruise range units indicator (MI/KM) from powerStatus.cruiseRangeUnits
   3. Both properties return None for EMEA vehicles (no NA data source)
-**Plans**: TBD
+**Plans**: 1 plan (unified — tests + implementation together; scope is 2 properties only)
+Plans:
+- [ ] 36-01-PLAN.md — Implement security_status and cruise_range_units with tests
 
 ### Phase 37: Critical Fixes
 **Goal**: Vehicle action methods behave correctly on success and failure, EMEA token validation cannot crash on malformed tokens, and all session-level HTTP calls have explicit timeouts
@@ -143,7 +145,9 @@ Plans:
   2. `_handle_response()` raises `APIError` (not bare `Exception`) when response is falsy
   3. EMEA `validate_tokens()` returns False gracefully when JWT tokens are malformed or have missing exp claims, instead of crashing
   4. EMEA `refresh_tokens()` and `get_openid_config()` complete or timeout within TIMEOUT.seconds, never hang indefinitely
-**Plans**: TBD
+**Plans:** 1/1 plans complete
+Plans:
+- [x] 37-01-PLAN.md — Fix action method raises, APIError, JWT guard, and timeouts (TDD RED-GREEN) (completed 2026-03-15)
 
 ### Phase 38: Exception Hygiene & Data Integrity
 **Goal**: All exceptions raised by the library are domain-specific types, traceback chains are preserved, and data-fetch methods handle None/missing data without crashing
@@ -155,7 +159,10 @@ Plans:
   3. Overly broad `except Exception` catches in `update()`, `_discover_market_config()`, and data-fetch methods are narrowed to specific expected exception types
   4. `getVehicleData()` does not crash when API response has no "data" key
   5. Data-fetch methods return `None` (not `False`) on error, and `expired()` compares datetimes consistently (both aware or both naive)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
+- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
 
 ### Phase 39: Concurrency & Code Quality
 **Goal**: Concurrent `update()` calls are safe, recursive wait methods are iterative, and type annotations are correct throughout
@@ -167,7 +174,10 @@ Plans:
   3. `wait_for_request()` and `wait_for_data_refresh()` use iterative loops instead of recursion
   4. `assert self._connection is not None` replaced with explicit `if ... raise RuntimeError` checks that survive `python -O`
   5. `model_year` type annotation is `int | None` and dead try/except in `_is_allowed_vw_domain()` is removed
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
+- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
 
 ### Phase 40: Code Review Gate
 **Goal**: Full codebase passes a comprehensive code review with zero critical findings remaining
@@ -177,7 +187,10 @@ Plans:
   1. `/review-pr` run against the full codebase produces zero critical-severity recommendations
   2. All critical findings from the review are fixed and verified in subsequent review iterations
   3. All existing tests continue to pass after review-driven fixes (no regressions)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
+- [ ] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
 
 ## Progress
 
@@ -204,9 +217,9 @@ Plans:
 | 32. EV Charging Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 33. Climate Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
 | 34. Door & Access Parity | 1/1 | Complete    | 2026-03-13 | - |
-| 35. EV Range, Trip & Metadata Parity | 2/2 | Complete   | 2026-03-13 | - |
-| 36. NA-Specific Properties | v1.4 | 0/? | Not started | - |
-| 37. Critical Fixes | v1.5 | 0/? | Not started | - |
-| 38. Exception Hygiene & Data Integrity | v1.5 | 0/? | Not started | - |
+| 35. EV Range, Trip & Metadata Parity | 2/2 | Complete    | 2026-03-13 | - |
+| 36. NA-Specific Properties | 1/1 | Complete    | 2026-03-15 | - |
+| 37. Critical Fixes | v1.5 | Complete    | 2026-03-15 | 2026-03-15 |
+| 38. Exception Hygiene & Data Integrity | 1/2 | In Progress|  | - |
 | 39. Concurrency & Code Quality | v1.5 | 0/? | Not started | - |
 | 40. Code Review Gate | v1.5 | 0/? | Not started | - |

@@ -3298,20 +3298,29 @@ class TestExpired:
 
     @pytest.mark.asyncio
     async def test_expired_with_past_date(self):
-        """Past date without timezone triggers TypeError in comparison, caught by except."""
+        """Past date (naive) should be treated as UTC and correctly detected as expired."""
         v = Vehicle(conn=None, url="TESTVIN")
         v._services[Services.CHARGING]["expiration"] = datetime(2020, 1, 1)
         result = await v.expired(Services.CHARGING)
-        # now (aware) >= expiration (naive after .replace(tzinfo=None)) raises TypeError
-        # which is caught by broad except, returning False
-        assert result is False
+        # After fix: naive datetime gets tzinfo=UTC, then compared with aware now -> True (expired)
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_expired_with_future_date(self):
         v = Vehicle(conn=None, url="TESTVIN")
         v._services[Services.CHARGING]["expiration"] = datetime(2030, 1, 1, tzinfo=UTC)
         result = await v.expired(Services.CHARGING)
-        # datetime(2030) with UTC, then .replace(tzinfo=None) makes it naive -> TypeError
+        # After fix: keeps UTC tzinfo, compared with aware now -> False (not expired)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_expired_naive_datetime_no_type_error(self):
+        """Naive datetime expiration should not raise TypeError."""
+        v = Vehicle(conn=None, url="TESTVIN")
+        # Naive datetime far in the future
+        v._services[Services.CHARGING]["expiration"] = datetime(2030, 6, 15, 12, 0, 0)
+        # Should NOT raise TypeError -- currently code strips tzinfo causing aware/naive mismatch
+        result = await v.expired(Services.CHARGING)
         assert result is False
 
     @pytest.mark.asyncio
