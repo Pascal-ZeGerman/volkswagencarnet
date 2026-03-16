@@ -2456,7 +2456,7 @@ class Connection:
                                 "Not success status code [%s]",
                                 response.status,
                             )
-                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                    except (json.JSONDecodeError, aiohttp.ContentTypeError, KeyError, ValueError) as exc:
                         res = {}
                         _LOGGER.warning(
                             "Request to '%s' failed to parse response [status %s]: %s",
@@ -2491,10 +2491,10 @@ class Connection:
                 # continue is implicit — while loop wraps the try/except
 
             except client_exceptions.ClientResponseError as httperror:
-                await self.update_service_status(url, httperror.code)
+                await self.update_service_status(url, httperror.status)
                 raise
 
-            except Exception as error:
+            except (TypeError, ValueError, asyncio.TimeoutError) as error:
                 await self.update_service_status(url, 1000)
                 raise
 
