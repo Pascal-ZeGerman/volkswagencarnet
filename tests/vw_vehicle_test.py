@@ -12,7 +12,7 @@ from freezegun import freeze_time
 import pytest
 from volkswagencarnet.vw_connection import Connection
 from volkswagencarnet.vw_const import Services
-from volkswagencarnet.vw_exceptions import APIError
+from volkswagencarnet.vw_exceptions import APIError, UnsupportedOperationError, VWError
 from volkswagencarnet.vw_vehicle import (
     ENGINE_TYPE_DIESEL,
     ENGINE_TYPE_ELECTRIC,
@@ -30,6 +30,16 @@ def load_fixture(*parts):
     """Load a JSON fixture file."""
     with open(FIXTURE_DIR.joinpath(*parts)) as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Exception hierarchy tests
+# ---------------------------------------------------------------------------
+def test_unsupported_operation_error_is_vw_error():
+    """UnsupportedOperationError is a subclass of VWError."""
+    assert issubclass(UnsupportedOperationError, VWError)
+    err = UnsupportedOperationError("test")
+    assert isinstance(err, VWError)
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +163,7 @@ class VehiclePropertyTest(IsolatedAsyncioTestCase):
         vehicle._discovered = True
         vehicle._services[Services.ACCESS] = {"active": False}
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(UnsupportedOperationError) as exc_info:
             await vehicle.set_lock("any", "")
 
         expected_message = "Remote lock/unlock is not supported."
@@ -165,7 +175,7 @@ class VehiclePropertyTest(IsolatedAsyncioTestCase):
         vehicle._discovered = True
         vehicle._services[Services.ACCESS] = {"active": True}
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(UnsupportedOperationError) as exc_info:
             await vehicle.set_lock("any", "")
 
         expected_message = "Invalid lock action: any"
@@ -1410,7 +1420,7 @@ class TestNAWriteCommands:
     async def test_set_lock_invalid_action_raises(self):
         """set_lock raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match="Invalid lock action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid lock action"):
             await vehicle.set_lock("open", spin="")
 
     @pytest.mark.asyncio
@@ -1446,7 +1456,7 @@ class TestNAWriteCommands:
     async def test_set_charger_invalid_action_raises(self):
         """set_charger raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match='not supported'):
+        with pytest.raises(UnsupportedOperationError, match='not supported'):
             await vehicle.set_charger("invalid")
 
     @pytest.mark.asyncio
@@ -1473,7 +1483,7 @@ class TestNAWriteCommands:
     async def test_set_climatisation_invalid_action_raises(self):
         """set_climatisation raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match="Invalid climatisation action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid climatisation action"):
             await vehicle.set_climatisation("boost")
 
     @pytest.mark.asyncio
@@ -1801,13 +1811,13 @@ class TestVehicleActions:
         connected_vehicle._states["charging"] = {
             "chargingStatus": {"value": {"chargingState": "readyForCharging"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_charger("invalid")
 
     @pytest.mark.asyncio
     async def test_set_charger_not_supported(self, connected_vehicle):
         """set_charger raises when charging not supported."""
-        with pytest.raises(Exception, match="No charging support"):
+        with pytest.raises(UnsupportedOperationError, match="No charging support"):
             await connected_vehicle.set_charger("start")
 
     @pytest.mark.asyncio
@@ -1855,7 +1865,7 @@ class TestVehicleActions:
             },
             "climatisationStatus": {"value": {"climatisationState": "off"}},
         }
-        with pytest.raises(Exception, match="Invalid climatisation action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid climatisation action"):
             await connected_vehicle.set_climatisation("invalid")
 
     @pytest.mark.asyncio
@@ -1889,13 +1899,13 @@ class TestVehicleActions:
         connected_vehicle._services[Services.PARAMETERS] = {
             "supportsStartWindowHeating": "true"
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_window_heating("invalid")
 
     @pytest.mark.asyncio
     async def test_set_window_heating_not_supported(self, connected_vehicle):
         """set_window_heating raises when not supported."""
-        with pytest.raises(Exception, match="No climatisation support"):
+        with pytest.raises(UnsupportedOperationError, match="No climatisation support"):
             await connected_vehicle.set_window_heating("start")
 
     @pytest.mark.asyncio
@@ -1922,13 +1932,13 @@ class TestVehicleActions:
     async def test_set_lock_invalid_action(self, connected_vehicle):
         """set_lock with invalid action raises."""
         connected_vehicle._services[Services.ACCESS] = {"active": True}
-        with pytest.raises(Exception, match="Invalid lock action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid lock action"):
             await connected_vehicle.set_lock("break", "1234")
 
     @pytest.mark.asyncio
     async def test_set_lock_not_supported(self, connected_vehicle):
         """set_lock raises when access not active."""
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_lock("lock", "1234")
 
     @pytest.mark.asyncio
@@ -1942,7 +1952,7 @@ class TestVehicleActions:
     @pytest.mark.asyncio
     async def test_set_honk_and_flash_not_supported(self, connected_vehicle):
         """set_honk_and_flash raises when not supported."""
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_honk_and_flash()
 
 
@@ -2528,7 +2538,7 @@ class TestSetChargingSettings:
         v._states["charging"] = {
             "chargingSettings": {"value": {"maxChargeCurrentAC": "reduced"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("reduced_ac_charging", "bogus")
 
     @pytest.mark.asyncio
@@ -2548,7 +2558,7 @@ class TestSetChargingSettings:
         v._states["charging"] = {
             "chargingSettings": {"value": {"maxChargeCurrentAC_A": 10}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("max_charge_amperage", 99)
 
     @pytest.mark.asyncio
@@ -2572,7 +2582,7 @@ class TestSetChargingSettings:
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("reduced_ac_charging", "reduced")
 
 
@@ -2601,13 +2611,13 @@ class TestSetChargingCareSettings:
         v._states["batteryChargingCare"] = {
             "chargingCareSettings": {"value": {"batteryCareMode": "deactivated"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_care_settings("bogus")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_care_settings("activated")
 
 
@@ -2632,13 +2642,13 @@ class TestSetReadinessBatterySupport:
         v._states["batterySupport"] = {
             "batterySupportStatus": {"value": {"batterySupport": "enabled"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_readiness_battery_support("invalid")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_readiness_battery_support(True)
 
 
@@ -2693,7 +2703,7 @@ class TestSetClimatisationSettings:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_climatisation_settings(
                 "climatisation_target_temperature", 50.0
             )
@@ -2701,7 +2711,7 @@ class TestSetClimatisationSettings:
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_climatisation_settings("climatisation_target_temperature", 22)
 
 
@@ -2741,13 +2751,13 @@ class TestSetAuxiliaryClimatisation:
         v._states["climatisation"] = {
             "auxiliaryHeatingStatus": {"value": {"climatisationState": "off"}}
         }
-        with pytest.raises(Exception, match="Invalid auxiliary heater action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid auxiliary heater action"):
             await v.set_auxiliary_climatisation("bogus", "1234")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="No climatisation support"):
+        with pytest.raises(UnsupportedOperationError, match="No climatisation support"):
             await v.set_auxiliary_climatisation("start", "1234")
 
 
@@ -2781,13 +2791,13 @@ class TestSetDepartureTimer:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_departure_timer(1, "1234", "yes")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_departure_timer(1, "1234", True)
 
 
@@ -2821,13 +2831,13 @@ class TestSetAcDepartureTimer:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_ac_departure_timer(1, "yes")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_ac_departure_timer(1, True)
 
 
