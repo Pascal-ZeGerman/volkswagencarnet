@@ -173,3 +173,57 @@ class GitIgnoreStructureTest(IsolatedAsyncioTestCase):
         """'.gitignore' contains *.env glob pattern for general credential files."""
         gitignore = (Path(__file__).parent.parent / ".gitignore").read_text()
         self.assertIn("*.env", gitignore)
+
+
+# ---------------------------------------------------------------------------
+# Dead Code: response == 429 check in _handle_action_result
+# ---------------------------------------------------------------------------
+
+class TestDeadCodeRemoval(IsolatedAsyncioTestCase):
+    """Verify dead `response == 429` check has been removed from _handle_action_result."""
+
+    def test_no_response_429_check_in_handle_action_result(self):
+        """AST of _handle_action_result contains no comparison to integer 429."""
+        source = _read_source()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_handle_action_result":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Compare):
+                        for comparator in child.comparators:
+                            if isinstance(comparator, ast.Constant) and comparator.value == 429:
+                                self.fail(
+                                    "Found dead comparison to 429 in _handle_action_result "
+                                    f"at line {child.lineno}"
+                                )
+                        # Also check left side
+                        if isinstance(child.left, ast.Constant) and child.left.value == 429:
+                            self.fail(
+                                "Found dead comparison to 429 in _handle_action_result "
+                                f"at line {child.lineno}"
+                            )
+                return
+        self.fail("_handle_action_result method not found in source")
+
+
+# ---------------------------------------------------------------------------
+# Dead Code: bare try/except in _is_allowed_vw_domain
+# ---------------------------------------------------------------------------
+
+class TestDeadTryExcept(IsolatedAsyncioTestCase):
+    """Verify dead try/except has been removed from _is_allowed_vw_domain."""
+
+    def test_no_bare_except_in_is_allowed_vw_domain(self):
+        """_is_allowed_vw_domain has no ast.Try nodes (urlparse never raises)."""
+        source = _read_source()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "_is_allowed_vw_domain":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Try):
+                        self.fail(
+                            "_is_allowed_vw_domain still contains a try block "
+                            f"at line {child.lineno} -- urlparse never raises"
+                        )
+                return
+        self.fail("_is_allowed_vw_domain method not found in source")

@@ -4688,3 +4688,48 @@ class TestCFIX04Timeouts(IsolatedAsyncioTestCase):
         await conn.refresh_tokens()
         call_kwargs = conn._session.post.call_args
         assert "timeout" in call_kwargs.kwargs, "refresh_tokens must pass timeout= to session.post"
+
+
+class TestConcurrentUpdate(IsolatedAsyncioTestCase):
+    """Two concurrent update() calls are serialized via _update_lock."""
+
+    async def test_concurrent_update_serialized(self):
+        """Two concurrent update() calls result in only one running at a time."""
+        session = MagicMock(spec=ClientSession)
+        conn = Connection(session=session, username="test", password="test")
+        conn._session_logged_in = True
+
+        # Mock validate_tokens to return True
+        conn.validate_tokens = AsyncMock(return_value=True)
+
+        # Track concurrent vehicle.update() calls
+        running = 0
+        max_concurrent = 0
+        block_event = asyncio.Event()
+
+        async def mock_vehicle_update():
+            nonlocal running, max_concurrent
+            running += 1
+            max_concurrent = max(max_concurrent, running)
+            await block_event.wait()
+            running -= 1
+
+        vehicle = MagicMock()
+        vehicle.update = mock_vehicle_update
+        conn._vehicles = [vehicle]
+
+        # Start two concurrent update() calls
+        task1 = asyncio.create_task(conn.update())
+        task2 = asyncio.create_task(conn.update())
+
+        # Give the event loop a chance to start both tasks
+        await asyncio.sleep(0.05)
+
+        # Release the block
+        block_event.set()
+
+        await task1
+        await task2
+
+        # With a lock, max concurrent should be 1 (serialized)
+        self.assertEqual(max_concurrent, 1, "update() calls should be serialized by _update_lock")
