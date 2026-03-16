@@ -316,7 +316,7 @@ class Connection:
                     _LOGGER.debug("Market config discovery succeeded via %s", candidate)
                     return True
 
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, KeyError) as exc:
                 _LOGGER.debug("Config discovery attempt failed for %s: %s", candidate, exc)
                 continue
 
@@ -2485,7 +2485,7 @@ class Connection:
             except (client_exceptions.ClientConnectionError, client_exceptions.ServerTimeoutError) as net_err:
                 if _no_retry or attempt >= MAX_RETRIES_ON_RATE_LIMIT:
                     await self.update_service_status(url, 1000)
-                    raise net_err from None
+                    raise
                 delay = float(2 ** attempt)
                 attempt += 1
                 _LOGGER.warning(
@@ -2497,11 +2497,11 @@ class Connection:
 
             except client_exceptions.ClientResponseError as httperror:
                 await self.update_service_status(url, httperror.code)
-                raise httperror from None
+                raise
 
             except Exception as error:
                 await self.update_service_status(url, 1000)
-                raise error from None
+                raise
 
     async def get(self, url: str, vin: str = "", tries: int = 0) -> Any:
         """Perform a get query."""
@@ -2570,7 +2570,7 @@ class Connection:
                 await asyncio.gather(*updatelist)
 
                 return True
-        except (OSError, LookupError, Exception) as error:  # pylint: disable=broad-exception-caught
+        except (OSError, LookupError, AuthenticationError, APIError, RequestError, client_exceptions.ClientError, asyncio.TimeoutError) as error:
             _LOGGER.warning("Could not update information: %s", error)
         return False
 
@@ -2587,11 +2587,11 @@ class Connection:
                 response["refreshTimestamp"] = datetime.now(UTC)
                 return response
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning(
                 "Could not fetch information for pending requests, error: %s", error
             )
-        return False
+        return None
 
     async def getOperationList(self, vin: str) -> Any:
         """Collect operationlist for VIN, supported/licensed functions."""
@@ -2612,7 +2612,7 @@ class Connection:
             else:
                 _LOGGER.info("Could not fetch operation list: %s", response)
                 data = {"error": "unknown"}
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch operation list, error: %s", error)
             data = {"error": "unknown"}
         return data
@@ -2638,9 +2638,9 @@ class Connection:
                 response.update({"refreshTimestamp": datetime.now(UTC)})
                 return response
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch selectivestatus, error: %s", error)
-        return False
+        return None
 
     async def getVehicleData(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2649,15 +2649,15 @@ class Connection:
         try:
             response = await self.get(f"{self._base_api}/vehicle/v2/vehicles", "")
 
-            for vehicle in response.get("data"):
+            for vehicle in (response.get("data") or []):
                 if vehicle.get("vin") == vin:
                     return {"vehicle": vehicle}
 
             _LOGGER.warning("Could not fetch vehicle data for vin %s", vin)
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch vehicle data, error: %s", error)
-        return False
+        return None
 
     async def getParkingPosition(self, vin: str) -> Any:
         """Get information about the parking position."""
@@ -2685,9 +2685,9 @@ class Connection:
                 _LOGGER.info(
                     "Unhandled error while trying to fetch parkingposition data"
                 )
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch parkingposition, error: %s", error)
-        return False
+        return None
 
     async def getTripLast(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2707,9 +2707,9 @@ class Connection:
                     "Could not fetch last trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def getTripRefuel(self, vin: str) -> Any:
         """Get information about the trip since last refuel"""
@@ -2729,9 +2729,9 @@ class Connection:
                     "Could not fetch refuel trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def getTripLongterm(self, vin: str) -> Any:
         """Get information about the trip last longterm"""
@@ -2751,9 +2751,9 @@ class Connection:
                     "Could not fetch longterm trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def wakeUpVehicle(self, vin: str) -> Any:
         """Wake up vehicle to send updated data to VW Backend."""
@@ -2766,9 +2766,9 @@ class Connection:
                 return_raw=True,
             )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not refresh the data, error: %s", error)
-        return False
+        return None
 
     async def get_request_status(self, vin: str, requestId: str, actionId: str = "") -> Any:
         """Return status of a request ID for a given section ID."""
@@ -2786,6 +2786,8 @@ class Connection:
                     raise AuthenticationError(f"Login for {BRAND} account failed")
 
             response = await self.getPendingRequests(vin)
+            if not response:
+                return "Unknown"
 
             requests = response.get("data", [])
             result = None

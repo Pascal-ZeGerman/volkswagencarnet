@@ -1411,15 +1411,15 @@ class TestDataFetchMethods:
         assert result["vehicle"]["vin"] == VIN
 
     @pytest.mark.asyncio
-    async def test_getVehicleData_returns_false_for_unknown_vin(self):
-        """Test getVehicleData returns False for VIN not in response."""
+    async def test_getVehicleData_returns_none_for_unknown_vin(self):
+        """Test getVehicleData returns None for VIN not in response."""
         conn = _make_connection()
         conn.validate_tokens = AsyncMock(return_value=True)
         conn.get = AsyncMock(return_value={
             "data": [{"vin": "OTHER_VIN", "nickname": "Other Car"}]
         })
         result = await conn.getVehicleData(VIN)
-        assert result is False
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_getParkingPosition_returns_data(self):

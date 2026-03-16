@@ -1105,7 +1105,8 @@ class Vehicle:
                 )
                 expiration = datetime.now(UTC) + timedelta(days=1)
             if isinstance(expiration, datetime):
-                expiration = expiration.replace(tzinfo=None)
+                if expiration.tzinfo is None:
+                    expiration = expiration.replace(tzinfo=UTC)
             else:
                 expiration = datetime.now(UTC) + timedelta(days=1)
             if now >= expiration:
