@@ -2421,7 +2421,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_REM_TIME)
 
     @property
-    def electric_remaining_climatisation_time_last_updated(self) -> bool:
+    def electric_remaining_climatisation_time_last_updated(self) -> str | None:
         """Return status of electric climatisation remaining climatisation time last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_STATUS_TS)
 
@@ -2560,7 +2560,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_DURATION)
 
     @property
-    def auxiliary_duration_last_updated(self) -> bool:
+    def auxiliary_duration_last_updated(self) -> str | None:
         """Return status of auxiliary heater last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_SETTINGS_TS)
 
@@ -2575,7 +2575,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_REM_TIME)
 
     @property
-    def auxiliary_remaining_climatisation_time_last_updated(self) -> bool:
+    def auxiliary_remaining_climatisation_time_last_updated(self) -> str | None:
         """Return status of auxiliary heater remaining climatisation time last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_TS)
 
