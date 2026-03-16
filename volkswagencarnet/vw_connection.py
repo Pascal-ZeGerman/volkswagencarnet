@@ -159,6 +159,7 @@ class Connection:
         self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
         # Shared lock for login and token refresh (prevents concurrent login+refresh race)
         self._login_lock = asyncio.Lock()
+        self._update_lock = asyncio.Lock()
         # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
         self._na_token_endpoint: str | None = None
 
@@ -258,12 +259,8 @@ class Connection:
 
     def _is_allowed_vw_domain(self, url: str) -> bool:
         """Return True if URL hostname ends with a known VW Group domain suffix."""
-        try:
-            hostname = urlparse(url).hostname or ""
-            return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
-        except Exception:
-            _LOGGER.debug("URL parse failed for domain check: %s", url)
-            return False
+        hostname = urlparse(url).hostname or ""
+        return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
 
     async def _discover_market_config(self) -> bool:
         """Discover and cache market configuration from VW OIDC discovery endpoint.
@@ -2350,8 +2347,6 @@ class Connection:
         response = await response_raw.json(loads=json_loads)
         if not response:
             raise APIError("Invalid or no response from action endpoint")
-        if response == 429:
-            return {"id": None, "state": "Throttled"}
         request_id = response.get("data", {}).get("requestID", 0)
         _LOGGER.debug("Request returned with request id: %s", request_id)
         return {"id": str(request_id)}
@@ -2550,29 +2545,30 @@ class Connection:
     # Update data for all Vehicles
     async def update(self) -> bool:
         """Update status."""
-        if not self.logged_in:
-            if not await self._login():
-                _LOGGER.warning("Login for %s account failed!", BRAND)
-                return False
-        try:
-            if not await self.validate_tokens():
-                _LOGGER.info(
-                    "Session expired. Initiating new login for %s account", BRAND
-                )
-                if not await self.doLogin():
+        async with self._update_lock:
+            if not self.logged_in:
+                if not await self._login():
                     _LOGGER.warning("Login for %s account failed!", BRAND)
-                    raise AuthenticationError(f"Login for {BRAND} account failed")
-            else:
-                _LOGGER.debug("Going to call vehicle updates")
-                # Get all Vehicle objects and update in parallell
-                updatelist = [vehicle.update() for vehicle in self.vehicles]
-                # Wait for all data updates to complete
-                await asyncio.gather(*updatelist)
+                    return False
+            try:
+                if not await self.validate_tokens():
+                    _LOGGER.info(
+                        "Session expired. Initiating new login for %s account", BRAND
+                    )
+                    if not await self.doLogin():
+                        _LOGGER.warning("Login for %s account failed!", BRAND)
+                        raise AuthenticationError(f"Login for {BRAND} account failed")
+                else:
+                    _LOGGER.debug("Going to call vehicle updates")
+                    # Get all Vehicle objects and update in parallell
+                    updatelist = [vehicle.update() for vehicle in self.vehicles]
+                    # Wait for all data updates to complete
+                    await asyncio.gather(*updatelist)
 
-                return True
-        except (OSError, LookupError, AuthenticationError, APIError, RequestError, client_exceptions.ClientError, asyncio.TimeoutError) as error:
-            _LOGGER.warning("Could not update information: %s", error)
-        return False
+                    return True
+            except (OSError, LookupError, AuthenticationError, APIError, RequestError, client_exceptions.ClientError, asyncio.TimeoutError) as error:
+                _LOGGER.warning("Could not update information: %s", error)
+            return False
 
     async def getPendingRequests(self, vin: str) -> Any:
         """Get status information for pending requests."""
