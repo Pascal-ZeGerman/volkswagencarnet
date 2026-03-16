@@ -13,10 +13,11 @@ import logging
 if TYPE_CHECKING:
     from .vw_connection import Connection
 
+import aiohttp
 from aiohttp import ClientTimeout
 
 from .vw_const import Services, VehicleStatusParameter as P, Paths
-from .vw_exceptions import APIError
+from .vw_exceptions import APIError, UnsupportedOperationError
 from .vw_utilities import find_path, is_valid_path
 
 # TODO
@@ -208,7 +209,7 @@ class Vehicle:
                             self._url, candidate, resp.status,
                         )
                         return
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                 _LOGGER.debug(
                     "Home region probe failed for %s at %s: %s",
                     self._url, candidate, exc,
@@ -464,10 +465,10 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise Exception(f'Charging action "{action}" is not supported.')
+                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
             if not self.is_charging_supported:
                 _LOGGER.error("No charging support (vehicle may not be electric)")
-                raise Exception("No charging support.")
+                raise UnsupportedOperationError("No charging support.")
             if self._in_progress("charging", unknown_offset=-5):
                 _LOGGER.debug("NA: charging command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -489,7 +490,7 @@ class Vehicle:
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise Exception(f'Charging action "{action}" is not supported.')
+                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
             assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setCharging(self.vin, (action == "start"))
@@ -499,7 +500,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} charging",
             )
         _LOGGER.error("No charging support")
-        raise Exception("No charging support.")
+        raise UnsupportedOperationError("No charging support.")
 
     async def set_charging_settings(self, setting: str, value: Any) -> bool:
         """Set charging settings."""
@@ -511,7 +512,7 @@ class Vehicle:
         ):
             if setting == "reduced_ac_charging" and value not in ["reduced", "maximum"]:
                 _LOGGER.error('Charging setting "%s" is not supported', value)
-                raise Exception(f'Charging setting "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Charging setting "{value}" is not supported.')
             if setting == "max_charge_amperage" and int(value) not in [
                 5,
                 10,
@@ -523,7 +524,7 @@ class Vehicle:
                     "Setting maximum charge amperage to %s is not supported", value
                 )
 
-                raise Exception(
+                raise UnsupportedOperationError(
                     f"Setting maximum charge amperage to {value} is not supported."
                 )
             data = {}
@@ -566,14 +567,14 @@ class Vehicle:
                 error_msg="Failed to change charging settings",
             )
         _LOGGER.error("Charging settings are not supported")
-        raise Exception("Charging settings are not supported.")
+        raise UnsupportedOperationError("Charging settings are not supported.")
 
     async def set_charging_care_settings(self, value: Any) -> bool:
         """Set charging care settings."""
         if self.is_battery_care_mode_supported:
             if value not in ["activated", "deactivated"]:
                 _LOGGER.error('Charging care mode "%s" is not supported', value)
-                raise Exception(f'Charging care mode "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Charging care mode "{value}" is not supported.')
             data = {"batteryCareMode": value}
             assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
@@ -586,14 +587,14 @@ class Vehicle:
                 error_msg="Failed to change charging care settings",
             )
         _LOGGER.error("Charging care settings are not supported")
-        raise Exception("Charging care settings are not supported.")
+        raise UnsupportedOperationError("Charging care settings are not supported.")
 
     async def set_readiness_battery_support(self, value: Any) -> bool:
         """Set readiness battery support settings."""
         if self.is_optimised_battery_use_supported:
             if value not in [True, False]:
                 _LOGGER.error('Battery support mode "%s" is not supported', value)
-                raise Exception(f'Battery support mode "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Battery support mode "{value}" is not supported.')
             data = {"batterySupportEnabled": value}
             assert self._connection is not None
             self._requests["latest"] = "Batterycharge"
@@ -604,7 +605,7 @@ class Vehicle:
                 error_msg="Failed to change battery support settings",
             )
         _LOGGER.error("Battery support settings are not supported")
-        raise Exception("Battery support settings are not supported.")
+        raise UnsupportedOperationError("Battery support settings are not supported.")
 
     # Climatisation electric/auxiliary/windows (CLIMATISATION)
     async def set_climatisation_settings(self, setting: str, value: Any) -> bool:
@@ -680,16 +681,16 @@ class Vehicle:
                     error_msg="Failed to set climatisation settings",
                 )
             _LOGGER.error('Set climatisation setting to "%s" is not supported', value)
-            raise Exception(f'Set climatisation setting to "{value}" is not supported.')
+            raise UnsupportedOperationError(f'Set climatisation setting to "{value}" is not supported.')
         _LOGGER.error("Climatisation settings are not supported")
-        raise Exception("Climatisation settings are not supported.")
+        raise UnsupportedOperationError("Climatisation settings are not supported.")
 
     async def set_window_heating(self, action: str = "stop") -> bool:
         """Turn on/off window heater."""
         if self.is_window_heater_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Window heater action "%s" is not supported', action)
-                raise Exception(f'Window heater action "{action}" is not supported.')
+                raise UnsupportedOperationError(f'Window heater action "{action}" is not supported.')
             assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setWindowHeater(
@@ -701,7 +702,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} window heating",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_climatisation(self, action: str = "stop") -> bool:
         """Turn on/off climatisation with electric heater."""
@@ -709,10 +710,10 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise Exception(f"Invalid climatisation action: {action}")
+                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
             if not self.is_climatisation_state_supported:
                 _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
-                raise Exception("No climatisation support.")
+                raise UnsupportedOperationError("No climatisation support.")
             if self._in_progress("climatisation", unknown_offset=-5):
                 _LOGGER.debug("NA: climatisation command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -753,7 +754,7 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise Exception(f"Invalid climatisation action: {action}")
+                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
             assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setClimater(
@@ -765,7 +766,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} climatisation with electric heater.",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_auxiliary_climatisation(self, action: str, spin: str) -> bool:
         """Turn on/off climatisation with auxiliary heater."""
@@ -779,7 +780,7 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid auxiliary heater action: %s", action)
-                raise Exception(f"Invalid auxiliary heater action: {action}")
+                raise UnsupportedOperationError(f"Invalid auxiliary heater action: {action}")
             assert self._connection is not None
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setAuxiliary(
@@ -791,14 +792,14 @@ class Vehicle:
                 error_msg=f"Failed to {action} climatisation with auxiliary heater.",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_departure_timer(self, timer_id: int, spin: str, enable: bool) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if not isinstance(enable, bool):
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise Exception("Charging departure timers setting is not supported.")
+                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
             assert self._connection is not None
             data = None
             response = None
@@ -834,14 +835,14 @@ class Vehicle:
                 error_msg="Failed to change departure timers setting.",
             )
         _LOGGER.error("Departure timers are not supported")
-        raise Exception("Departure timers are not supported.")
+        raise UnsupportedOperationError("Departure timers are not supported.")
 
     async def update_departure_timer(self, timer_id: int, spin: str, timer_data: dict[str, Any]) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if timer_data is None:
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise Exception("Charging departure timers setting is not supported.")
+                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
             assert self._connection is not None
             data = None
             response = None
@@ -877,7 +878,7 @@ class Vehicle:
                 error_msg="Failed to change departure timers setting.",
             )
         _LOGGER.error("Departure timers are not supported")
-        raise Exception("Departure timers are not supported.")
+        raise UnsupportedOperationError("Departure timers are not supported.")
 
     async def set_ac_departure_timer(self, timer_id: int, enable: bool) -> bool:
         """Turn on/off ac departure timer."""
@@ -886,7 +887,7 @@ class Vehicle:
                 _LOGGER.error(
                     "Charging climatisation departure timers setting is not supported"
                 )
-                raise Exception(
+                raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
             assert self._connection is not None
@@ -902,7 +903,7 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise Exception("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
 
     async def update_ac_departure_timer(self, timer_id: int, timer_data: dict[str, Any]) -> bool:
         """Turn on/off ac departure timer."""
@@ -911,7 +912,7 @@ class Vehicle:
                 _LOGGER.error(
                     "Charging climatisation departure timers setting is not supported"
                 )
-                raise Exception(
+                raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
             assert self._connection is not None
@@ -929,7 +930,7 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise Exception("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
 
     # Lock (RLU)
     async def set_lock(self, action: str, spin: str) -> bool:
@@ -938,7 +939,7 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["lock", "unlock"]:
                 _LOGGER.error("Invalid lock action: %s", action)
-                raise Exception(f"Invalid lock action: {action}")
+                raise UnsupportedOperationError(f"Invalid lock action: {action}")
             if self._in_progress("lock", unknown_offset=-5):
                 _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -956,12 +957,12 @@ class Vehicle:
         # EMEA path — preserves original check order
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             _LOGGER.info("Remote lock/unlock is not supported")
-            raise Exception("Remote lock/unlock is not supported.")
+            raise UnsupportedOperationError("Remote lock/unlock is not supported.")
         if self._in_progress("lock", unknown_offset=-5):
             return False
         if action not in ["lock", "unlock"]:
             _LOGGER.error("Invalid lock action: %s", action)
-            raise Exception(f"Invalid lock action: {action}")
+            raise UnsupportedOperationError(f"Invalid lock action: {action}")
 
         assert self._connection is not None
         try:
@@ -1003,7 +1004,7 @@ class Vehicle:
 
         if not self._services.get(Services.HONK_AND_FLASH, {}).get("active", False):
             _LOGGER.info("Remote honk and flash is not supported")
-            raise Exception("Remote honk and flash is not supported.")
+            raise UnsupportedOperationError("Remote honk and flash is not supported.")
         if self._in_progress("honk_and_flash", unknown_offset=-5):
             return False
 
@@ -1905,7 +1906,7 @@ class Vehicle:
                 lng = float(find_path(self.attrs, Paths.PARKING_LON))
                 parking_time = find_path(self.attrs, Paths.PARKING_TS)
                 output = {"lat": lat, "lng": lng, "timestamp": parking_time}
-        except Exception:
+        except (KeyError, TypeError, ValueError):
             output = {"lat": None, "lng": None, "timestamp": None}
         return output
 
