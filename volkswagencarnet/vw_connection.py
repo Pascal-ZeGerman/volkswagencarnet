@@ -2261,7 +2261,7 @@ class Connection:
             _LOGGER.error("NA network error during login: %s", error)
             self._session_logged_in = False
             return False
-        except Exception as error:
+        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
             _LOGGER.error("NA unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
@@ -2338,7 +2338,7 @@ class Connection:
             _LOGGER.error("Missing required data during login: %s", error)
             self._session_logged_in = False
             return False
-        except Exception as error:
+        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
             _LOGGER.error("Unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
