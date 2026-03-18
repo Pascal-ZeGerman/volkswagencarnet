@@ -173,3 +173,115 @@ class GitIgnoreStructureTest(IsolatedAsyncioTestCase):
         """'.gitignore' contains *.env glob pattern for general credential files."""
         gitignore = (Path(__file__).parent.parent / ".gitignore").read_text()
         self.assertIn("*.env", gitignore)
+
+
+# ---------------------------------------------------------------------------
+# Dead Code: response == 429 check in _handle_action_result
+# ---------------------------------------------------------------------------
+
+class TestDeadCodeRemoval(IsolatedAsyncioTestCase):
+    """Verify dead `response == 429` check has been removed from _handle_action_result."""
+
+    def test_no_response_429_check_in_handle_action_result(self):
+        """AST of _handle_action_result contains no comparison to integer 429."""
+        source = _read_source()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_handle_action_result":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Compare):
+                        for comparator in child.comparators:
+                            if isinstance(comparator, ast.Constant) and comparator.value == 429:
+                                self.fail(
+                                    "Found dead comparison to 429 in _handle_action_result "
+                                    f"at line {child.lineno}"
+                                )
+                        # Also check left side
+                        if isinstance(child.left, ast.Constant) and child.left.value == 429:
+                            self.fail(
+                                "Found dead comparison to 429 in _handle_action_result "
+                                f"at line {child.lineno}"
+                            )
+                return
+        self.fail("_handle_action_result method not found in source")
+
+
+# ---------------------------------------------------------------------------
+# Dead Code: bare try/except in _is_allowed_vw_domain
+# ---------------------------------------------------------------------------
+
+class TestDeadTryExcept(IsolatedAsyncioTestCase):
+    """Verify dead try/except has been removed from _is_allowed_vw_domain."""
+
+    def test_no_bare_except_in_is_allowed_vw_domain(self):
+        """_is_allowed_vw_domain has no ast.Try nodes (urlparse never raises)."""
+        source = _read_source()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "_is_allowed_vw_domain":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Try):
+                        self.fail(
+                            "_is_allowed_vw_domain still contains a try block "
+                            f"at line {child.lineno} -- urlparse never raises"
+                        )
+                return
+        self.fail("_is_allowed_vw_domain method not found in source")
+
+
+# ---------------------------------------------------------------------------
+# Assert Guards: assert self._connection replaced with RuntimeError
+# ---------------------------------------------------------------------------
+VW_VEHICLE_SRC = Path(__file__).parent.parent / "volkswagencarnet" / "vw_vehicle.py"
+
+
+class TestAssertGuards(IsolatedAsyncioTestCase):
+    """Verify assert self._connection is not None replaced with RuntimeError."""
+
+    def test_no_assert_connection_in_vehicle(self):
+        """vw_vehicle.py has no 'assert self._connection is not None' statements."""
+        source = VW_VEHICLE_SRC.read_text()
+        import re as _re
+
+        matches = _re.findall(r"assert\s+self\._connection\s+is\s+not\s+None", source)
+        self.assertEqual(
+            len(matches), 0,
+            f"Found {len(matches)} 'assert self._connection is not None' statement(s)"
+        )
+
+    async def test_runtime_error_on_none_connection(self):
+        """Action method raises RuntimeError when _connection is None."""
+        from unittest.mock import PropertyMock, patch
+        from volkswagencarnet.vw_vehicle import Vehicle
+
+        vehicle = Vehicle(None, "https://example.com")
+        vehicle._connection = None
+
+        # Mock is_charging_supported to True so we reach the connection guard
+        with patch.object(type(vehicle), "is_charging_supported", new_callable=PropertyMock, return_value=True):
+            with self.assertRaises(RuntimeError) as ctx:
+                await vehicle.set_charger("start")
+        self.assertIn("Vehicle not associated", str(ctx.exception))
+
+
+# ---------------------------------------------------------------------------
+# Type Annotations: model_year returns int | None
+# ---------------------------------------------------------------------------
+
+
+class TestTypeAnnotations(IsolatedAsyncioTestCase):
+    """Verify type annotations are correct in vw_vehicle.py."""
+
+    def test_model_year_returns_int_or_none(self):
+        """model_year property has return annotation int | None, not bool | None."""
+        source = VW_VEHICLE_SRC.read_text()
+        import re as _re
+
+        # Find the def model_year line
+        match = _re.search(r"def model_year\(self\)\s*->\s*(.+?):", source)
+        self.assertIsNotNone(match, "model_year property not found")
+        annotation = match.group(1).strip()
+        self.assertEqual(
+            annotation, "int | None",
+            f"model_year return annotation is '{annotation}', expected 'int | None'"
+        )

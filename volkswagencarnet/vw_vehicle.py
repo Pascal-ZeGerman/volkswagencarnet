@@ -13,9 +13,11 @@ import logging
 if TYPE_CHECKING:
     from .vw_connection import Connection
 
+import aiohttp
 from aiohttp import ClientTimeout
 
 from .vw_const import Services, VehicleStatusParameter as P, Paths
+from .vw_exceptions import APIError, UnsupportedOperationError, VWError
 from .vw_utilities import find_path, is_valid_path
 
 # TODO
@@ -27,6 +29,17 @@ from .vw_utilities import find_path, is_valid_path
 BACKEND_RECEIVED_TIMESTAMP = "BACKEND_RECEIVED_TIMESTAMP"
 
 _LOGGER = logging.getLogger(__name__)
+
+# Mapping from EMEA door names (used by existing properties) to NA doorStatus keys.
+# NA uses "hood" where EMEA uses "bonnet"; all other front/rear names match.
+_NA_DOOR_NAMES: dict[str, str] = {
+    "frontLeft": "frontLeft",
+    "frontRight": "frontRight",
+    "rearLeft": "rearLeft",
+    "rearRight": "rearRight",
+    "trunk": "trunk",
+    "bonnet": "hood",  # EMEA calls it "bonnet"; NA calls it "hood"
+}
 
 ENGINE_TYPE_ELECTRIC = "electric"
 ENGINE_TYPE_DIESEL = "diesel"
@@ -117,7 +130,7 @@ class Vehicle:
                 else f"Failed to perform {topic} action"
             )
 
-            raise Exception(
+            raise APIError(
                 error_msg
                 if error_msg is not None
                 else f"Failed to perform {topic} action"
@@ -196,7 +209,7 @@ class Vehicle:
                             self._url, candidate, resp.status,
                         )
                         return
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                 _LOGGER.debug(
                     "Home region probe failed for %s at %s: %s",
                     self._url, candidate, exc,
@@ -402,47 +415,40 @@ class Vehicle:
 
     async def wait_for_request(self, request: Any, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
-        retry_count -= 1
-        if retry_count == 0:
-            _LOGGER.info("Timeout while waiting for result of %s", request.requestId)
-            return "Timeout"
-        try:
-            if self._connection is None:
-                return "Exception"
-            status = await self._connection.get_request_status(self.vin, request)
-            _LOGGER.debug("Request ID %s: %s", request, status)
-            self._requests["state"] = status
-            if status == "In Progress":
+        for _ in range(retry_count - 1):
+            try:
+                if self._connection is None:
+                    return "Exception"
+                status = await self._connection.get_request_status(self.vin, request)
+                _LOGGER.debug("Request ID %s: %s", request, status)
+                self._requests["state"] = status
+                if status != "In Progress":
+                    return status
                 await asyncio.sleep(10)
-                return await self.wait_for_request(request, retry_count)
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning(
-                "Exception encountered while waiting for request status: %s", error
-            )
-            return "Exception"
-        else:
-            return status
+            except (asyncio.TimeoutError, aiohttp.ClientError, VWError) as error:
+                _LOGGER.warning(
+                    "Exception encountered while waiting for request status: %s", error
+                )
+                return "Exception"
+        _LOGGER.info("Timeout while waiting for result of %s", request.requestId)
+        return "Timeout"
 
     async def wait_for_data_refresh(self, retry_count: int = 18) -> str:
         """Update status of outstanding requests."""
-        retry_count -= 1
-        if retry_count == 0:
-            _LOGGER.info("Timeout while waiting for data refresh")
-            return "Timeout"
-        try:
-            await self.get_selectivestatus([Services.MEASUREMENTS])
-            refresh_trigger_time = self._requests.get("refresh", {}).get("timestamp")
-            if self.last_connected < refresh_trigger_time:
+        for _ in range(retry_count - 1):
+            try:
+                await self.get_selectivestatus([Services.MEASUREMENTS])
+                refresh_trigger_time = self._requests.get("refresh", {}).get("timestamp")
+                if self.last_connected >= refresh_trigger_time:
+                    return "successful"
                 await asyncio.sleep(10)
-                return await self.wait_for_data_refresh(retry_count)
-
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning(
-                "Exception encountered while waiting for data refresh: %s", error
-            )
-            return "Exception"
-        else:
-            return "successful"
+            except (asyncio.TimeoutError, aiohttp.ClientError, VWError) as error:
+                _LOGGER.warning(
+                    "Exception encountered while waiting for data refresh: %s", error
+                )
+                return "Exception"
+        _LOGGER.info("Timeout while waiting for data refresh")
+        return "Timeout"
 
     # Data set functions
     # Charging (BATTERYCHARGE)
@@ -452,10 +458,10 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise Exception(f'Charging action "{action}" is not supported.')
+                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
             if not self.is_charging_supported:
                 _LOGGER.error("No charging support (vehicle may not be electric)")
-                raise Exception("No charging support.")
+                raise UnsupportedOperationError("No charging support.")
             if self._in_progress("charging", unknown_offset=-5):
                 _LOGGER.debug("NA: charging command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -477,8 +483,9 @@ class Vehicle:
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise Exception(f'Charging action "{action}" is not supported.')
-            assert self._connection is not None
+                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setCharging(self.vin, (action == "start"))
             return await self._handle_response(
@@ -487,7 +494,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} charging",
             )
         _LOGGER.error("No charging support")
-        raise Exception("No charging support.")
+        raise UnsupportedOperationError("No charging support.")
 
     async def set_charging_settings(self, setting: str, value: Any) -> bool:
         """Set charging settings."""
@@ -499,7 +506,7 @@ class Vehicle:
         ):
             if setting == "reduced_ac_charging" and value not in ["reduced", "maximum"]:
                 _LOGGER.error('Charging setting "%s" is not supported', value)
-                raise Exception(f'Charging setting "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Charging setting "{value}" is not supported.')
             if setting == "max_charge_amperage" and int(value) not in [
                 5,
                 10,
@@ -511,7 +518,7 @@ class Vehicle:
                     "Setting maximum charge amperage to %s is not supported", value
                 )
 
-                raise Exception(
+                raise UnsupportedOperationError(
                     f"Setting maximum charge amperage to {value} is not supported."
                 )
             data = {}
@@ -545,7 +552,8 @@ class Vehicle:
                     if setting == "max_charge_amperage"
                     else self.charge_max_ac_ampere
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingSettings(self.vin, data)
             return await self._handle_response(
@@ -554,16 +562,17 @@ class Vehicle:
                 error_msg="Failed to change charging settings",
             )
         _LOGGER.error("Charging settings are not supported")
-        raise Exception("Charging settings are not supported.")
+        raise UnsupportedOperationError("Charging settings are not supported.")
 
     async def set_charging_care_settings(self, value: Any) -> bool:
         """Set charging care settings."""
         if self.is_battery_care_mode_supported:
             if value not in ["activated", "deactivated"]:
                 _LOGGER.error('Charging care mode "%s" is not supported', value)
-                raise Exception(f'Charging care mode "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Charging care mode "{value}" is not supported.')
             data = {"batteryCareMode": value}
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setChargingCareModeSettings(
                 self.vin, data
@@ -574,16 +583,17 @@ class Vehicle:
                 error_msg="Failed to change charging care settings",
             )
         _LOGGER.error("Charging care settings are not supported")
-        raise Exception("Charging care settings are not supported.")
+        raise UnsupportedOperationError("Charging care settings are not supported.")
 
     async def set_readiness_battery_support(self, value: Any) -> bool:
         """Set readiness battery support settings."""
         if self.is_optimised_battery_use_supported:
             if value not in [True, False]:
                 _LOGGER.error('Battery support mode "%s" is not supported', value)
-                raise Exception(f'Battery support mode "{value}" is not supported.')
+                raise UnsupportedOperationError(f'Battery support mode "{value}" is not supported.')
             data = {"batterySupportEnabled": value}
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
             response = await self._connection.setReadinessBatterySupport(self.vin, data)
             return await self._handle_response(
@@ -592,7 +602,7 @@ class Vehicle:
                 error_msg="Failed to change battery support settings",
             )
         _LOGGER.error("Battery support settings are not supported")
-        raise Exception("Battery support settings are not supported.")
+        raise UnsupportedOperationError("Battery support settings are not supported.")
 
     # Climatisation electric/auxiliary/windows (CLIMATISATION)
     async def set_climatisation_settings(self, setting: str, value: Any) -> bool:
@@ -659,7 +669,8 @@ class Vehicle:
                         if setting == "zone_front_right"
                         else self.zone_front_right
                     )
-                assert self._connection is not None
+                if self._connection is None:
+                    raise RuntimeError("Vehicle not associated with a connection")
                 self._requests["latest"] = "Climatisation"
                 response = await self._connection.setClimaterSettings(self.vin, data)
                 return await self._handle_response(
@@ -668,17 +679,18 @@ class Vehicle:
                     error_msg="Failed to set climatisation settings",
                 )
             _LOGGER.error('Set climatisation setting to "%s" is not supported', value)
-            raise Exception(f'Set climatisation setting to "{value}" is not supported.')
+            raise UnsupportedOperationError(f'Set climatisation setting to "{value}" is not supported.')
         _LOGGER.error("Climatisation settings are not supported")
-        raise Exception("Climatisation settings are not supported.")
+        raise UnsupportedOperationError("Climatisation settings are not supported.")
 
     async def set_window_heating(self, action: str = "stop") -> bool:
         """Turn on/off window heater."""
         if self.is_window_heater_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Window heater action "%s" is not supported', action)
-                raise Exception(f'Window heater action "{action}" is not supported.')
-            assert self._connection is not None
+                raise UnsupportedOperationError(f'Window heater action "{action}" is not supported.')
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setWindowHeater(
                 self.vin, (action == "start")
@@ -689,7 +701,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} window heating",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_climatisation(self, action: str = "stop") -> bool:
         """Turn on/off climatisation with electric heater."""
@@ -697,10 +709,10 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise Exception(f"Invalid climatisation action: {action}")
+                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
             if not self.is_climatisation_state_supported:
                 _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
-                raise Exception("No climatisation support.")
+                raise UnsupportedOperationError("No climatisation support.")
             if self._in_progress("climatisation", unknown_offset=-5):
                 _LOGGER.debug("NA: climatisation command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -741,8 +753,9 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise Exception(f"Invalid climatisation action: {action}")
-            assert self._connection is not None
+                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setClimater(
                 self.vin, data, (action == "start")
@@ -753,7 +766,7 @@ class Vehicle:
                 error_msg=f"Failed to {action} climatisation with electric heater.",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_auxiliary_climatisation(self, action: str, spin: str) -> bool:
         """Turn on/off climatisation with auxiliary heater."""
@@ -767,8 +780,9 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid auxiliary heater action: %s", action)
-                raise Exception(f"Invalid auxiliary heater action: {action}")
-            assert self._connection is not None
+                raise UnsupportedOperationError(f"Invalid auxiliary heater action: {action}")
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
             response = await self._connection.setAuxiliary(
                 self.vin, data, (action == "start")
@@ -779,15 +793,16 @@ class Vehicle:
                 error_msg=f"Failed to {action} climatisation with auxiliary heater.",
             )
         _LOGGER.error("No climatisation support")
-        raise Exception("No climatisation support.")
+        raise UnsupportedOperationError("No climatisation support.")
 
     async def set_departure_timer(self, timer_id: int, spin: str, enable: bool) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if not isinstance(enable, bool):
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise Exception("Charging departure timers setting is not supported.")
-            assert self._connection is not None
+                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             if is_valid_path(
@@ -822,15 +837,16 @@ class Vehicle:
                 error_msg="Failed to change departure timers setting.",
             )
         _LOGGER.error("Departure timers are not supported")
-        raise Exception("Departure timers are not supported.")
+        raise UnsupportedOperationError("Departure timers are not supported.")
 
     async def update_departure_timer(self, timer_id: int, spin: str, timer_data: dict[str, Any]) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if timer_data is None:
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise Exception("Charging departure timers setting is not supported.")
-            assert self._connection is not None
+                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             if is_valid_path(
@@ -865,7 +881,7 @@ class Vehicle:
                 error_msg="Failed to change departure timers setting.",
             )
         _LOGGER.error("Departure timers are not supported")
-        raise Exception("Departure timers are not supported.")
+        raise UnsupportedOperationError("Departure timers are not supported.")
 
     async def set_ac_departure_timer(self, timer_id: int, enable: bool) -> bool:
         """Turn on/off ac departure timer."""
@@ -874,10 +890,11 @@ class Vehicle:
                 _LOGGER.error(
                     "Charging climatisation departure timers setting is not supported"
                 )
-                raise Exception(
+                raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
             for index, timer in enumerate(timers):
                 if timer.get("id", 0) == timer_id:
@@ -890,7 +907,7 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise Exception("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
 
     async def update_ac_departure_timer(self, timer_id: int, timer_data: dict[str, Any]) -> bool:
         """Turn on/off ac departure timer."""
@@ -899,10 +916,11 @@ class Vehicle:
                 _LOGGER.error(
                     "Charging climatisation departure timers setting is not supported"
                 )
-                raise Exception(
+                raise UnsupportedOperationError(
                     "Charging climatisation departure timers setting is not supported."
                 )
-            assert self._connection is not None
+            if self._connection is None:
+                raise RuntimeError("Vehicle not associated with a connection")
             data = None
             response = None
             timers = find_path(self.attrs, Paths.CLIMATISATION_TIMERS)
@@ -917,7 +935,7 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise Exception("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
 
     # Lock (RLU)
     async def set_lock(self, action: str, spin: str) -> bool:
@@ -926,7 +944,7 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["lock", "unlock"]:
                 _LOGGER.error("Invalid lock action: %s", action)
-                raise Exception(f"Invalid lock action: {action}")
+                raise UnsupportedOperationError(f"Invalid lock action: {action}")
             if self._in_progress("lock", unknown_offset=-5):
                 _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
                 return False
@@ -944,14 +962,15 @@ class Vehicle:
         # EMEA path — preserves original check order
         if not self._services.get(Services.ACCESS, {}).get("active", False):
             _LOGGER.info("Remote lock/unlock is not supported")
-            raise Exception("Remote lock/unlock is not supported.")
+            raise UnsupportedOperationError("Remote lock/unlock is not supported.")
         if self._in_progress("lock", unknown_offset=-5):
             return False
         if action not in ["lock", "unlock"]:
             _LOGGER.error("Invalid lock action: %s", action)
-            raise Exception(f"Invalid lock action: {action}")
+            raise UnsupportedOperationError(f"Invalid lock action: {action}")
 
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "Lock"
             response = await self._connection.setLock(
@@ -968,7 +987,7 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Lock action failed")
+            raise APIError("Lock action failed") from error
 
     # Honk and flash
     async def set_honk_and_flash(self) -> bool:
@@ -991,11 +1010,12 @@ class Vehicle:
 
         if not self._services.get(Services.HONK_AND_FLASH, {}).get("active", False):
             _LOGGER.info("Remote honk and flash is not supported")
-            raise Exception("Remote honk and flash is not supported.")
+            raise UnsupportedOperationError("Remote honk and flash is not supported.")
         if self._in_progress("honk_and_flash", unknown_offset=-5):
             return False
 
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "HonkAndFlash"
             response = await self._connection.setHonkAndFlash(self.vin, self.position)
@@ -1010,14 +1030,15 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Honk and flash action failed")
+            raise APIError("Honk and flash action failed") from error
 
     # Refresh vehicle data (VSR)
     async def set_refresh(self) -> bool:
         """Wake up vehicle and update status data."""
         if self._in_progress("refresh", unknown_offset=-5):
             return False
-        assert self._connection is not None
+        if self._connection is None:
+            raise RuntimeError("Vehicle not associated with a connection")
         try:
             self._requests["latest"] = "Refresh"
             response = await self._connection.wakeUpVehicle(self.vin)
@@ -1034,6 +1055,7 @@ class Vehicle:
                     status = "Throttled"
                     _LOGGER.debug("Server side throttled. Try again later")
                 else:
+                    status = f"Error {response.status}"
                     _LOGGER.debug(
                         "Unable to refresh the data. Incorrect response code: %s",
                         response.status,
@@ -1051,7 +1073,7 @@ class Vehicle:
                 "status": "Exception",
                 "timestamp": datetime.now(UTC),
             }
-        raise Exception("Data refresh failed")
+            raise APIError("Data refresh failed") from error
 
     # Vehicle class helpers #
     # Vehicle info
@@ -1091,7 +1113,8 @@ class Vehicle:
                 )
                 expiration = datetime.now(UTC) + timedelta(days=1)
             if isinstance(expiration, datetime):
-                expiration = expiration.replace(tzinfo=None)
+                if expiration.tzinfo is None:
+                    expiration = expiration.replace(tzinfo=UTC)
             else:
                 expiration = datetime.now(UTC) + timedelta(days=1)
             if now >= expiration:
@@ -1188,7 +1211,7 @@ class Vehicle:
         return self.attrs.get("vehicle", {}).get("modelName", False) is not False
 
     @property
-    def model_year(self) -> bool | None:
+    def model_year(self) -> int | None:
         """Return model year."""
         return self.attrs.get("vehicle", {}).get("modelYear", None)
 
@@ -1384,8 +1407,17 @@ class Vehicle:
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
-    def distance_last_updated(self) -> datetime:
+    def distance_last_updated(self) -> datetime | None:
         """Return last updated timestamp."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            ts = na_status.get("currentMileageTimestamp")
+            if ts is not None:
+                try:
+                    return datetime.fromisoformat(ts)
+                except ValueError:
+                    return None
+            return None
         return find_path(self.attrs, Paths.MEASUREMENTS_ODO_TS)
 
     @property
@@ -1883,7 +1915,7 @@ class Vehicle:
                 lng = float(find_path(self.attrs, Paths.PARKING_LON))
                 parking_time = find_path(self.attrs, Paths.PARKING_TS)
                 output = {"lat": lat, "lng": lng, "timestamp": parking_time}
-        except Exception:
+        except (KeyError, TypeError, ValueError):
             output = {"lat": None, "lng": None, "timestamp": None}
         return output
 
@@ -1954,6 +1986,9 @@ class Vehicle:
     @property
     def vehicle_moving(self) -> bool:
         """Return true if vehicle is moving."""
+        na_location = self._states.get("na_location")
+        if na_location is not None:
+            return not na_location.get("parked", True)
         return self.attrs.get("isMoving", False)
 
     @property
@@ -1964,6 +1999,9 @@ class Vehicle:
     @property
     def is_vehicle_moving_supported(self) -> bool:
         """Return true if vehicle supports position."""
+        na_location = self._states.get("na_location")
+        if na_location is not None:
+            return "parked" in na_location
         return self.is_position_supported
 
     @property
@@ -1987,6 +2025,9 @@ class Vehicle:
     @property
     def electric_range(self) -> int | None:
         """Return electric range."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("electricRange")
         if is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC):
             return find_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC)
         return find_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_RNG)
@@ -2001,6 +2042,9 @@ class Vehicle:
     @property
     def is_electric_range_supported(self) -> bool:
         """Return true if electric range is supported."""
+        na_ev = self._states.get("na_ev")
+        if na_ev is not None:
+            return na_ev.get("electricRange") is not None
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_ELECTRIC) or (
             self.is_car_type_electric
             and is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_RNG)
@@ -2036,6 +2080,25 @@ class Vehicle:
             or is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_GASOLINE)
             or is_valid_path(self.attrs, Paths.MEASUREMENTS_RNG_CNG)
         )
+
+    @property
+    def cruise_range_units(self) -> str | None:
+        """Return cruise range units indicator (NA only)."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("powerStatus") or {}).get("cruiseRangeUnits")
+        return None
+
+    @property
+    def cruise_range_units_last_updated(self) -> datetime | None:
+        """Return cruise range units last updated (no timestamp available)."""
+        return None
+
+    @property
+    def is_cruise_range_units_supported(self) -> bool:
+        """Return true if cruise range units is supported."""
+        na_status = self._states.get("na_status")
+        return na_status is not None and (na_status.get("powerStatus") or {}).get("cruiseRangeUnits") is not None
 
     @property
     def fuel_range(self) -> int | None:
@@ -2234,6 +2297,25 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.CLIMATISATION_TARGET_TEMP)
 
     @property
+    def climatisation_duration(self) -> int | None:
+        """Return climatisation duration in seconds (NA only)."""
+        na_climate = self._states.get("na_climate")
+        if na_climate is not None:
+            return na_climate.get("climatisationDuration")
+        return None
+
+    @property
+    def climatisation_duration_last_updated(self) -> datetime | None:
+        """Return climatisation duration last updated."""
+        return None
+
+    @property
+    def is_climatisation_duration_supported(self) -> bool:
+        """Return true if climatisation duration is supported."""
+        na_climate = self._states.get("na_climate")
+        return na_climate is not None and "climatisationDuration" in na_climate
+
+    @property
     def climatisation_without_external_power(self) -> bool | None:
         """Return state of climatisation from battery power."""
         return find_path(self.attrs, Paths.CLIMATISATION_WITHOUT_EXT_PWR)
@@ -2339,7 +2421,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_REM_TIME)
 
     @property
-    def electric_remaining_climatisation_time_last_updated(self) -> bool:
+    def electric_remaining_climatisation_time_last_updated(self) -> str | None:
         """Return status of electric climatisation remaining climatisation time last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_STATUS_TS)
 
@@ -2478,7 +2560,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_DURATION)
 
     @property
-    def auxiliary_duration_last_updated(self) -> bool:
+    def auxiliary_duration_last_updated(self) -> str | None:
         """Return status of auxiliary heater last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_SETTINGS_TS)
 
@@ -2493,7 +2575,7 @@ class Vehicle:
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_REM_TIME)
 
     @property
-    def auxiliary_remaining_climatisation_time_last_updated(self) -> bool:
+    def auxiliary_remaining_climatisation_time_last_updated(self) -> str | None:
         """Return status of auxiliary heater remaining climatisation time last updated."""
         return find_path(self.attrs, Paths.CLIMATISATION_AUX_TS)
 
@@ -2679,6 +2761,18 @@ class Vehicle:
         return False
 
     def _get_door_state(self, door_name: str) -> bool | None:
+        # NA region: read individual door state from na_status exteriorStatus.doorStatus
+        if self._connection is not None and self._connection.is_na:
+            na_status = self._states.get("na_status")
+            if na_status is None:
+                return None
+            na_key = _NA_DOOR_NAMES.get(door_name, door_name)
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            value = door_status.get(na_key)
+            if value is None or value == "NOTAVAILABLE":
+                return None
+            return value == "CLOSED"
+        # EMEA: existing logic unchanged
         doors = find_path(self.attrs, Paths.ACCESS_DOORS) or []
         for door in doors:
             if door.get("name") == door_name:
@@ -2701,6 +2795,16 @@ class Vehicle:
 
     def _is_door_supported(self, door_name: str) -> bool:
         """Check if a door is supported by name."""
+        # NA region: supported when the door has a non-NOTAVAILABLE value in doorStatus
+        if self._connection is not None and self._connection.is_na:
+            na_status = self._states.get("na_status")
+            if na_status is None:
+                return False
+            na_key = _NA_DOOR_NAMES.get(door_name, door_name)
+            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            value = door_status.get(na_key)
+            return value is not None and value != "NOTAVAILABLE"
+        # EMEA: existing logic unchanged
         if not is_valid_path(self.attrs, Paths.ACCESS_DOORS):
             return False
         doors = find_path(self.attrs, Paths.ACCESS_DOORS) or []
@@ -2708,6 +2812,43 @@ class Vehicle:
             d.get("name") == door_name and "unsupported" not in (d.get("status") or [])
             for d in doors
         )
+
+    def _get_na_door_lock_state(self, door_name: str) -> bool | None:
+        """Return per-door lock state for NA vehicles; None for EMEA or missing data.
+
+        Args:
+            door_name: NA doorLockStatus key (e.g. "frontLeft", "rearRight").
+
+        Returns:
+            True if LOCKED, False if UNLOCKED, None if data unavailable or not NA.
+        """
+        if self._connection is None or not self._connection.is_na:
+            return None
+        na_status = self._states.get("na_status")
+        if na_status is None:
+            return None
+        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        value = lock_status.get(door_name)
+        if value is None:
+            return None
+        return value == "LOCKED"
+
+    def _is_na_door_lock_supported(self, door_name: str) -> bool:
+        """Return True when per-door lock data is available for NA vehicles.
+
+        Args:
+            door_name: NA doorLockStatus key (e.g. "frontLeft", "rearRight").
+
+        Returns:
+            True if data present, False otherwise (always False for EMEA).
+        """
+        if self._connection is None or not self._connection.is_na:
+            return False
+        na_status = self._states.get("na_status")
+        if na_status is None:
+            return False
+        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        return door_name in lock_status
 
     def _get_trip_value(self, trip_type: str, key: str, default: Any = None) -> Any:
         """Generic getter for trip statistics."""
@@ -2896,6 +3037,75 @@ class Vehicle:
         if self._services.get(Services.ACCESS, {}).get("active", False):
             return False
         return is_valid_path(self.attrs, Paths.ACCESS_DOOR_LOCK)
+
+    # Per-door lock properties (NA only; EMEA always returns None/False)
+
+    @property
+    def door_locked_left_front(self) -> bool | None:
+        """Return left-front door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("frontLeft")
+
+    @property
+    def is_door_locked_left_front_supported(self) -> bool:
+        """Return True when left-front door lock data is available."""
+        return self._is_na_door_lock_supported("frontLeft")
+
+    @property
+    def door_locked_right_front(self) -> bool | None:
+        """Return right-front door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("frontRight")
+
+    @property
+    def is_door_locked_right_front_supported(self) -> bool:
+        """Return True when right-front door lock data is available."""
+        return self._is_na_door_lock_supported("frontRight")
+
+    @property
+    def door_locked_left_back(self) -> bool | None:
+        """Return left-rear door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("rearLeft")
+
+    @property
+    def is_door_locked_left_back_supported(self) -> bool:
+        """Return True when left-rear door lock data is available."""
+        return self._is_na_door_lock_supported("rearLeft")
+
+    @property
+    def door_locked_right_back(self) -> bool | None:
+        """Return right-rear door lock state. NA only; None for EMEA."""
+        return self._get_na_door_lock_state("rearRight")
+
+    @property
+    def is_door_locked_right_back_supported(self) -> bool:
+        """Return True when right-rear door lock data is available."""
+        return self._is_na_door_lock_supported("rearRight")
+
+    @property
+    def security_status(self) -> str | None:
+        """Return aggregate vehicle security status (NA only)."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            return (na_status.get("exteriorStatus") or {}).get("secure")
+        return None
+
+    @property
+    def security_status_last_updated(self) -> datetime | None:
+        """Return security status last updated timestamp."""
+        na_status = self._states.get("na_status")
+        if na_status is not None:
+            ts = (na_status.get("exteriorStatus") or {}).get("doorStatus", {}).get("doorStatusTimestamp")
+            if ts is not None:
+                try:
+                    return datetime.fromisoformat(ts)
+                except ValueError:
+                    return None
+        return None
+
+    @property
+    def is_security_status_supported(self) -> bool:
+        """Return true if aggregate security status is supported."""
+        na_status = self._states.get("na_status")
+        return na_status is not None and (na_status.get("exteriorStatus") or {}).get("secure") is not None
 
     @property
     def trunk_locked(self) -> bool:
@@ -3396,6 +3606,9 @@ class Vehicle:
     # Trip last data
     @property
     def last_trip_average_speed(self) -> Any:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return na_trip.get("averageSpeed")
         return self._get_trip_value(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property
@@ -3404,6 +3617,9 @@ class Vehicle:
 
     @property
     def is_last_trip_average_speed_supported(self) -> bool:
+        na_trip = self._states.get("na_trip")
+        if na_trip is not None:
+            return "averageSpeed" in na_trip
         return self._is_trip_supported(Services.TRIP_LAST, "averageSpeed_kmph")
 
     @property

@@ -1,122 +1,91 @@
-# Requirements: VW CarNet Make Production Ready
+# Requirements: VW CarNet Variable Parity & Enrichment
 
-**Defined:** 2026-02-27
-**Core Value:** NA users can authenticate with VW CarNet and retrieve real vehicle data for homelab integration without breaking existing EMEA functionality.
+**Defined:** 2026-03-12
+**Milestone:** v1.4 Variable Parity & Enrichment
+**Core Value:** NA users can authenticate with VW CarNet and retrieve full vehicle data for homelab integration without breaking EMEA functionality.
 
-## v1.1 Requirements
+## v1.4 Requirements
 
-Requirements for the "make production ready" milestone. Focuses on code quality, robustness, and documentation — NA first, EMEA if easy.
+### EV / Range Parity
 
-### Error Handling
+- [x] **EVRNG-01**: `electric_range` property returns NA EV electric range from `na_ev.electricRange` when EMEA path is unavailable
+- [x] **EVRNG-02**: `electric_range` returns None gracefully for non-EV NA vehicles
 
-- [x] **ERR-01**: NA API failures (garage 404, RVS 5xx, vehicle session creation failure) surface descriptive exceptions with context instead of silently returning `None`
-- [x] **ERR-02**: Connection exception messages include actionable guidance (e.g., "NA login failed: verify country='US' and credentials are correct")
-- [x] **ERR-03**: Transient 5xx errors during NA data fetch retry automatically (up to 2 attempts) before returning `None`, complementing existing 429 retry logic
+### Door / Access Parity
 
-### Type Hints
+- [x] **DOOR-01**: `door_closed_left_front` property returns status from `na_status.exteriorStatus.doorStatus.frontLeft`
+- [x] **DOOR-02**: `door_closed_right_front` property returns status from `na_status.exteriorStatus.doorStatus.frontRight`
+- [x] **DOOR-03**: `door_closed_left_back` property returns status from `na_status.exteriorStatus.doorStatus.rearLeft`
+- [x] **DOOR-04**: `door_closed_right_back` property returns status from `na_status.exteriorStatus.doorStatus.rearRight`
+- [x] **DOOR-05**: `trunk_closed` property returns status from `na_status.exteriorStatus.doorStatus.trunk`
+- [x] **DOOR-06**: `hood_closed` property returns status from `na_status.exteriorStatus.doorStatus.hood`
+- [x] **DOOR-07**: Individual door lock properties populated from `na_status.exteriorStatus.doorLockStatus` per-door fields
 
-- [x] **TYPE-01**: All public `Connection` methods (`doLogin`, `get`, `post`, `put`, `update`, `validate_tokens`) have return type annotations
-- [x] **TYPE-02**: NA-specific private methods (`_login_na`, `_create_na_vehicle_session`, `_get_na_vehicle_data`, `_refresh_idk_token`, `_classify_endpoint`) have complete parameter and return type signatures
-- [x] **TYPE-03**: Vehicle public properties (`position`, `doors_locked`, `vin`, `na_position`, `na_doors_locked`) have return type annotations matching their actual return types
+### Trip Parity
 
-### Logging
+- [x] **TRIP-01**: `last_trip_average_speed` property returns value from `na_trip.averageSpeed`
 
-- [x] **LOG-01**: NA auth flow (code extraction, PKCE challenge, token exchange steps) emits `DEBUG`-level progress logs with enough context to diagnose a failed login
-- [x] **LOG-02**: NA data fetches (vehicle session creation, RVS location call, RVS status call) log at `DEBUG` level with VIN context on each step
-- [x] **LOG-03**: Full token values and passwords are never written to any log level — token strings truncated to first 8 characters in debug output (`eyJa...`)
-- [x] **LOG-04**: Token refresh events (IDK, Brand, MBB) log at `INFO` level identifying which token type was refreshed
+### Timestamps / Metadata
 
-### Documentation
+- [x] **META-01**: Odometer update timestamp surfaced from `na_status.currentMileageTimestamp`
+- [x] **META-02**: Vehicle parked status derived from `na_location.parked` (maps to `vehicle_moving` inverted)
+- [x] **META-03**: Climatisation duration surfaced from `na_climate.climatisationDuration`
 
-- [ ] **DOC-01**: README has a dedicated North America section covering: `country='US'` usage, credential requirements, `VW_TEST_SPIN` env var, and a minimal working example script
-- [ ] **DOC-02**: `Connection.__init__()` and `doLogin()` docstrings describe the `country` parameter, NA vs EMEA routing, and the IDK-only auth level for NA Car-Net
-- [ ] **DOC-03**: `vehicle.position` and `vehicle.doors_locked` docstrings describe the data source difference between NA (RVS) and EMEA (selectivestatus)
-- [ ] **DOC-04**: `_refresh_idk_token()` docstring documents the non-standard `code_verifier` requirement in the refresh body for future maintainers
+### NA-Specific Properties
 
-### Security
-
-- [ ] **SEC-01**: `detect-secrets` scan reports zero new findings against the updated baseline (existing hook already configured; baseline must cover all new credential patterns)
-- [ ] **SEC-02**: No full credential values (passwords, bearer tokens, secrets) appear in log output at any log level (enforced by LOG-03 above)
-- [ ] **SEC-03**: NA token storage is in-memory only — no disk writes of token values, no credential leakage to filesystem in any code path
-
-### Performance
-
-- [ ] **PERF-01**: RVS vehicle data (GPS + lock status) is cached with a configurable TTL (default 30 seconds) — consecutive `vehicle.update()` calls within the TTL window skip the API roundtrip and return cached values
-- [ ] **PERF-02**: NA authentication and initialization code paths are lazy — they do not increase `Connection.__init__()` startup time for EMEA users
-
-### Code Cleanup
-
-- [ ] **CLEAN-01**: All `# TODO` comments in NA code paths (`vw_connection.py`) are either resolved, removed, or replaced with a documented rationale comment
-- [ ] **CLEAN-02**: `vw_vehicle.py` energy_flow TODOs (lines ~1651, ~1664, ~1676) are marked as pre-existing EMEA technical debt with `# noqa: T000` and a brief explanation
-- [ ] **CLEAN-03**: `x-mobile-session-id` field name is either confirmed from a live session response (and the comment removed) or annotated with "TBD: field name unconfirmed from live traffic" and a unit test placeholder
-
-### Test Coverage
-
-- [ ] **TEST-01**: Unit tests cover NA error paths: token exchange failure, garage endpoint 404, and RVS 5xx all result in graceful `None` returns without uncaught exceptions
-- [ ] **TEST-02**: Unit test confirms that IDK token refresh failure (expired refresh token) triggers a full `doLogin()` re-authentication rather than raising an unhandled exception
-- [ ] **TEST-03**: All existing E2E tests (21) and unit tests (156+) pass after v1.1 changes — zero regressions
+- [ ] **NASPEC-01**: Aggregate security status exposed from `na_status.exteriorStatus.secure`
+- [ ] **NASPEC-02**: Cruise range units indicator from `na_status.powerStatus.cruiseRangeUnits`
 
 ## v2 Requirements
 
-Deferred — promote when API research confirms availability.
+### NA Alerts (Deferred)
 
-### Additional NA Vehicle Properties
+- **NALERT-01**: Library can fetch speed alert thresholds (`GET /alert/v1/vehicle/{id}/speed`)
+- **NALERT-02**: Library can fetch geo-fence/boundary alerts (`GET /alert/v1/vehicle/{id}/boundary`)
+- **NALERT-03**: Library can fetch curfew time alerts (`GET /alert/v1/vehicle/{id}/curfew`)
+- **NALERT-04**: Library can fetch valet mode alerts (`GET /alert/v1/vehicle/{id}/valet`)
 
-- **NA-PROP-01**: `vehicle.battery_level` returns real state of charge (%) for NA vehicles
-- **NA-PROP-02**: `vehicle.charging_state` returns real charging status for NA vehicles
-- **NA-PROP-03**: Climate/HVAC properties work for NA vehicles
+### Dashboard NA Support (Deferred)
 
-### Vehicle Control
-
-- **CTRL-01**: `vehicle.set_lock()` works for NA vehicles via Car-Net API (if API exposes it)
-- **CTRL-02**: `vehicle.set_climatisation()` works for NA vehicles via Car-Net API (if API exposes it)
+- **DASH-01**: Dashboard instruments updated to surface new NA properties as HA entities
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| PyPI publishing | Not requested; v1.1 focuses on code quality |
-| Home Assistant integration | Separate repository; not in scope |
-| EMEA type hint coverage | NA first; EMEA coverage is v2 |
-| Mobile app development | Library for programmatic access only |
-| GraphQL API | REST sufficient |
-| Real-time push notifications | Polling sufficient for homelab |
+| EMEA-only properties with no NA data | NA API simply doesn't expose these endpoints (74 properties) |
+| Refuel/longterm trip data | NA only provides SHORT_TERM trip stats |
+| Charging settings (target SOC, AC limits) | NA has no charging settings read endpoint |
+| Departure timers | NA has no departure profiles endpoint |
+| Service/inspection data | NA has no health inspection endpoint |
+| Readiness/connection state | NA has no readiness endpoint |
+| Dashboard instrument updates | Deferred to separate milestone or v2 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ERR-01 | Phase 15 | Complete |
-| ERR-02 | Phase 15 | Complete |
-| ERR-03 | Phase 15 | Complete |
-| TYPE-01 | Phase 16 | Complete |
-| TYPE-02 | Phase 16 | Complete |
-| TYPE-03 | Phase 16 | Complete |
-| LOG-01 | Phase 17 | Complete |
-| LOG-02 | Phase 17 | Complete |
-| LOG-03 | Phase 17 | Complete |
-| LOG-04 | Phase 17 | Complete |
-| DOC-01 | Phase 18 | Pending |
-| DOC-02 | Phase 18 | Pending |
-| DOC-03 | Phase 18 | Pending |
-| DOC-04 | Phase 18 | Pending |
-| SEC-01 | Phase 19 | Pending |
-| SEC-02 | Phase 19 | Pending |
-| SEC-03 | Phase 19 | Pending |
-| CLEAN-01 | Phase 19 | Pending |
-| CLEAN-02 | Phase 19 | Pending |
-| CLEAN-03 | Phase 19 | Pending |
-| PERF-01 | Phase 20 | Pending |
-| PERF-02 | Phase 20 | Pending |
-| TEST-01 | Phase 20 | Pending |
-| TEST-02 | Phase 20 | Pending |
-| TEST-03 | Phase 20 | Pending |
+| EVRNG-01 | Phase 35 | Complete |
+| EVRNG-02 | Phase 35 | Complete |
+| DOOR-01 | Phase 34 | Complete |
+| DOOR-02 | Phase 34 | Complete |
+| DOOR-03 | Phase 34 | Complete |
+| DOOR-04 | Phase 34 | Complete |
+| DOOR-05 | Phase 34 | Complete |
+| DOOR-06 | Phase 34 | Complete |
+| DOOR-07 | Phase 34 | Complete |
+| TRIP-01 | Phase 35 | Complete |
+| META-01 | Phase 35 | Complete |
+| META-02 | Phase 35 | Complete |
+| META-03 | Phase 35 | Complete |
+| NASPEC-01 | Phase 36 | Pending |
+| NASPEC-02 | Phase 36 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 25 total
-- Mapped to phases: 25 (100%)
-- Unmapped: 0 ✓
+- v1.4 requirements: 15 total
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
-*Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 — v1.1 roadmap created, all requirements mapped*
+*Requirements defined: 2026-03-12*
+*Last updated: 2026-03-12 -- roadmap created, all requirements mapped*

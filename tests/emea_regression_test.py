@@ -131,7 +131,7 @@ async def test_non_na_countries_stay_in_emea_path(session):
         conn = Connection(session, "", "", country=country)
         assert conn._session_region == "EMEA", f"Expected EMEA for country={country}"
         with patch.object(conn, "_login_na") as mock_na:
-            with patch.object(conn, "get_openid_config", side_effect=Exception("stop early")):
+            with patch.object(conn, "get_openid_config", side_effect=ValueError("stop early")):
                 await conn._login()
         assert mock_na.call_count == 0, f"_login_na was called for country={country}"
 

@@ -159,6 +159,7 @@ class Connection:
         self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
         # Shared lock for login and token refresh (prevents concurrent login+refresh race)
         self._login_lock = asyncio.Lock()
+        self._update_lock = asyncio.Lock()
         # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
         self._na_token_endpoint: str | None = None
 
@@ -258,12 +259,8 @@ class Connection:
 
     def _is_allowed_vw_domain(self, url: str) -> bool:
         """Return True if URL hostname ends with a known VW Group domain suffix."""
-        try:
-            hostname = urlparse(url).hostname or ""
-            return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
-        except Exception:
-            _LOGGER.debug("URL parse failed for domain check: %s", url)
-            return False
+        hostname = urlparse(url).hostname or ""
+        return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
 
     async def _discover_market_config(self) -> bool:
         """Discover and cache market configuration from VW OIDC discovery endpoint.
@@ -316,7 +313,7 @@ class Connection:
                     _LOGGER.debug("Market config discovery succeeded via %s", candidate)
                     return True
 
-            except Exception as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, KeyError) as exc:
                 _LOGGER.debug("Config discovery attempt failed for %s: %s", candidate, exc)
                 continue
 
@@ -451,7 +448,7 @@ class Connection:
 
         config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
         _LOGGER.debug("Requesting openid config from base API: %s", config_url)
-        req = await self._session.get(url=config_url)
+        req = await self._session.get(url=config_url, timeout=ClientTimeout(total=TIMEOUT.seconds))
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
             raise AuthenticationError(
@@ -2264,7 +2261,7 @@ class Connection:
             _LOGGER.error("NA network error during login: %s", error)
             self._session_logged_in = False
             return False
-        except Exception as error:
+        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
             _LOGGER.error("NA unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
@@ -2341,7 +2338,7 @@ class Connection:
             _LOGGER.error("Missing required data during login: %s", error)
             self._session_logged_in = False
             return False
-        except Exception as error:
+        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
             _LOGGER.error("Unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
@@ -2350,8 +2347,6 @@ class Connection:
         response = await response_raw.json(loads=json_loads)
         if not response:
             raise APIError("Invalid or no response from action endpoint")
-        if response == 429:
-            return {"id": None, "state": "Throttled"}
         request_id = response.get("data", {}).get("requestID", 0)
         _LOGGER.debug("Request returned with request id: %s", request_id)
         return {"id": str(request_id)}
@@ -2461,7 +2456,7 @@ class Connection:
                                 "Not success status code [%s]",
                                 response.status,
                             )
-                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                    except (json.JSONDecodeError, aiohttp.ContentTypeError, KeyError, ValueError) as exc:
                         res = {}
                         _LOGGER.warning(
                             "Request to '%s' failed to parse response [status %s]: %s",
@@ -2485,7 +2480,7 @@ class Connection:
             except (client_exceptions.ClientConnectionError, client_exceptions.ServerTimeoutError) as net_err:
                 if _no_retry or attempt >= MAX_RETRIES_ON_RATE_LIMIT:
                     await self.update_service_status(url, 1000)
-                    raise net_err from None
+                    raise
                 delay = float(2 ** attempt)
                 attempt += 1
                 _LOGGER.warning(
@@ -2496,12 +2491,12 @@ class Connection:
                 # continue is implicit — while loop wraps the try/except
 
             except client_exceptions.ClientResponseError as httperror:
-                await self.update_service_status(url, httperror.code)
-                raise httperror from None
+                await self.update_service_status(url, httperror.status)
+                raise
 
-            except Exception as error:
+            except (TypeError, ValueError, asyncio.TimeoutError) as error:
                 await self.update_service_status(url, 1000)
-                raise error from None
+                raise
 
     async def get(self, url: str, vin: str = "", tries: int = 0) -> Any:
         """Perform a get query."""
@@ -2550,29 +2545,30 @@ class Connection:
     # Update data for all Vehicles
     async def update(self) -> bool:
         """Update status."""
-        if not self.logged_in:
-            if not await self._login():
-                _LOGGER.warning("Login for %s account failed!", BRAND)
-                return False
-        try:
-            if not await self.validate_tokens():
-                _LOGGER.info(
-                    "Session expired. Initiating new login for %s account", BRAND
-                )
-                if not await self.doLogin():
+        async with self._update_lock:
+            if not self.logged_in:
+                if not await self._login():
                     _LOGGER.warning("Login for %s account failed!", BRAND)
-                    raise AuthenticationError(f"Login for {BRAND} account failed")
-            else:
-                _LOGGER.debug("Going to call vehicle updates")
-                # Get all Vehicle objects and update in parallell
-                updatelist = [vehicle.update() for vehicle in self.vehicles]
-                # Wait for all data updates to complete
-                await asyncio.gather(*updatelist)
+                    return False
+            try:
+                if not await self.validate_tokens():
+                    _LOGGER.info(
+                        "Session expired. Initiating new login for %s account", BRAND
+                    )
+                    if not await self.doLogin():
+                        _LOGGER.warning("Login for %s account failed!", BRAND)
+                        raise AuthenticationError(f"Login for {BRAND} account failed")
+                else:
+                    _LOGGER.debug("Going to call vehicle updates")
+                    # Get all Vehicle objects and update in parallell
+                    updatelist = [vehicle.update() for vehicle in self.vehicles]
+                    # Wait for all data updates to complete
+                    await asyncio.gather(*updatelist)
 
-                return True
-        except (OSError, LookupError, Exception) as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning("Could not update information: %s", error)
-        return False
+                    return True
+            except (OSError, LookupError, AuthenticationError, APIError, RequestError, client_exceptions.ClientError, asyncio.TimeoutError) as error:
+                _LOGGER.warning("Could not update information: %s", error)
+            return False
 
     async def getPendingRequests(self, vin: str) -> Any:
         """Get status information for pending requests."""
@@ -2587,11 +2583,11 @@ class Connection:
                 response["refreshTimestamp"] = datetime.now(UTC)
                 return response
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning(
                 "Could not fetch information for pending requests, error: %s", error
             )
-        return False
+        return None
 
     async def getOperationList(self, vin: str) -> Any:
         """Collect operationlist for VIN, supported/licensed functions."""
@@ -2612,7 +2608,7 @@ class Connection:
             else:
                 _LOGGER.info("Could not fetch operation list: %s", response)
                 data = {"error": "unknown"}
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch operation list, error: %s", error)
             data = {"error": "unknown"}
         return data
@@ -2638,9 +2634,9 @@ class Connection:
                 response.update({"refreshTimestamp": datetime.now(UTC)})
                 return response
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch selectivestatus, error: %s", error)
-        return False
+        return None
 
     async def getVehicleData(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2649,15 +2645,15 @@ class Connection:
         try:
             response = await self.get(f"{self._base_api}/vehicle/v2/vehicles", "")
 
-            for vehicle in response.get("data"):
+            for vehicle in (response.get("data") or []):
                 if vehicle.get("vin") == vin:
                     return {"vehicle": vehicle}
 
             _LOGGER.warning("Could not fetch vehicle data for vin %s", vin)
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch vehicle data, error: %s", error)
-        return False
+        return None
 
     async def getParkingPosition(self, vin: str) -> Any:
         """Get information about the parking position."""
@@ -2685,9 +2681,9 @@ class Connection:
                 _LOGGER.info(
                     "Unhandled error while trying to fetch parkingposition data"
                 )
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch parkingposition, error: %s", error)
-        return False
+        return None
 
     async def getTripLast(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2707,9 +2703,9 @@ class Connection:
                     "Could not fetch last trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def getTripRefuel(self, vin: str) -> Any:
         """Get information about the trip since last refuel"""
@@ -2729,9 +2725,9 @@ class Connection:
                     "Could not fetch refuel trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def getTripLongterm(self, vin: str) -> Any:
         """Get information about the trip last longterm"""
@@ -2751,9 +2747,9 @@ class Connection:
                     "Could not fetch longterm trip data, server response: %s", response
                 )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return False
+        return None
 
     async def wakeUpVehicle(self, vin: str) -> Any:
         """Wake up vehicle to send updated data to VW Backend."""
@@ -2766,9 +2762,9 @@ class Connection:
                 return_raw=True,
             )
 
-        except Exception as error:  # pylint: disable=broad-exception-caught
+        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
             _LOGGER.warning("Could not refresh the data, error: %s", error)
-        return False
+        return None
 
     async def get_request_status(self, vin: str, requestId: str, actionId: str = "") -> Any:
         """Return status of a request ID for a given section ID."""
@@ -2786,6 +2782,8 @@ class Connection:
                     raise AuthenticationError(f"Login for {BRAND} account failed")
 
             response = await self.getPendingRequests(vin)
+            if not response:
+                return "Unknown"
 
             requests = response.get("data", [])
             result = None
@@ -3109,16 +3107,23 @@ class Connection:
         except KeyError as error:
             _LOGGER.warning("Token validation failed - missing token data: %s", error)
             return False
-        id_exp = jwt.decode(
-            idtoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
-        at_exp = jwt.decode(
-            atoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
+        try:
+            id_exp = jwt.decode(
+                idtoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+            at_exp = jwt.decode(
+                atoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+        except jwt.InvalidTokenError as exc:
+            _LOGGER.warning("Token validation failed - malformed token: %s", exc)
+            return False
+        if id_exp is None or at_exp is None:
+            _LOGGER.warning("Token validation failed - missing exp claim")
+            return False
         id_dt = datetime.fromtimestamp(int(id_exp))
         at_dt = datetime.fromtimestamp(int(at_exp))
         now = datetime.now()
@@ -3160,6 +3165,7 @@ class Connection:
                 url=f"{self._base_api}/login/v1/idk/token",
                 headers=tHeaders,
                 data=body,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
             )
             await self.update_service_status("token", response.status)
             if response.status == 200:

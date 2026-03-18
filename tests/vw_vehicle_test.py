@@ -1,5 +1,6 @@
 """Vehicle class tests."""
 
+import ast
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -12,6 +13,7 @@ from freezegun import freeze_time
 import pytest
 from volkswagencarnet.vw_connection import Connection
 from volkswagencarnet.vw_const import Services
+from volkswagencarnet.vw_exceptions import APIError, UnsupportedOperationError, VWError
 from volkswagencarnet.vw_vehicle import (
     ENGINE_TYPE_DIESEL,
     ENGINE_TYPE_ELECTRIC,
@@ -29,6 +31,16 @@ def load_fixture(*parts):
     """Load a JSON fixture file."""
     with open(FIXTURE_DIR.joinpath(*parts)) as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Exception hierarchy tests
+# ---------------------------------------------------------------------------
+def test_unsupported_operation_error_is_vw_error():
+    """UnsupportedOperationError is a subclass of VWError."""
+    assert issubclass(UnsupportedOperationError, VWError)
+    err = UnsupportedOperationError("test")
+    assert isinstance(err, VWError)
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +164,7 @@ class VehiclePropertyTest(IsolatedAsyncioTestCase):
         vehicle._discovered = True
         vehicle._services[Services.ACCESS] = {"active": False}
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(UnsupportedOperationError) as exc_info:
             await vehicle.set_lock("any", "")
 
         expected_message = "Remote lock/unlock is not supported."
@@ -164,7 +176,7 @@ class VehiclePropertyTest(IsolatedAsyncioTestCase):
         vehicle._discovered = True
         vehicle._services[Services.ACCESS] = {"active": True}
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(UnsupportedOperationError) as exc_info:
             await vehicle.set_lock("any", "")
 
         expected_message = "Invalid lock action: any"
@@ -967,6 +979,182 @@ class TestNAVehicleProperties:
         vehicle._states["na_status"] = {"lockStatus": "LOCKED"}  # no exteriorStatus
         assert vehicle.is_any_door_open_supported is False
 
+    # NA security_status (NASPEC-01)
+    def test_na_security_status(self, na_vehicle):
+        """security_status returns 'LOCKED' from rvs_status fixture (NASPEC-01)."""
+        assert na_vehicle.security_status == "LOCKED"
+
+    def test_na_security_status_supported(self, na_vehicle):
+        """is_security_status_supported is True for NA vehicle (NASPEC-01)."""
+        assert na_vehicle.is_security_status_supported is True
+
+    def test_na_security_status_last_updated(self, na_vehicle):
+        """security_status_last_updated is a datetime from doorStatusTimestamp (NASPEC-01)."""
+        result = na_vehicle.security_status_last_updated
+        assert isinstance(result, datetime)
+
+    def test_na_security_status_emea(self, bare_vehicle):
+        """security_status returns None and not supported for EMEA (NASPEC-01)."""
+        assert bare_vehicle.security_status is None
+        assert bare_vehicle.is_security_status_supported is False
+
+    # NA cruise_range_units (NASPEC-02)
+    def test_na_cruise_range_units(self, na_vehicle):
+        """cruise_range_units returns 'MI' from rvs_status fixture (NASPEC-02)."""
+        assert na_vehicle.cruise_range_units == "MI"
+
+    def test_na_cruise_range_units_supported(self, na_vehicle):
+        """is_cruise_range_units_supported is True for NA vehicle (NASPEC-02)."""
+        assert na_vehicle.is_cruise_range_units_supported is True
+
+    def test_na_cruise_range_units_last_updated(self, na_vehicle):
+        """cruise_range_units_last_updated returns None (no timestamp) (NASPEC-02)."""
+        assert na_vehicle.cruise_range_units_last_updated is None
+
+    def test_na_cruise_range_units_emea(self, bare_vehicle):
+        """cruise_range_units returns None and not supported for EMEA (NASPEC-02)."""
+        assert bare_vehicle.cruise_range_units is None
+        assert bare_vehicle.is_cruise_range_units_supported is False
+
+
+class TestNaDoorAccessParity:
+    """Test per-door open/closed and per-door lock properties for NA vehicles."""
+
+    # NA door closed -- 6 doors
+    def test_na_door_closed_left_front(self, na_vehicle):
+        """door_closed_left_front is True when frontLeft is CLOSED."""
+        assert na_vehicle.door_closed_left_front is True
+
+    def test_na_door_closed_right_front(self, na_vehicle):
+        """door_closed_right_front is True when frontRight is CLOSED."""
+        assert na_vehicle.door_closed_right_front is True
+
+    def test_na_door_closed_left_back(self, na_vehicle):
+        """door_closed_left_back is True when rearLeft is CLOSED."""
+        assert na_vehicle.door_closed_left_back is True
+
+    def test_na_door_closed_right_back(self, na_vehicle):
+        """door_closed_right_back is True when rearRight is CLOSED."""
+        assert na_vehicle.door_closed_right_back is True
+
+    def test_na_trunk_closed(self, na_vehicle):
+        """trunk_closed is True when trunk is CLOSED."""
+        assert na_vehicle.trunk_closed is True
+
+    def test_na_hood_closed(self, na_vehicle):
+        """hood_closed is True when hood is CLOSED (NA uses 'hood', not 'bonnet')."""
+        assert na_vehicle.hood_closed is True
+
+    # NA door closed supported -- 6 doors
+    def test_na_is_door_closed_left_front_supported(self, na_vehicle):
+        """is_door_closed_left_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_left_front_supported is True
+
+    def test_na_is_door_closed_right_front_supported(self, na_vehicle):
+        """is_door_closed_right_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_right_front_supported is True
+
+    def test_na_is_door_closed_left_back_supported(self, na_vehicle):
+        """is_door_closed_left_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_left_back_supported is True
+
+    def test_na_is_door_closed_right_back_supported(self, na_vehicle):
+        """is_door_closed_right_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_closed_right_back_supported is True
+
+    def test_na_is_trunk_closed_supported(self, na_vehicle):
+        """is_trunk_closed_supported is True for NA vehicle."""
+        assert na_vehicle.is_trunk_closed_supported is True
+
+    def test_na_is_hood_closed_supported(self, na_vehicle):
+        """is_hood_closed_supported is True for NA vehicle."""
+        assert na_vehicle.is_hood_closed_supported is True
+
+    # NA per-door lock -- 4 doors
+    def test_na_door_locked_left_front(self, na_vehicle):
+        """door_locked_left_front is True when frontLeft is LOCKED."""
+        assert na_vehicle.door_locked_left_front is True
+
+    def test_na_door_locked_right_front(self, na_vehicle):
+        """door_locked_right_front is True when frontRight is LOCKED."""
+        assert na_vehicle.door_locked_right_front is True
+
+    def test_na_door_locked_left_back(self, na_vehicle):
+        """door_locked_left_back is True when rearLeft is LOCKED."""
+        assert na_vehicle.door_locked_left_back is True
+
+    def test_na_door_locked_right_back(self, na_vehicle):
+        """door_locked_right_back is True when rearRight is LOCKED."""
+        assert na_vehicle.door_locked_right_back is True
+
+    # NA per-door lock supported -- 4 doors
+    def test_na_is_door_locked_left_front_supported(self, na_vehicle):
+        """is_door_locked_left_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_left_front_supported is True
+
+    def test_na_is_door_locked_right_front_supported(self, na_vehicle):
+        """is_door_locked_right_front_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_right_front_supported is True
+
+    def test_na_is_door_locked_left_back_supported(self, na_vehicle):
+        """is_door_locked_left_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_left_back_supported is True
+
+    def test_na_is_door_locked_right_back_supported(self, na_vehicle):
+        """is_door_locked_right_back_supported is True for NA vehicle."""
+        assert na_vehicle.is_door_locked_right_back_supported is True
+
+    # EMEA per-door lock returns None
+    def test_emea_door_locked_per_door_returns_none(self, egolf_vehicle):
+        """Per-door lock properties return None on EMEA vehicles (NA-only)."""
+        assert egolf_vehicle.door_locked_left_front is None
+
+    # Edge case: NOTAVAILABLE returns None
+    def test_na_door_closed_notavailable_returns_none(self):
+        """door_closed_left_front is None when frontLeft is NOTAVAILABLE."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {"frontLeft": "NOTAVAILABLE"},
+            }
+        }
+        assert vehicle.door_closed_left_front is None
+        assert vehicle.is_door_closed_left_front_supported is False
+
+    # Edge case: empty doorStatus returns None
+    def test_na_door_closed_empty_door_status_returns_none(self):
+        """door_closed_left_front is None when doorStatus is empty."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {},
+            }
+        }
+        assert vehicle.door_closed_left_front is None
+
+    # Edge case: OPEN returns False
+    def test_na_door_closed_open_returns_false(self):
+        """door_closed_left_front is False when frontLeft is OPEN."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {
+            "exteriorStatus": {
+                "doorStatus": {"frontLeft": "OPEN"},
+            }
+        }
+        assert vehicle.door_closed_left_front is False
+
 
 class TestNAEVProperties:
     """Test NA EV/climate/trip properties using dedicated fixtures."""
@@ -1086,6 +1274,118 @@ class TestNAEVProperties:
         vehicle._states["na_ev"] = {"batteryPercentageAvailable": 80}  # no chargingStatus
         assert vehicle.is_charging_supported is False
 
+    # ---------------------------------------------------------------------------
+    # Phase 35: EV range (EVRNG-01, EVRNG-02)
+    # ---------------------------------------------------------------------------
+
+    def test_na_electric_range(self, na_ev_vehicle):
+        """electric_range returns 180 from na_ev fixture (EVRNG-01)."""
+        assert na_ev_vehicle.electric_range == 180
+
+    def test_na_electric_range_supported(self, na_ev_vehicle):
+        """is_electric_range_supported is True when electricRange present (EVRNG-01)."""
+        assert na_ev_vehicle.is_electric_range_supported is True
+
+    def test_na_electric_range_none_for_non_ev(self):
+        """electric_range is None when na_ev has no electricRange key (EVRNG-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {}  # no electricRange key
+        assert vehicle.electric_range is None
+
+    def test_na_electric_range_not_supported_non_ev(self):
+        """is_electric_range_supported is False when na_ev lacks electricRange (EVRNG-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {}  # no electricRange key
+        assert vehicle.is_electric_range_supported is False
+
+    def test_na_electric_range_zero_valid(self):
+        """electric_range == 0 is valid (depleted battery) — not treated as None (EVRNG-01 edge)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_ev"] = {"electricRange": 0}
+        assert vehicle.electric_range == 0
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Trip average speed (TRIP-01)
+    # ---------------------------------------------------------------------------
+
+    def test_na_last_trip_average_speed(self, na_ev_vehicle):
+        """last_trip_average_speed returns 72 from na_trip fixture (TRIP-01)."""
+        assert na_ev_vehicle.last_trip_average_speed == 72
+
+    def test_na_last_trip_average_speed_supported(self, na_ev_vehicle):
+        """is_last_trip_average_speed_supported is True when averageSpeed present (TRIP-01)."""
+        assert na_ev_vehicle.is_last_trip_average_speed_supported is True
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Odometer timestamp (META-01)
+    # ---------------------------------------------------------------------------
+
+    def test_na_distance_last_updated(self, na_ev_vehicle):
+        """distance_last_updated returns a datetime parsed from currentMileageTimestamp (META-01)."""
+        result = na_ev_vehicle.distance_last_updated
+        assert isinstance(result, datetime)
+
+    def test_na_distance_last_updated_missing(self):
+        """distance_last_updated returns None when na_status has no timestamp key (META-01 edge)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_status"] = {}  # no currentMileageTimestamp key
+        assert vehicle.distance_last_updated is None
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Vehicle moving / parked (META-02)
+    # ---------------------------------------------------------------------------
+
+    def test_na_vehicle_moving_parked(self, na_ev_vehicle):
+        """vehicle_moving is False when parked=True in na_location fixture (META-02)."""
+        assert na_ev_vehicle.vehicle_moving is False
+
+    def test_na_vehicle_moving_not_parked(self):
+        """vehicle_moving is True when na_location has parked=False (META-02)."""
+        conn = MagicMock()
+        conn.is_na = True
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn=conn, url="TESTVIN")
+        vehicle._discovered = True
+        vehicle._states["na_location"] = {"parked": False}
+        assert vehicle.vehicle_moving is True
+
+    def test_na_vehicle_moving_supported(self, na_ev_vehicle):
+        """is_vehicle_moving_supported is True when na_location has parked key (META-02)."""
+        assert na_ev_vehicle.is_vehicle_moving_supported is True
+
+    # ---------------------------------------------------------------------------
+    # Phase 35: Climatisation duration (META-03)
+    # ---------------------------------------------------------------------------
+
+    def test_na_climatisation_duration(self, na_ev_vehicle):
+        """climatisation_duration returns 30 from na_climate fixture (META-03)."""
+        assert na_ev_vehicle.climatisation_duration == 30
+
+    def test_na_climatisation_duration_supported(self, na_ev_vehicle):
+        """is_climatisation_duration_supported is True when climatisationDuration present (META-03)."""
+        assert na_ev_vehicle.is_climatisation_duration_supported is True
+
+    def test_na_climatisation_duration_not_supported_emea(self, bare_vehicle):
+        """climatisation_duration is None and is_*_supported is False for EMEA vehicle (META-03)."""
+        assert bare_vehicle.climatisation_duration is None
+        assert bare_vehicle.is_climatisation_duration_supported is False
+
 
 class TestNAWriteCommands:
     """Tests for NA write command routing in Vehicle methods."""
@@ -1121,7 +1421,7 @@ class TestNAWriteCommands:
     async def test_set_lock_invalid_action_raises(self):
         """set_lock raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match="Invalid lock action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid lock action"):
             await vehicle.set_lock("open", spin="")
 
     @pytest.mark.asyncio
@@ -1157,7 +1457,7 @@ class TestNAWriteCommands:
     async def test_set_charger_invalid_action_raises(self):
         """set_charger raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match='not supported'):
+        with pytest.raises(UnsupportedOperationError, match='not supported'):
             await vehicle.set_charger("invalid")
 
     @pytest.mark.asyncio
@@ -1184,7 +1484,7 @@ class TestNAWriteCommands:
     async def test_set_climatisation_invalid_action_raises(self):
         """set_climatisation raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(Exception, match="Invalid climatisation action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid climatisation action"):
             await vehicle.set_climatisation("boost")
 
     @pytest.mark.asyncio
@@ -1512,13 +1812,13 @@ class TestVehicleActions:
         connected_vehicle._states["charging"] = {
             "chargingStatus": {"value": {"chargingState": "readyForCharging"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_charger("invalid")
 
     @pytest.mark.asyncio
     async def test_set_charger_not_supported(self, connected_vehicle):
         """set_charger raises when charging not supported."""
-        with pytest.raises(Exception, match="No charging support"):
+        with pytest.raises(UnsupportedOperationError, match="No charging support"):
             await connected_vehicle.set_charger("start")
 
     @pytest.mark.asyncio
@@ -1566,7 +1866,7 @@ class TestVehicleActions:
             },
             "climatisationStatus": {"value": {"climatisationState": "off"}},
         }
-        with pytest.raises(Exception, match="Invalid climatisation action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid climatisation action"):
             await connected_vehicle.set_climatisation("invalid")
 
     @pytest.mark.asyncio
@@ -1600,13 +1900,13 @@ class TestVehicleActions:
         connected_vehicle._services[Services.PARAMETERS] = {
             "supportsStartWindowHeating": "true"
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_window_heating("invalid")
 
     @pytest.mark.asyncio
     async def test_set_window_heating_not_supported(self, connected_vehicle):
         """set_window_heating raises when not supported."""
-        with pytest.raises(Exception, match="No climatisation support"):
+        with pytest.raises(UnsupportedOperationError, match="No climatisation support"):
             await connected_vehicle.set_window_heating("start")
 
     @pytest.mark.asyncio
@@ -1633,13 +1933,13 @@ class TestVehicleActions:
     async def test_set_lock_invalid_action(self, connected_vehicle):
         """set_lock with invalid action raises."""
         connected_vehicle._services[Services.ACCESS] = {"active": True}
-        with pytest.raises(Exception, match="Invalid lock action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid lock action"):
             await connected_vehicle.set_lock("break", "1234")
 
     @pytest.mark.asyncio
     async def test_set_lock_not_supported(self, connected_vehicle):
         """set_lock raises when access not active."""
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_lock("lock", "1234")
 
     @pytest.mark.asyncio
@@ -1653,7 +1953,7 @@ class TestVehicleActions:
     @pytest.mark.asyncio
     async def test_set_honk_and_flash_not_supported(self, connected_vehicle):
         """set_honk_and_flash raises when not supported."""
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await connected_vehicle.set_honk_and_flash()
 
 
@@ -2239,7 +2539,7 @@ class TestSetChargingSettings:
         v._states["charging"] = {
             "chargingSettings": {"value": {"maxChargeCurrentAC": "reduced"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("reduced_ac_charging", "bogus")
 
     @pytest.mark.asyncio
@@ -2259,7 +2559,7 @@ class TestSetChargingSettings:
         v._states["charging"] = {
             "chargingSettings": {"value": {"maxChargeCurrentAC_A": 10}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("max_charge_amperage", 99)
 
     @pytest.mark.asyncio
@@ -2283,7 +2583,7 @@ class TestSetChargingSettings:
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_settings("reduced_ac_charging", "reduced")
 
 
@@ -2312,13 +2612,13 @@ class TestSetChargingCareSettings:
         v._states["batteryChargingCare"] = {
             "chargingCareSettings": {"value": {"batteryCareMode": "deactivated"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_care_settings("bogus")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_charging_care_settings("activated")
 
 
@@ -2343,13 +2643,13 @@ class TestSetReadinessBatterySupport:
         v._states["batterySupport"] = {
             "batterySupportStatus": {"value": {"batterySupport": "enabled"}}
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_readiness_battery_support("invalid")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_readiness_battery_support(True)
 
 
@@ -2404,7 +2704,7 @@ class TestSetClimatisationSettings:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_climatisation_settings(
                 "climatisation_target_temperature", 50.0
             )
@@ -2412,7 +2712,7 @@ class TestSetClimatisationSettings:
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_climatisation_settings("climatisation_target_temperature", 22)
 
 
@@ -2452,13 +2752,13 @@ class TestSetAuxiliaryClimatisation:
         v._states["climatisation"] = {
             "auxiliaryHeatingStatus": {"value": {"climatisationState": "off"}}
         }
-        with pytest.raises(Exception, match="Invalid auxiliary heater action"):
+        with pytest.raises(UnsupportedOperationError, match="Invalid auxiliary heater action"):
             await v.set_auxiliary_climatisation("bogus", "1234")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="No climatisation support"):
+        with pytest.raises(UnsupportedOperationError, match="No climatisation support"):
             await v.set_auxiliary_climatisation("start", "1234")
 
 
@@ -2492,13 +2792,13 @@ class TestSetDepartureTimer:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_departure_timer(1, "1234", "yes")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_departure_timer(1, "1234", True)
 
 
@@ -2532,13 +2832,13 @@ class TestSetAcDepartureTimer:
                 }
             }
         }
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_ac_departure_timer(1, "yes")
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
         v = _make_action_vehicle()
-        with pytest.raises(Exception, match="not supported"):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await v.set_ac_departure_timer(1, True)
 
 
@@ -2999,20 +3299,29 @@ class TestExpired:
 
     @pytest.mark.asyncio
     async def test_expired_with_past_date(self):
-        """Past date without timezone triggers TypeError in comparison, caught by except."""
+        """Past date (naive) should be treated as UTC and correctly detected as expired."""
         v = Vehicle(conn=None, url="TESTVIN")
         v._services[Services.CHARGING]["expiration"] = datetime(2020, 1, 1)
         result = await v.expired(Services.CHARGING)
-        # now (aware) >= expiration (naive after .replace(tzinfo=None)) raises TypeError
-        # which is caught by broad except, returning False
-        assert result is False
+        # After fix: naive datetime gets tzinfo=UTC, then compared with aware now -> True (expired)
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_expired_with_future_date(self):
         v = Vehicle(conn=None, url="TESTVIN")
         v._services[Services.CHARGING]["expiration"] = datetime(2030, 1, 1, tzinfo=UTC)
         result = await v.expired(Services.CHARGING)
-        # datetime(2030) with UTC, then .replace(tzinfo=None) makes it naive -> TypeError
+        # After fix: keeps UTC tzinfo, compared with aware now -> False (not expired)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_expired_naive_datetime_no_type_error(self):
+        """Naive datetime expiration should not raise TypeError."""
+        v = Vehicle(conn=None, url="TESTVIN")
+        # Naive datetime far in the future
+        v._services[Services.CHARGING]["expiration"] = datetime(2030, 6, 15, 12, 0, 0)
+        # Should NOT raise TypeError -- currently code strips tzinfo causing aware/naive mismatch
+        result = await v.expired(Services.CHARGING)
         assert result is False
 
     @pytest.mark.asyncio
@@ -4167,3 +4476,151 @@ class TestPlan2402EMEAPositionFallback:
         assert pos["lat"] is None
         assert pos["lng"] is None
         assert pos["timestamp"] is None
+
+
+# ---------------------------------------------------------------------------
+# CFIX-01 / CFIX-02: Action method control-flow and APIError tests
+# ---------------------------------------------------------------------------
+class TestCFIX01ActionMethods(IsolatedAsyncioTestCase):
+    """Tests for CFIX-01 (action methods always raise) and CFIX-02 (_handle_response raises APIError)."""
+
+    def _make_vehicle(self):
+        """Create a Vehicle with a mocked EMEA connection."""
+        conn = AsyncMock(spec=Connection)
+        conn._session_region = "EMEA"
+        conn.is_na = False
+        conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+        vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
+        return vehicle
+
+    async def test_set_refresh_happy_path(self):
+        """set_refresh should return True on 204 + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        mock_response = MagicMock()
+        mock_response.status = 204
+        vehicle._connection.wakeUpVehicle = AsyncMock(return_value=mock_response)
+        vehicle.wait_for_data_refresh = AsyncMock(return_value="Completed")
+        result = await vehicle.set_refresh()
+        assert result is True
+
+    async def test_set_lock_happy_path(self):
+        """set_lock should return True on Queued + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        vehicle._services[Services.ACCESS] = {"active": True}
+        vehicle._connection.setLock = AsyncMock(
+            return_value={"state": "Queued", "id": 1}
+        )
+        vehicle.wait_for_request = AsyncMock(return_value="Completed")
+        result = await vehicle.set_lock("lock", "1234")
+        assert result is True
+
+    async def test_set_honk_and_flash_happy_path(self):
+        """set_honk_and_flash should return True on Queued + Completed, not raise."""
+        vehicle = self._make_vehicle()
+        vehicle._services[Services.HONK_AND_FLASH] = {"active": True}
+        vehicle._position = {"lat": 52.0, "lng": 13.0}
+        vehicle._connection.setHonkAndFlash = AsyncMock(
+            return_value={"state": "Queued", "id": 1}
+        )
+        vehicle.wait_for_request = AsyncMock(return_value="Completed")
+        result = await vehicle.set_honk_and_flash()
+        assert result is True
+
+    async def test_set_refresh_unbound_status(self):
+        """set_refresh with non-204/429 status should not raise UnboundLocalError."""
+        vehicle = self._make_vehicle()
+        mock_response = MagicMock()
+        mock_response.status = 500
+        vehicle._connection.wakeUpVehicle = AsyncMock(return_value=mock_response)
+        # Should not raise UnboundLocalError for undefined 'status' variable
+        result = await vehicle.set_refresh()
+        assert result is True
+
+    async def test_handle_response_raises_api_error(self):
+        """_handle_response should raise APIError, not bare Exception."""
+        vehicle = self._make_vehicle()
+        with pytest.raises(APIError):
+            await vehicle._handle_response(None, "test")
+
+
+# ---------------------------------------------------------------------------
+# Wait method tests: recursion elimination, behavior, except narrowing
+# ---------------------------------------------------------------------------
+VW_VEHICLE_SRC = Path(__file__).parent.parent / "volkswagencarnet" / "vw_vehicle.py"
+
+
+class TestWaitMethods(IsolatedAsyncioTestCase):
+    """Verify wait_for_request/wait_for_data_refresh are iterative with narrowed except."""
+
+    def _get_method_ast(self, method_name: str) -> ast.AsyncFunctionDef:
+        """Parse vw_vehicle.py and return the AST node for the given method."""
+        source = VW_VEHICLE_SRC.read_text()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == method_name:
+                return node
+        raise AssertionError(f"{method_name} not found in vw_vehicle.py")
+
+    def _has_recursive_call(self, method_name: str) -> bool:
+        """Check if method contains a recursive self.method_name() call."""
+        node = self._get_method_ast(method_name)
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                func = child.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == method_name
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "self"
+                ):
+                    return True
+        return False
+
+    def test_wait_for_request_no_recursion(self):
+        """wait_for_request contains no recursive call to self.wait_for_request."""
+        assert not self._has_recursive_call("wait_for_request"), (
+            "wait_for_request still contains a recursive call"
+        )
+
+    def test_wait_for_data_refresh_no_recursion(self):
+        """wait_for_data_refresh contains no recursive call to self.wait_for_data_refresh."""
+        assert not self._has_recursive_call("wait_for_data_refresh"), (
+            "wait_for_data_refresh still contains a recursive call"
+        )
+
+    async def test_wait_for_request_returns_timeout_after_retries(self):
+        """wait_for_request returns 'Timeout' when status is always 'In Progress'."""
+        vehicle = Vehicle(None, "https://example.com")
+        mock_conn = MagicMock()
+        mock_conn.get_request_status = AsyncMock(return_value="In Progress")
+        vehicle._connection = mock_conn
+
+        mock_request = MagicMock()
+        mock_request.requestId = "test-123"
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await vehicle.wait_for_request(mock_request, retry_count=3)
+        assert result == "Timeout"
+
+    async def test_wait_for_request_returns_status_on_completion(self):
+        """wait_for_request returns status when not 'In Progress'."""
+        vehicle = Vehicle(None, "https://example.com")
+        mock_conn = MagicMock()
+        mock_conn.get_request_status = AsyncMock(return_value="Completed")
+        vehicle._connection = mock_conn
+
+        mock_request = MagicMock()
+        mock_request.requestId = "test-456"
+
+        result = await vehicle.wait_for_request(mock_request)
+        assert result == "Completed"
+
+    def test_wait_for_request_narrowed_except(self):
+        """wait_for_request except clause does not catch bare Exception."""
+        node = self._get_method_ast("wait_for_request")
+        for child in ast.walk(node):
+            if isinstance(child, ast.ExceptHandler):
+                if child.type is not None and isinstance(child.type, ast.Name):
+                    assert child.type.id != "Exception", (
+                        "wait_for_request still catches bare Exception"
+                    )
