@@ -119,15 +119,3 @@ async def na_connection():
         _log.info("IDK auth confirmed (na_auth_level=%s) — yielding connection to test module",
                   conn.na_auth_level)
         yield conn
-
-
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def first_vehicle(na_connection):
-    """Return the first vehicle after calling conn.update(). Fails if no vehicles found."""
-    await na_connection.update()
-    vehicles = na_connection.vehicles
-    if not vehicles:
-        raise AssertionError("No vehicles found — garage endpoint returned empty list")
-    vehicle = vehicles[0]
-    _log.info("first_vehicle: vin=%s", vehicle.vin)
-    return vehicle
