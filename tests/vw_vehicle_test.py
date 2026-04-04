@@ -302,6 +302,21 @@ def na_vehicle():
 
 
 @pytest.fixture
+def na_health_vehicle():
+    """NA vehicle with VHS health data loaded."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    # _fetch_rvs_endpoint strips "data" wrapper, so store inner dict
+    vehicle._states["na_health"] = load_fixture("na_vehicle", "vhs_health.json")["data"]
+    return vehicle
+
+
+@pytest.fixture
 def bare_vehicle():
     """Vehicle with no state data loaded."""
     vehicle = Vehicle(conn=None, url="WVWTEST000000000")
@@ -3746,3 +3761,70 @@ class TestPlan2402EMEAPositionFallback:
         assert pos["lat"] is None
         assert pos["lng"] is None
         assert pos["timestamp"] is None
+
+
+# ---------------------------------------------------------------------------
+# Health Report (VHS) property tests
+# ---------------------------------------------------------------------------
+class TestHealthReport:
+    """Tests for vehicle health report properties."""
+
+    def test_health_report(self, na_health_vehicle):
+        """health_report returns full dict from na_health state."""
+        assert na_health_vehicle.health_report is not None
+        assert "overallPriorityCode" in na_health_vehicle.health_report
+
+    def test_health_report_none_without_data(self, na_vehicle):
+        """health_report returns None when na_health not in states."""
+        assert na_vehicle.health_report is None
+
+    def test_health_report_priority(self, na_health_vehicle):
+        """health_report_priority returns priority code string."""
+        assert na_health_vehicle.health_report_priority == "GREEN"
+
+    def test_health_report_priority_none(self, na_vehicle):
+        """health_report_priority returns None when na_health absent."""
+        assert na_vehicle.health_report_priority is None
+
+    def test_health_report_events(self, na_health_vehicle):
+        """health_report_events returns list of maintenance events."""
+        events = na_health_vehicle.health_report_events
+        assert isinstance(events, list)
+        assert len(events) == 2
+        assert events[0]["eventType"] == "OIL_SERVICE"
+
+    def test_health_report_events_none(self, na_vehicle):
+        """health_report_events returns None when na_health absent."""
+        assert na_vehicle.health_report_events is None
+
+    def test_is_health_report_supported(self, na_health_vehicle):
+        """is_health_report_supported returns True when na_health present."""
+        assert na_health_vehicle.is_health_report_supported is True
+
+    def test_is_health_report_not_supported(self, na_vehicle):
+        """is_health_report_supported returns False when na_health absent."""
+        assert na_vehicle.is_health_report_supported is False
+
+    def test_na_service_inspection_from_health(self, na_health_vehicle):
+        """service_inspection returns dueInDays from INSPECTION event."""
+        assert na_health_vehicle.service_inspection == 365
+
+    def test_na_service_inspection_distance_from_health(self, na_health_vehicle):
+        """service_inspection_distance returns dueInMiles from INSPECTION event."""
+        assert na_health_vehicle.service_inspection_distance == 10000
+
+    def test_na_oil_inspection_from_health(self, na_health_vehicle):
+        """oil_inspection returns dueInDays from OIL_SERVICE event."""
+        assert na_health_vehicle.oil_inspection == 180
+
+    def test_na_oil_inspection_distance_from_health(self, na_health_vehicle):
+        """oil_inspection_distance returns dueInMiles from OIL_SERVICE event."""
+        assert na_health_vehicle.oil_inspection_distance == 5000
+
+    def test_na_service_inspection_supported(self, na_health_vehicle):
+        """is_service_inspection_supported returns True with VHS data."""
+        assert na_health_vehicle.is_service_inspection_supported is True
+
+    def test_na_oil_inspection_supported(self, na_health_vehicle):
+        """is_oil_inspection_supported returns True with VHS data."""
+        assert na_health_vehicle.is_oil_inspection_supported is True
