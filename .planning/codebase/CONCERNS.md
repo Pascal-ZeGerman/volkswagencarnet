@@ -1,237 +1,201 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-02-10
-
-## Tech Debt
-
-**Untouched Energy Flow Properties:**
-- Issue: Three properties marked with `# TODO untouched` in vehicle state handling
-- Files: `volkswagencarnet/vw_vehicle.py` (lines 1541, 1554, 1566)
-- Impact: `energy_flow`, `energy_flow_last_updated`, and `is_energy_flow_supported` properties lack validation and may return incomplete/unprocessed data structures
-- Fix approach: Validate data extraction patterns, ensure proper timestamp handling, add unit tests for these properties
-
-**Incomplete API Image Support:**
-- Issue: TODO comment indicates vehicle image endpoint exists but implementation incomplete
-- Files: `volkswagencarnet/vw_vehicle.py` (lines 16-20)
-- Impact: Image retrieval functionality not implemented despite API availability
-- Fix approach: Implement vehicle image fetching from `/media/v2/vehicle-images/{vin}` endpoint if needed, or remove TODO
-
-**Missing Model Year Data:**
-- Issue: Model year appears unavailable via standard API, only through web API with separate authentication
-- Files: `volkswagencarnet/vw_vehicle.py` (line 20)
-- Impact: Cannot provide complete vehicle specifications
-- Fix approach: Document as limitation or implement separate web scraping if critical
-
-## Error Handling & Resilience
-
-**Overly Broad Exception Handling:**
-- Issue: 20+ instances of `except Exception` without specific exception type catching
-- Files: `volkswagencarnet/vw_connection.py` (lines 154, 302, 558, 633, 659, 776, 801, 827, 844, 874, 896, 918, 940, 955, 995, 1027, 1039, 1052, 1065, 1078)
-- Impact: Masks specific errors (network timeouts, authentication failures, malformed responses), makes debugging difficult
-- Fix approach: Catch specific exceptions (aiohttp.ClientError, json.JSONDecodeError, KeyError, etc.) with targeted handling for each error type
-
-**Generic Error Response Masking:**
-- Issue: Operations that fail return opaque `{"error": "unknown"}` dictionary
-- Files: `volkswagencarnet/vw_connection.py` (line 803 in `getOperationList`)
-- Impact: Callers cannot distinguish between API failures, missing endpoints, and validation errors
-- Fix approach: Extend error objects to include HTTP status codes and original exception details
-
-**Protected Access to Cookie Jar:**
-- Issue: Direct access to `_session._cookie_jar._cookies` (protected member)
-- Files: `volkswagencarnet/vw_connection.py` (line 101)
-- Impact: Breaks encapsulation; breaks if aiohttp changes internal structure (upgrade risk)
-- Fix approach: Use aiohttp public API or store cookie state separately
-
-## Security Considerations
-
-**Credentials in Memory:**
-- Risk: Username and password stored as plaintext instance variables for duration of session
-- Files: `volkswagencarnet/vw_connection.py` (lines 79-80)
-- Current mitigation: Session typically short-lived; credentials not logged
-- Recommendations:
-  - Consider clearing credentials after login once tokens obtained
-  - Document that users should use unique passwords or app-specific credentials
-  - Add explicit warnings in docstrings about credential handling
-
-**Region-Specific Client ID & Hardcoded Credentials:**
-- Risk: OAuth client IDs are hardcoded and tied to specific regions, enabling potential tracking or manipulation
-- Files: `volkswagencarnet/vw_const.py` (lines 8-9, 42, 47)
-- Current mitigation: Client IDs are public (extracted from app traffic)
-- Recommendations:
-  - Document that client IDs are app-derived, not sensitive secrets
-  - Monitor for changes in official app client IDs (requires periodic network traffic analysis)
-  - Consider adding version detection for credential freshness
-
-**OAuth Flow Dependency on External Discovery:**
-- Risk: North America region requires endpoint discovery; misconfiguration could route authentication to wrong server
-- Files: `volkswagencarnet/vw_connection.py` (lines 130-163), `vw_const.py` (lines 52-65)
-- Current mitigation: Multiple candidate endpoints tested; error messages guide users
-- Recommendations:
-  - Implement certificate pinning for OAuth identity endpoint
-  - Log all tested endpoints and their results for debugging
-  - Document expected endpoints in configuration comments
-
-**Header Mutation During Auth:**
-- Risk: Headers are mutated (`.pop()`) during authentication flow; could cause side effects if headers reused
-- Files: `volkswagencarnet/vw_connection.py` (lines 193, 234-235, 580)
-- Current mitigation: Headers copied at connection init
-- Recommendations: Use `.get()` with defaults instead of `.pop()` to avoid mutation
-
-## Performance Bottlenecks
-
-**Synchronous Vehicle Discovery:**
-- Problem: Vehicles discovered sequentially during login before parallel updates can begin
-- Files: `volkswagencarnet/vw_vehicle.py` (lines 137-198)
-- Cause: Each vehicle calls `discover()` in first `update()` call, blocking other vehicle updates
-- Improvement path: Batch discovery across all vehicles or parallelize discovery during login phase
-
-**N+1 API Calls During Update:**
-- Problem: Each vehicle must call `/vehicle/v1/vehicles/{vin}/capabilities` before requesting status
-- Files: `volkswagencarnet/vw_vehicle.py` (line 142), `vw_connection.py` (lines 784-804)
-- Cause: Capabilities cached only per vehicle, rediscovered if cache expires
-- Improvement path: Cache capabilities at connection level with longer TTL (24+ hours), implement cache invalidation on service changes
-
-**No Request De-duplication:**
-- Problem: Multiple concurrent calls to same endpoint not deduplicated
-- Files: `volkswagencarnet/vw_vehicle.py` (line 205-242)
-- Cause: Each service status call is independent request
-- Improvement path: Implement request-level caching or batch endpoint support
-
-**Large Dashboard File:**
-- Problem: `vw_dashboard.py` is 2,874 lines with 436 class/function definitions
-- Files: `volkswagencarnet/vw_dashboard.py`
-- Cause: Single file contains all Home Assistant integration code
-- Improvement path: Split into service modules (climatisation.py, charging.py, access.py, etc.)
-
-## Fragile Areas
-
-**Request Status Tracking Without Atomic Updates:**
-- Files: `volkswagencarnet/vw_vehicle.py` (lines 55-63, 85-97, 119-132)
-- Why fragile: `_requests` dictionary updated in multiple places without locks; race conditions possible if multiple coroutines update same topic simultaneously
-- Safe modification: Add asyncio locks per topic or refactor to use immutable request state
-- Test coverage: No tests for concurrent request updates on same vehicle
-
-**State Mutation in Discover Process:**
-- Files: `volkswagencarnet/vw_vehicle.py` (lines 158-196)
-- Why fragile: Services dictionary updated item-by-item in loop; if exception occurs mid-loop, vehicle left in partial state
-- Safe modification: Build new service state dictionary, apply atomically, or wrap entire loop in try-except
-- Test coverage: Tests don't verify partial failure scenarios
-
-**Token Validation Race Condition:**
-- Files: `volkswagencarnet/vw_connection.py` (lines 744-756)
-- Why fragile: Token validated, then multiple vehicles updated in parallel; token could expire between validation and update calls
-- Safe modification: Implement token refresh retry within each vehicle update, not just at connection level
-- Test coverage: No tests for concurrent updates with token expiry
-
-**Header State Mutations:**
-- Files: `volkswagencarnet/vw_connection.py` (lines 193, 234-235)
-- Why fragile: Shared `_session_headers` and `_session_auth_headers` popped during requests; if concurrent requests access same header, one will see modified state
-- Safe modification: Create header copies per request instead of mutating shared state
-- Test coverage: No concurrency tests for multiple simultaneous requests
-
-## Dependencies at Risk
-
-**Pinned Dependencies Missing:**
-- Risk: No version constraints on core dependencies (aiohttp, BeautifulSoup4, PyJWT)
-- Files: `requirements.txt`, `setup.cfg`
-- Impact: Breaking changes in minor/patch versions could break library silently
-- Migration plan:
-  - Add minimum version constraints: `aiohttp>=3.8.0`, `beautifulsoup4>=4.9.0`, `pyjwt>=2.0.0`
-  - Lock to major versions: `aiohttp<4.0`, `beautifulsoup4<5.0`
-  - Test against new versions before releases
-
-**BeautifulSoup4 HTML Parsing Fragility:**
-- Risk: Relies on parsing HTML from OAuth provider; layout changes break login
-- Files: `volkswagencarnet/vw_connection.py` (lines 308-313, 329-345)
-- Impact: Login fails if VW identity provider redesigns login form HTML
-- Mitigation: Implement fallback parsing strategies, add integration tests against real OAuth endpoint (if possible), monitor for HTML structure changes
-
-**lxml Dependency Indirect:**
-- Risk: Only needed as BeautifulSoup parser; explicit dependency but could be replaced
-- Files: `setup.cfg` line 19
-- Impact: Additional system dependency (C compiler for installation)
-- Recommendation: Document that lxml can be replaced with html.parser if needed
-
-## Test Coverage Gaps
-
-**No Async Concurrency Tests:**
-- What's not tested: Multiple vehicles updating simultaneously, concurrent token refreshes, race conditions in request tracking
-- Files: `tests/vw_connection_test.py`, `tests/vw_vehicle_test.py`
-- Risk: Concurrency bugs in production not detected
-- Priority: High - affects main update loop
-
-**No OAuth Redirect Flow Tests:**
-- What's not tested: Full authorization code flow, state token extraction, error handling in login redirects
-- Files: No comprehensive OAuth tests
-- Risk: Authentication failures not caught until user attempts login
-- Priority: High - authentication is critical path
-
-**No Region-Specific Endpoint Tests:**
-- What's not tested: NA region endpoint discovery, region-specific OAuth parameters, client ID selection
-- Files: `tests/region_support_test.py` (239 lines, basic coverage only)
-- Risk: North America authentication could fail silently
-- Priority: High - essential for NA users
-
-**Dashboard Instrument Tests Missing:**
-- What's not tested: Individual instrument state transformations, data binding, error handling for missing data
-- Files: `volkswagencarnet/vw_dashboard.py` (2,874 lines) with minimal test coverage
-- Risk: Home Assistant integration breaks with API changes undetected
-- Priority: Medium
-
-**Rate Limiting Retry Logic Undertested:**
-- What's not tested: Multiple retries with backoff, MAX_RETRIES_ON_RATE_LIMIT boundary conditions
-- Files: `tests/vw_connection_test.py` (lines 59-97, single test case)
-- Risk: Throttling behavior could cause cascading failures
-- Priority: Medium
-
-## Scaling Limits
-
-**No Connection Pooling for Multiple Accounts:**
-- Current capacity: Single aiohttp.ClientSession per Connection instance
-- Limit: Using library in multi-account scenarios requires separate session per account
-- Scaling path: Implement optional shared session pool with per-account credential isolation, respect rate limiting across accounts
-
-**Vehicle Update Parallelism Unbounded:**
-- Current capacity: All vehicle updates triggered simultaneously via `asyncio.gather()`
-- Limit: Large account (50+ vehicles) could cause connection pool exhaustion or rate limiting
-- Scaling path: Implement semaphore-based concurrency limit (e.g., max 5 concurrent vehicle updates), progressive backoff per vehicle
-
-**Service Discovery Cache No Expiration:**
-- Current capacity: Capabilities cached for lifetime of Vehicle object
-- Limit: Service changes (new subscriptions, feature updates) not reflected until restart
-- Scaling path: Implement TTL-based cache with configurable expiration (default 24 hours), manual cache invalidation method
-
-**API Response Buffering:**
-- Current capacity: Full response bodies read into memory
-- Limit: Very large responses (error logs, diagnostic data) could consume significant memory
-- Scaling path: Implement streaming responses for large endpoints, set max response size limits
-
-## Missing Critical Features
-
-**PKCE Implementation Incomplete:**
-- Problem: PKCE code generation implemented but not used (per CLAUDE.md, official app doesn't use it)
-- Impact: Code prepared for future OAuth security improvements but disabled
-- Blocks: Standards-compliant OAuth implementations that require PKCE
-- Recommendation: Document PKCE support status, consider enforcing PKCE for security-conscious deployments
-
-**No Offline Mode/Local Cache:**
-- Problem: All vehicle data fetched fresh on each update; no local caching mechanism
-- Impact: Frequent updates cause excessive API calls; no access if connectivity lost
-- Blocks: Building responsive UI without API dependency
-- Recommendation: Implement optional local cache with timestamp tracking, staleness indicators
-
-**Limited Error Recovery:**
-- Problem: Most API failures trigger full re-login rather than granular retry
-- Impact: Transient network errors cause unnecessary authentication overhead
-- Blocks: Building resilient integrations
-- Recommendation: Implement granular retry strategies (exponential backoff, circuit breakers) per endpoint
-
-**No Support for Multiple Authentication Methods:**
-- Problem: Only password-based OAuth authentication supported
-- Impact: Cannot use biometric/multi-factor authentication if enabled on account
-- Blocks: Using library with accounts requiring MFA
-- Recommendation: Document MFA limitations, implement token import/export for pre-authenticated sessions
+**Analysis Date:** 2026-03-10
 
 ---
 
-*Concerns audit: 2026-02-10*
+## Tech Debt
+
+**Monolithic vw_vehicle.py (4,227 lines):**
+- Issue: Single class handles vehicle state, property accessors, engine-type detection, NA/EMEA branching, write commands, and dashboard data. No separation of concerns.
+- Files: `volkswagencarnet/vw_vehicle.py`
+- Impact: Hard to navigate, test, and extend. Every new feature adds to an already-huge file.
+- Fix approach: Extract NA-specific methods into `vw_vehicle_na.py` mixin or subclass; split write commands into a separate `vw_vehicle_commands.py`.
+
+**Monolithic vw_connection.py (3,298 lines):**
+- Issue: Auth flow, token management, NA/EMEA routing, service discovery, HTTP requests, and per-endpoint fetch helpers all live in one class.
+- Files: `volkswagencarnet/vw_connection.py`
+- Impact: Any change risks breaking orthogonal behavior; unit tests must mock large swathes of the class.
+- Fix approach: Extract `NAAuthManager`, `TokenManager`, and `HTTPClient` into separate modules.
+
+**EMEA `energy_flow` parsing is pre-existing tech debt:**
+- Issue: Three properties (`energy_flow`, `energy_flow_last_updated`, `is_energy_flow_supported`) use a different API data path structure than all other EMEA properties. Marked with `# noqa: T000` comment acknowledging the debt.
+- Files: `volkswagencarnet/vw_vehicle.py` lines 1814–1848
+- Impact: May silently return wrong values if charger API response changes.
+- Fix approach: Migrate to `Paths`-based lookup like all other properties.
+
+**`refresh_tokens()` (EMEA) has no explicit HTTP timeout:**
+- Issue: `self._session.post()` in `refresh_tokens()` does not pass `timeout=ClientTimeout(...)`, relying on session default. This is the same class of bug that caused event-loop failures with aiohttp 3.13+ (documented in project MEMORY).
+- Files: `volkswagencarnet/vw_connection.py` line 3159
+- Impact: Token refresh could hang indefinitely in aiohttp 3.13+ under certain loop configurations.
+- Fix approach: Add `timeout=ClientTimeout(total=TIMEOUT.seconds)` to the `self._session.post()` call at line 3159.
+
+**`lxml` listed as install dependency but not used:**
+- Issue: `setup.cfg` lists `lxml` in `install_requires`, but all BeautifulSoup calls use `html.parser` (Python stdlib). `lxml` is never imported.
+- Files: `setup.cfg` line 19
+- Impact: Unnecessary C-extension dependency installed on user machines.
+- Fix approach: Remove `lxml` from `install_requires` in `setup.cfg`.
+
+**Duplicate constant in `Paths`:**
+- Issue: `READINESS_INSUFFICIENT_BATTERY_LEVEL_WARNING` and `READINESS_DAILY_POWER_BUDGET_WARNING` resolve to the same path string. `READINESS_DAILY_POWER_BUDGET_WARNING` is incorrectly mapped and will never return "daily power budget" data.
+- Files: `volkswagencarnet/vw_const.py` lines 538–539
+- Impact: `daily_power_budget_warning` property always reads `insufficientBatteryLevelWarning`, not the correct field.
+- Fix approach: Correct `READINESS_DAILY_POWER_BUDGET_WARNING` to point to `connectionWarning.dailyPowerBudgetWarning` (verify actual API field name first).
+
+**`wait_for_request()` and `wait_for_data_refresh()` use tail recursion:**
+- Issue: Both methods are recursive with depth `retry_count=18`. At 10s sleep per retry, max wait is 180s. Recursion is avoidable and can exhaust stack on edge cases.
+- Files: `volkswagencarnet/vw_vehicle.py` lines 403–445
+- Impact: Unusual but theoretically possible `RecursionError` if `retry_count` is caller-set high.
+- Fix approach: Refactor to iterative `for` loop with `asyncio.sleep()`.
+
+**Bare `raise Exception(...)` in action methods:**
+- Issue: `set_charger()`, `set_climatisation()`, `set_lock()`, etc. raise `Exception` directly instead of a typed exception (e.g., `APIError` or `ValueError`).
+- Files: `volkswagencarnet/vw_vehicle.py` lines 455, 458, 480, 490, 502, 514, 557, 564, 577, 584, 595, 671, 673, 680, 692, 700, 703, 744, 756
+- Impact: Callers cannot distinguish between an API failure and a programming error without inspecting the message string.
+- Fix approach: Replace with `raise APIError(...)` or `raise ValueError(...)` from `vw_exceptions.py`.
+
+**Broad `except Exception` blocks throughout Connection:**
+- Issue: Over 15 `except Exception` handlers in `vw_connection.py` suppress unexpected errors with just a log line. Many are marked `# pylint: disable=broad-exception-caught`.
+- Files: `volkswagencarnet/vw_connection.py` lines 264, 319, 538, 2267, 2344, 2464, 2502, 2573, 2590, 2615, 2641, 2658, 2688, 2710, 2732, 2754, 2769, 3185
+- Impact: Silent swallowing of programming errors; makes debugging difficult.
+- Fix approach: Progressively narrow exception types; at minimum, re-raise `SystemExit` and `KeyboardInterrupt`.
+
+**`_clear_cookies()` accesses private aiohttp internals:**
+- Issue: `self._session._cookie_jar._cookies.clear()` directly manipulates `_cookie_jar._cookies`, a private attribute of aiohttp's `CookieJar`.
+- Files: `volkswagencarnet/vw_connection.py` line 166
+- Impact: Will break silently on any aiohttp internal refactor; `# pylint: disable=protected-access` suppresses the warning.
+- Fix approach: Use `self._session.cookie_jar.clear()` (public API available since aiohttp 3.x).
+
+**Debug/diagnostic scripts committed to repository:**
+- Issue: `tests/debug_na_login.py` and `test_us_endpoints.py` (in project root) are development artifacts, not part of the test suite.
+- Files: `tests/debug_na_login.py`, `test_us_endpoints.py`
+- Impact: Confusing project structure; `test_us_endpoints.py` is not picked up by pytest (`norecursedirs` in `pyproject.toml` excludes `tests/e2e` but not root-level files).
+- Fix approach: Move to `examples/` or remove.
+
+---
+
+## Security Considerations
+
+**XQMAUTH shared secret hardcoded in source:**
+- Risk: The HMAC-SHA256 shared secret for X-QMAuth header is stored as a plain byte array in `vw_const.py` lines 16–51.
+- Files: `volkswagencarnet/vw_const.py`
+- Current mitigation: Secret is from VW's own app, so it was already public; library does not store user credentials this way.
+- Recommendations: This is an inherent consequence of reverse-engineering VW's app protocol — no practical alternative. Document this explicitly.
+
+**Credentials stored in memory as plain strings:**
+- Risk: `self._session_auth_password` holds the plaintext VW account password for the lifetime of the `Connection` object.
+- Files: `volkswagencarnet/vw_connection.py` line 128
+- Current mitigation: Memory-only; no disk persistence.
+- Recommendations: Consider clearing `_session_auth_password` after successful login (only needed for re-login after session expiry).
+
+**JWT decoded without signature verification:**
+- Risk: `jwt.decode(..., options={"verify_signature": False})` used in multiple places to extract claims (user_id, expiry) from tokens the library itself receives from VW servers.
+- Files: `volkswagencarnet/vw_connection.py` lines 1375, 1582, 1735, 1737, 1923, 3112–3121
+- Current mitigation: Tokens are received over HTTPS from VW's own servers; verification without signature is acceptable for extracting expiry from trusted tokens.
+- Recommendations: Add a comment clarifying this is intentional; consider verifying IDK tokens against the JWKS endpoint (`b-h-s.spr.us00.p.con-veh.net/oidc/v1/jwks`) for the NA flow.
+
+**Redirect URL domain allowlist validation is present but incomplete:**
+- Risk: `VW_DOMAIN_ALLOWLIST` allows all of `.vw.com`, `.vw.us`, `.vwgroup.io`, etc. An attacker who controls a subdomain (e.g., via subdomain takeover) could pass the allowlist check.
+- Files: `volkswagencarnet/vw_connection.py` lines 64–73
+- Current mitigation: Allowlist is in place; OAuth redirect URI is hardcoded to `kombi:///login`.
+- Recommendations: Use strict hostname matching for known endpoints rather than suffix matching where possible.
+
+---
+
+## Performance Bottlenecks
+
+**NA vehicle data requires a new vehicle session token per update cycle:**
+- Problem: `_create_na_vehicle_session()` is called on every `update()` for NA vehicles unless the RVS cache is fresh. Session creation is an extra HTTP round-trip.
+- Files: `volkswagencarnet/vw_connection.py` — `_get_na_vehicle_data()`, `_create_na_vehicle_session()`
+- Cause: Vehicle session tokens expire and must be re-issued; no session token TTL tracking.
+- Improvement path: Cache vehicle session token with an expiry timestamp (vehicle session tokens likely have a TTL similar to access tokens).
+
+**EMEA update fires 6 concurrent requests per vehicle per cycle:**
+- Problem: `Vehicle.update()` uses `asyncio.gather()` to fire `getSelectiveStatus`, `getVehicleData`, `getParkingPosition`, `getTripLast`, `getTripRefuel`, `getTripLongterm` simultaneously.
+- Files: `volkswagencarnet/vw_vehicle.py` lines 313–338
+- Cause: Design decision for parallelism; could trigger API rate limiting.
+- Improvement path: Group calls into fewer `selectivestatus` requests where possible.
+
+---
+
+## Fragile Areas
+
+**NA authentication flow depends on HTML scraping of VW's login page:**
+- Files: `volkswagencarnet/vw_connection.py` lines 542–614, `_extract_identitykit_form()` lines 551–614
+- Why fragile: Uses regex on JavaScript `window._IDK` object and BeautifulSoup for form extraction. VW can break this by changing the login page template, renaming JS keys, or switching from server-rendered to full SPA.
+- Safe modification: Any change to auth flow must be tested against live VW identity server. Add new parsing paths alongside old ones; don't remove working fallback patterns.
+- Test coverage: Unit tests mock the HTML; no automated test detects real login page changes.
+
+**NA PKCE `code_verifier` must survive token refresh:**
+- Files: `volkswagencarnet/vw_connection.py` — `_refresh_idk_token()` line 1167
+- Why fragile: `getattr(self, "_pkce_verifier", None) or ""` — if `_pkce_verifier` is `None` (e.g., after a re-login triggered by a different code path), the refresh request will fail silently with an incorrect `code_verifier=""`.
+- Safe modification: Ensure `_pkce_verifier` is always set before any token refresh is attempted.
+- Test coverage: `test_idk_refresh_updates_na_tokens_and_session_mirror` covers the happy path but not the `_pkce_verifier=None` case.
+
+**`_na_tokens` dict uses mixed key types (VIN strings and string literals):**
+- Files: `volkswagencarnet/vw_connection.py` — `_na_tokens`
+- Why fragile: `_na_tokens["idk"]` holds IDK tokens, `_na_tokens["brand"]` holds brand tokens, and `_na_tokens[vin]` holds per-vehicle data. Using VINs as top-level keys alongside string keys makes the structure opaque and error-prone if a VIN happened to equal a reserved string.
+- Safe modification: When adding new per-VIN data, always use `self._na_tokens.setdefault(vin, {})["new_key"]`. Do not add new top-level string keys without documenting the schema.
+- Fix approach: Separate into `_na_token_store: dict` (for `idk`/`brand`/`mbb`) and `_na_vehicle_sessions: dict[str, dict]` (keyed by VIN).
+
+**`doLogin()` `tries` parameter loop logic:**
+- Files: `volkswagencarnet/vw_connection.py` lines 366–374
+- Why fragile: Uses `for i in range(tries)` with `else:` clause. If `tries=1`, the loop body executes once; if login succeeds, it `break`s. If it fails and `tries=1`, the `else` fires ("Login failed after 1 tries"). But there is no sleep between the single attempt. Callers who pass `tries=0` get `_LOGGER.error` without attempting login.
+- Safe modification: Validate `tries >= 1` at entry or document the behavior for `tries=0`.
+
+---
+
+## Test Coverage Gaps
+
+**EMEA `refresh_tokens()` has no dedicated unit test:**
+- What's not tested: The EMEA token refresh path (`refresh_tokens()`) is not explicitly tested in isolation. Only end-to-end-style flows cover it.
+- Files: `volkswagencarnet/vw_connection.py` lines 3143–3189
+- Risk: The missing timeout bug (no `ClientTimeout` on the `self._session.post()` call) and the EMEA token refresh error handling could regress undetected.
+- Priority: High
+
+**`_extract_identitykit_form()` JavaScript path has no negative-case tests:**
+- What's not tested: The regex-based `templateModel` / `csrf_token` extraction in `_extract_identitykit_form()` is tested for the happy path but not for malformed JS, partial matches, or JSON parse failure.
+- Files: `volkswagencarnet/vw_connection.py` lines 576–614
+- Risk: A VW login page change could cause silent `AuthenticationError` with no clear error message.
+- Priority: High
+
+**NA write commands (lock, charger, climate, honk/flash) are not tested against real NA endpoint responses:**
+- What's not tested: `tests/vw_vehicle_test.py` mocks the `_connection` object for NA write tests; there are no response-fixture tests covering NA-specific HTTP response bodies (202, 204, error JSON).
+- Files: `tests/vw_vehicle_test.py` lines 1103–1284
+- Risk: NA write commands may misparse actual server responses (e.g., treating a 202 body as success when the server changes the response schema).
+- Priority: Medium
+
+**`_in_progress()` guard uses `dict.pop()` with side effects inside `.get()` chain:**
+- What's not tested: Line 99 — `self._requests.get(topic, {}).pop("id")` — mutates the default empty dict `{}` from `.get()`, which has no effect (the default is not the stored dict). This means the `"id"` key is never actually removed when `topic` doesn't exist in `_requests`, and the guard may not fire correctly for unrecognized topics.
+- Files: `volkswagencarnet/vw_vehicle.py` line 99
+- Risk: Commands for unregistered topics bypass the in-progress guard.
+- Priority: Medium
+
+**Dashboard `Climate` base class has `pass`-body methods that are never tested:**
+- What's not tested: `Climate.hvac_mode`, `Climate.target_temperature`, `Climate.set_temperature`, `Climate.set_hvac_mode` all have `pass` bodies at lines 311–321. These are intended as abstract methods but don't raise `NotImplementedError`.
+- Files: `volkswagencarnet/vw_dashboard.py` lines 305–321
+- Risk: Subclass forgetting to override gets silent `None` returns instead of an error.
+- Priority: Low
+
+---
+
+## Missing Critical Features
+
+**NA vehicle data endpoints (capabilities, selectivestatus) return 404:**
+- Problem: `/vehicle/v1/vehicles/{vin}/capabilities` and `/vehicle/v1/vehicles/{vin}/selectivestatus` return 404 for NA vehicles. The NA vehicle update path (`_update_na_vehicle`) uses RVS endpoints instead, but those only cover location, status, EV, climate, and trip — not EMEA-style service discovery.
+- Files: `volkswagencarnet/vw_vehicle.py` lines 287–312, `volkswagencarnet/vw_connection.py` — `_get_na_vehicle_data()`
+- Blocks: Full parity between EMEA and NA feature sets; NA vehicles cannot use EMEA-only services (departure timers, service inspection, etc.).
+
+**NA vehicle session token TTL is not tracked:**
+- Problem: No expiry tracking for vehicle session tokens (`_na_tokens[vin]["vehicle_session"]["token"]`). Tokens are reused until they expire server-side, causing a 401 on the next RVS call. The inline 401-retry in `_request()` partially mitigates this but is not the right long-term fix.
+- Files: `volkswagencarnet/vw_connection.py` — `_create_na_vehicle_session()`, `_na_tokens` dict
+- Blocks: Proactive token refresh before expiry; currently the library is reactive (retry on 401).
+
+**Vehicle image URL retrieval (EMEA) is unimplemented:**
+- Problem: `vw_vehicle.py` line 21 has a `# TODO` comment with a full example API response for vehicle image URLs from the EMEA media endpoint. No method exists to expose this data.
+- Files: `volkswagencarnet/vw_vehicle.py` lines 21–25
+- Blocks: Home Assistant integration cannot display vehicle images.
+
+---
+
+*Concerns audit: 2026-03-10*

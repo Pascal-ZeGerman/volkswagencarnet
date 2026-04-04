@@ -159,6 +159,7 @@ class Connection:
         self._na_auth_level: str | None = None  # "full", "idk_only", or None (EMEA)
         # Shared lock for login and token refresh (prevents concurrent login+refresh race)
         self._login_lock = asyncio.Lock()
+        self._update_lock = asyncio.Lock()
         # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
         self._na_token_endpoint: str | None = None
 
@@ -451,7 +452,7 @@ class Connection:
 
         config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
         _LOGGER.debug("Requesting openid config from base API: %s", config_url)
-        req = await self._session.get(url=config_url)
+        req = await self._session.get(url=config_url, timeout=ClientTimeout(total=TIMEOUT.seconds))
         if req.status != 200:
             _LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
             raise AuthenticationError(
@@ -1662,6 +1663,100 @@ class Connection:
             _LOGGER.warning("NA RVS %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
 
+    async def _fetch_na_optional_endpoint(
+        self,
+        url: str,
+        vin: str,
+        headers: dict[str, str],
+        label: str,
+        *,
+        _retry: bool = False,
+    ) -> dict | None:
+        """Fetch an optional NA endpoint, returning None on 404 (non-EV/unsupported).
+
+        Unlike ``_fetch_rvs_endpoint``, a 404 is logged at DEBUG rather than
+        WARNING since these endpoints are expected to be absent for non-EV or
+        non-supported vehicles.
+
+        On 401, the vehicle session cache is invalidated and one retry is
+        attempted (consistent with ``_fetch_rvs_endpoint``). The ``_retry``
+        flag prevents infinite recursion.
+
+        Args:
+            url: Full endpoint URL.
+            vin: Vehicle identification number (for logging).
+            headers: Auth headers including vehicle token.
+            label: Human-readable label for log messages.
+            _retry: Internal flag — do not pass from outside. True on the
+                retry pass to prevent recursive re-entry.
+
+        Returns:
+            Parsed JSON dict on 200/202, None on 204/404 or any other
+            non-2xx response.
+        """
+        try:
+            resp = await self._session.get(
+                url=url,
+                headers=headers,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+            _LOGGER.debug("NA optional endpoint %s: status=%s for vin=%s", label, resp.status, redact(vin))
+            if resp.status in (200, 202):
+                try:
+                    data = await resp.json(content_type=None)
+                except (json.JSONDecodeError, aiohttp.ContentTypeError) as exc:
+                    body_preview = await resp.text()
+                    _LOGGER.warning(
+                        "NA optional endpoint %s: failed to decode JSON for vin=%s: %s — body: %.200s",
+                        label, redact(vin), exc, body_preview,
+                    )
+                    return None
+                if isinstance(data, dict) and "data" in data:
+                    data = data["data"]
+                return data
+            if resp.status == 204:
+                return None  # 204 No Content — nothing to parse
+            if resp.status == 404:
+                _LOGGER.debug("NA optional endpoint %s: 404 (not supported for vin=%s)", label, redact(vin))
+            elif resp.status == 401 and not _retry:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: HTTP 401 (vehicle session expired) for vin=%s — refreshing and retrying once",
+                    label, redact(vin),
+                )
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                self._na_rvs_cache.pop(vin, None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if vehicle_token:
+                    retry_headers = dict(headers)
+                    retry_headers["Authorization"] = f"Bearer {vehicle_token}"
+                    return await self._fetch_na_optional_endpoint(url, vin, retry_headers, label, _retry=True)
+                _LOGGER.warning(
+                    "NA optional endpoint %s: 401 session refresh failed for vin=%s",
+                    label, redact(vin),
+                )
+            elif resp.status == 401:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: HTTP 401 (vehicle session rejected) for vin=%s "
+                    "— invalidating session cache so next poll re-authenticates",
+                    label, redact(vin),
+                )
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                self._na_rvs_cache.pop(vin, None)
+            elif resp.status == 403:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: HTTP 403 (insufficient permissions) for vin=%s",
+                    label, redact(vin),
+                )
+            else:
+                _LOGGER.warning(
+                    "NA optional endpoint %s: unexpected HTTP %d for vin=%s",
+                    label, resp.status, redact(vin),
+                )
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("NA optional endpoint %s fetch exception for %s: %s", label, redact(vin), exc)
+        return None
+
     async def _get_na_vehicle_data(self, vin: str) -> dict | None:
         """Fetch NA vehicle telemetry from RVS endpoints.
 
@@ -1760,6 +1855,213 @@ class Connection:
         }
         self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
         return result
+
+    # NA write commands (lock/unlock, honk/flash, EV charging, climate) #
+
+    def _get_na_write_headers(self, vin: str) -> dict[str, str] | None:
+        """Build auth headers for NA write commands from cached vehicle session.
+
+        Reads vehicle token from ``_na_tokens[vin]["vehicle_session"]["token"]``
+        and user_id from IDK id_token JWT claims (no network calls).
+
+        Returns a headers dict suitable for PUT/POST requests to NA endpoints.
+        Returns None if the vehicle session token is missing, the IDK id_token
+        cannot be decoded (JWT error), or the ``sub`` claim is absent (re-login required).
+        """
+        vehicle_token = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token", "")
+        if not vehicle_token:
+            _LOGGER.warning(
+                "NA write headers: no vehicle session token for vin=%s — aborting command",
+                redact(vin),
+            )
+            return None
+        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
+        try:
+            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
+            user_id = claims.get("sub", "")
+        except jwt.exceptions.InvalidTokenError as exc:
+            _LOGGER.warning(
+                "NA write headers: failed to decode IDK id_token for %s — aborting command (re-login required): %s",
+                redact(vin), exc,
+            )
+            return None
+
+        if not user_id:
+            _LOGGER.warning(
+                "NA write headers: IDK id_token has no 'sub' claim for vin=%s — aborting command",
+                redact(vin),
+            )
+            return None
+
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {vehicle_token}",
+            "x-user-id": user_id,
+            "x-app-version": APP_VERSION,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
+        if session_id:
+            headers["x-mobile-session-id"] = session_id
+        return headers
+
+    async def _na_write_request(
+        self,
+        vin: str,
+        url: str,
+        method: str = "put",
+        body: dict | None = None,
+    ) -> bool:
+        """Execute a NA write command (PUT or POST) with 401 retry and 429 rate-limit backoff.
+
+        On 401 the cached vehicle session is discarded and re-created once
+        before retrying. On 429 (rate limited), retries up to ``MAX_RETRIES_ON_RATE_LIMIT``
+        times with exponential backoff. Other non-2xx responses are logged and
+        return False.
+
+        Args:
+            vin: Vehicle Identification Number.
+            url: Full endpoint URL.
+            method: ``"put"`` or ``"post"``.
+            body: JSON body dict (defaults to empty dict).
+
+        Returns:
+            True if HTTP response is 200, 202, or 204, False otherwise.
+        """
+        if not await self.validate_tokens():
+            _LOGGER.warning("NA write: validate_tokens() failed for vin=%s, skipping %s", redact(vin), url)
+            return False
+        vehicle_token_value = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("token")
+        if not vehicle_token_value or not isinstance(vehicle_token_value, str):
+            _LOGGER.warning("NA write: no valid vehicle session token for %s, skipping %s", redact(vin), url)
+            return False
+        headers = self._get_na_write_headers(vin)
+        if headers is None:
+            return False
+
+        if method not in ("put", "post"):
+            _LOGGER.error(
+                "NA write: unsupported HTTP method %r for %s — must be 'put' or 'post'",
+                method, url,
+            )
+            return False
+        aio_method = self._session.put if method == "put" else self._session.post
+        json_body = body if body is not None else {}
+
+        async def _do_request() -> Any:
+            return await aio_method(
+                url=url,
+                headers=headers,
+                json=json_body,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
+                allow_redirects=False,
+            )
+
+        try:
+            resp = await _do_request()
+            # Rate-limit retry (429) with exponential backoff
+            if resp.status == 429:
+                for attempt in range(1, MAX_RETRIES_ON_RATE_LIMIT + 1):
+                    delay = min(2**attempt, 30)
+                    _LOGGER.warning(
+                        "NA write %s %s: rate limited (429) for vin=%s, retrying in %.0fs (attempt %d/%d)",
+                        method.upper(), url, redact(vin), delay, attempt, MAX_RETRIES_ON_RATE_LIMIT,
+                    )
+                    await asyncio.sleep(delay)
+                    resp = await _do_request()
+                    if resp.status != 429:
+                        break
+                if resp.status == 429:
+                    _LOGGER.warning("NA write %s %s: rate limited after %d retries for vin=%s", method.upper(), url, MAX_RETRIES_ON_RATE_LIMIT, redact(vin))
+                    return False
+            if resp.status == 401:
+                _LOGGER.warning("NA write %s %s: HTTP 401 (vehicle session expired) for vin=%s — refreshing and retrying once", method.upper(), url, redact(vin))
+                self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                vehicle_token = await self._create_na_vehicle_session(vin)
+                if not vehicle_token:
+                    _LOGGER.warning(
+                        "NA write %s %s: 401 received but vehicle session refresh failed for vin=%s — cannot retry",
+                        method.upper(), url, redact(vin),
+                    )
+                    return False
+                # Rebuild ALL headers (not just Authorization) so x-mobile-session-id is fresh
+                new_headers = self._get_na_write_headers(vin)
+                if not new_headers:
+                    _LOGGER.warning("NA write: failed to build headers after session refresh for %s", redact(vin))
+                    return False
+                headers.clear()
+                headers.update(new_headers)
+                resp = await _do_request()
+                if resp.status not in (200, 202, 204):
+                    _LOGGER.warning(
+                        "NA write %s %s: failed after 401 retry (status=%s) for vin=%s",
+                        method.upper(), url, resp.status, redact(vin),
+                    )
+                    if resp.status == 401:
+                        self._na_tokens.get(vin, {}).pop("vehicle_session", None)
+                        self._na_rvs_cache.pop(vin, None)
+            elif resp.status not in (200, 202, 204):
+                body_preview = await resp.text()
+                _LOGGER.warning(
+                    "NA write %s %s: non-2xx response (status=%s) for vin=%s — body: %.200s",
+                    method.upper(), url, resp.status, redact(vin), body_preview,
+                )
+            _LOGGER.debug("NA write %s %s: status=%s for vin=%s", method.upper(), url, resp.status, redact(vin))
+            return resp.status in (200, 202, 204)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("NA write %s %s failed for %s: %s", method.upper(), url, redact(vin), exc)
+            return False
+
+    async def lock_na(self, vin: str, action: str = "lock") -> bool:
+        """Remote lock or unlock via NA ``/lockunlock/v1/`` endpoint.
+
+        Args:
+            vin: Vehicle Identification Number.
+            action: ``"lock"`` or ``"unlock"``.
+
+        Returns:
+            True on success (2xx), False otherwise.
+        """
+        if action not in ("lock", "unlock"):
+            _LOGGER.error("lock_na: unsupported action %r for vin=%s — must be 'lock' or 'unlock'", action, redact(vin))
+            return False
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/lockunlock/v1/vehicle/{vehicle_id}"
+        return await self._na_write_request(vin, url, method="put", body={"action": action})
+
+    async def honk_and_flash_na(self, vin: str) -> bool:
+        """Remote honk and flash via NA ``/honkflash/v1/`` endpoint.
+
+        Returns:
+            True on success (2xx), False otherwise.
+        """
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/honkflash/v1/vehicle/{vehicle_id}"
+        return await self._na_write_request(vin, url, method="put", body={})
+
+    async def start_charging_na(self, vin: str) -> bool:
+        """Start EV charging via NA ``/ev/v1/.../charging/start`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/charging/start"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def stop_charging_na(self, vin: str) -> bool:
+        """Stop EV charging via NA ``/ev/v1/.../charging/stop`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/charging/stop"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def start_climatisation_na(self, vin: str) -> bool:
+        """Start pre-trip climate via NA ``/ev/v1/.../pretripclimate/start`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/start"
+        return await self._na_write_request(vin, url, method="post", body={})
+
+    async def stop_climatisation_na(self, vin: str) -> bool:
+        """Stop pre-trip climate via NA ``/ev/v1/.../pretripclimate/stop`` endpoint."""
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+        url = f"{self._base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/stop"
+        return await self._na_write_request(vin, url, method="post", body={})
 
     async def _login_na(self) -> bool:
         """Perform the NA-specific OAuth2 + PKCE login flow.
@@ -2211,29 +2513,30 @@ class Connection:
     # Update data for all Vehicles
     async def update(self) -> bool:
         """Update status."""
-        if not self.logged_in:
-            if not await self._login():
-                _LOGGER.warning("Login for %s account failed!", BRAND)
-                return False
-        try:
-            if not await self.validate_tokens():
-                _LOGGER.info(
-                    "Session expired. Initiating new login for %s account", BRAND
-                )
-                if not await self.doLogin():
+        async with self._update_lock:
+            if not self.logged_in:
+                if not await self._login():
                     _LOGGER.warning("Login for %s account failed!", BRAND)
-                    raise AuthenticationError(f"Login for {BRAND} account failed")
-            else:
-                _LOGGER.debug("Going to call vehicle updates")
-                # Get all Vehicle objects and update in parallell
-                updatelist = [vehicle.update() for vehicle in self.vehicles]
-                # Wait for all data updates to complete
-                await asyncio.gather(*updatelist)
+                    return False
+            try:
+                if not await self.validate_tokens():
+                    _LOGGER.info(
+                        "Session expired. Initiating new login for %s account", BRAND
+                    )
+                    if not await self.doLogin():
+                        _LOGGER.warning("Login for %s account failed!", BRAND)
+                        raise AuthenticationError(f"Login for {BRAND} account failed")
+                else:
+                    _LOGGER.debug("Going to call vehicle updates")
+                    # Get all Vehicle objects and update in parallell
+                    updatelist = [vehicle.update() for vehicle in self.vehicles]
+                    # Wait for all data updates to complete
+                    await asyncio.gather(*updatelist)
 
-                return True
-        except (OSError, LookupError, Exception) as error:  # pylint: disable=broad-exception-caught
-            _LOGGER.warning("Could not update information: %s", error)
-        return False
+                    return True
+            except (OSError, LookupError, AuthenticationError, APIError, RequestError, client_exceptions.ClientError, asyncio.TimeoutError) as error:
+                _LOGGER.warning("Could not update information: %s", error)
+            return False
 
     async def getPendingRequests(self, vin: str) -> Any:
         """Get status information for pending requests."""
@@ -2770,16 +3073,23 @@ class Connection:
         except KeyError as error:
             _LOGGER.warning("Token validation failed - missing token data: %s", error)
             return False
-        id_exp = jwt.decode(
-            idtoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
-        at_exp = jwt.decode(
-            atoken,
-            options={"verify_signature": False, "verify_aud": False},
-            algorithms=JWT_ALGORITHMS,
-        ).get("exp", None)
+        try:
+            id_exp = jwt.decode(
+                idtoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+            at_exp = jwt.decode(
+                atoken,
+                options={"verify_signature": False, "verify_aud": False},
+                algorithms=JWT_ALGORITHMS,
+            ).get("exp", None)
+        except jwt.InvalidTokenError as exc:
+            _LOGGER.warning("Token validation failed - malformed token: %s", exc)
+            return False
+        if id_exp is None or at_exp is None:
+            _LOGGER.warning("Token validation failed - missing exp claim")
+            return False
         id_dt = datetime.fromtimestamp(int(id_exp))
         at_dt = datetime.fromtimestamp(int(at_exp))
         now = datetime.now()
@@ -2821,6 +3131,7 @@ class Connection:
                 url=f"{self._base_api}/login/v1/idk/token",
                 headers=tHeaders,
                 data=body,
+                timeout=ClientTimeout(total=TIMEOUT.seconds),
             )
             await self.update_service_status("token", response.status)
             if response.status == 200:

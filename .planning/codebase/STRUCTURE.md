@@ -1,222 +1,225 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-02-10
+**Analysis Date:** 2026-03-10
 
 ## Directory Layout
 
 ```
-volkswagencarnet/
-├── volkswagencarnet/              # Main package source code
-│   ├── __init__.py                # Package entry point (minimal, re-exports)
-│   ├── vw_connection.py           # Connection class - OAuth2, HTTP, session management
-│   ├── vw_vehicle.py              # Vehicle class - vehicle state and control operations
-│   ├── vw_dashboard.py            # Home Assistant integration - Instrument classes
-│   ├── vw_const.py                # Constants, region configs, service IDs, device classes
-│   ├── vw_utilities.py            # Helper functions - JSON, path navigation, formatting
-│   ├── vw_exceptions.py           # Custom exception classes
-│   └── version.py                 # Auto-generated version from setuptools_scm
-├── tests/                         # Test suite
-│   ├── __init__.py                # Empty test package marker
-│   ├── conftest.py                # pytest configuration, loads connection fixture
-│   ├── vw_connection_test.py      # Tests for Connection class
-│   ├── vw_vehicle_test.py         # Tests for Vehicle class
-│   ├── vw_utilities_test.py       # Tests for utility functions
-│   ├── region_support_test.py     # Tests for EMEA/NA region detection
-│   ├── integration_test.py        # Integration tests
-│   ├── dummy_test.py              # Placeholder test
-│   └── fixtures/                  # Test fixtures and mocks
-│       ├── __init__.py            # Empty marker
-│       ├── connection.py          # Connection fixture for tests
-│       ├── constants.py           # Test constants (resource path)
-│       ├── mock_server.py         # Mock API server for testing
-│       └── resources/             # Test data and fixtures
-│           ├── dummy_cookies.pickle  # Pre-authenticated cookies for tests
-│           └── responses/         # Sample API responses per vehicle type
-│               ├── arteon_2023_diesel/
-│               ├── egolf/
-│               ├── eup_electric/
-│               └── golf_gte_hybrid/
-├── docs/                          # Documentation
-│   └── plans/                     # Planning documents
-├── .planning/                     # GSD planning directory
-│   └── codebase/                  # Architecture/structure analysis documents
-├── .github/                       # GitHub configuration
-│   └── workflows/                 # CI/CD workflows
-├── setup.cfg                      # Python package metadata, pytest config
-├── pyproject.toml                 # Build system config, version generation
-├── requirements.txt               # Runtime dependencies (minimal)
-├── requirements-test.txt          # Test dependencies
-├── CLAUDE.md                      # Claude Code instructions (this project)
-├── README.md                      # Project documentation
-└── .pre-commit-config.yaml        # Pre-commit hooks configuration
+volkswagencarnet/          # repo root
+├── volkswagencarnet/      # Python package (importable library)
+│   ├── __init__.py        # Namespace init — NullHandler only
+│   ├── vw_connection.py   # Connection class (auth, HTTP, commands)
+│   ├── vw_vehicle.py      # Vehicle class (state, properties, control)
+│   ├── vw_dashboard.py    # Home Assistant integration layer
+│   ├── vw_const.py        # Constants, region configs, typed namespaces
+│   ├── vw_exceptions.py   # Custom exception hierarchy
+│   └── vw_utilities.py    # Shared utility functions
+├── tests/                 # All test code
+│   ├── conftest.py        # pytest configuration (asyncio mode)
+│   ├── fixtures/          # Test infrastructure
+│   │   ├── connection.py  # Test connection fixture factory
+│   │   ├── constants.py   # Test constants
+│   │   ├── mock_server.py # aiohttp mock server for unit tests
+│   │   └── resources/     # Response fixtures (JSON files per vehicle/service)
+│   │       └── responses/
+│   │           ├── arteon_2023_diesel/
+│   │           ├── egolf/
+│   │           ├── eup_electric/
+│   │           ├── golf_gte_hybrid/
+│   │           └── na_vehicle/
+│   ├── fixtures/responses/ # Additional response fixtures
+│   │   ├── capabilities/  # Capabilities endpoint responses
+│   │   └── login/         # OAuth flow HTML/response fixtures
+│   ├── e2e/               # Live end-to-end tests (requires VW credentials)
+│   │   ├── conftest.py    # E2E fixtures (real Connection instance)
+│   │   ├── test_na_login.py
+│   │   ├── test_na_token_refresh.py
+│   │   ├── test_na_vehicle_data.py
+│   │   ├── test_na_ev_data.py
+│   │   ├── test_na_lock_status.py
+│   │   ├── test_na_position.py
+│   │   └── test_na_write_commands.py
+│   ├── vw_connection_test.py   # Connection unit tests (~3000 lines)
+│   ├── vw_vehicle_test.py      # Vehicle unit tests (~4500 lines)
+│   ├── vw_dashboard_test.py    # Dashboard unit tests
+│   ├── vw_utilities_test.py    # Utility function tests
+│   ├── region_support_test.py  # Regional detection and config tests
+│   ├── reliability_test.py     # Retry/rate-limit/error-handling tests
+│   ├── code_quality_test.py    # Static assertions (naming patterns, etc.)
+│   └── emea_regression_test.py # EMEA backward compatibility tests
+├── examples/              # Usage example scripts
+├── docs/                  # Documentation
+│   └── plans/             # Historical design documents
+├── .planning/             # GSD workflow planning (not committed)
+│   └── codebase/          # Codebase analysis documents
+├── .github/
+│   └── workflows/         # CI/CD workflow definitions
+├── setup.cfg              # Package metadata, test config, mypy settings
+├── pyproject.toml         # Build backend config (setuptools_scm)
+├── requirements.txt       # Runtime dependencies
+├── requirements-test.txt  # Test dependencies
+├── .pre-commit-config.yaml
+└── CLAUDE.md              # Project-level AI instructions
 ```
 
 ## Directory Purposes
 
-**volkswagencarnet/:**
-- Purpose: Main library package
-- Contains: Core classes and modules
-- Key files: vw_connection.py (1373 lines), vw_vehicle.py (3760 lines), vw_dashboard.py (2874 lines)
+**`volkswagencarnet/` (package):**
+- Purpose: The importable Python library — all production code lives here
+- Contains: 6 modules, ~11,000 lines total
+- Key files: `vw_connection.py` (3,298 lines), `vw_vehicle.py` (4,227 lines), `vw_dashboard.py` (2,874 lines)
+- Note: `vw_dashboard.py` is the largest file but has a simple repetitive structure (one class per HA entity type)
 
-**tests/:**
-- Purpose: Unit, integration, and property-based tests
-- Contains: pytest test cases, fixtures, mock data
-- Key files: conftest.py (test configuration), vw_connection_test.py, vw_vehicle_test.py
+**`tests/`:**
+- Purpose: All automated tests — unit, integration, and end-to-end
+- Contains: Unit test files mirror source module names (`vw_connection_test.py`, `vw_vehicle_test.py`, etc.)
+- Important: e2e tests in `tests/e2e/` require `VW_TEST_USERNAME` and `VW_TEST_PASSWORD` env vars and hit live VW servers — never run in CI without credentials
 
-**tests/fixtures/:**
-- Purpose: Shared test infrastructure
-- Contains: Pytest fixtures, mock server, pre-recorded API responses
-- Key files: connection.py (connection fixture), mock_server.py (mock API)
+**`tests/fixtures/`:**
+- Purpose: Test infrastructure and JSON response fixtures for mock server
+- Key files: `tests/fixtures/mock_server.py` provides the aiohttp mock server; `tests/fixtures/connection.py` provides a pre-authenticated `Connection` fixture
+- JSON fixtures in `tests/fixtures/resources/responses/{vehicle_type}/` contain full API response payloads for different vehicle configurations (diesel, electric, hybrid, NA)
 
-**tests/fixtures/resources/responses/:**
-- Purpose: Sample API responses for different vehicle models
-- Contains: JSON response files per vehicle type for testing without live API
-- Key files: Directory per vehicle (arteon_2023_diesel, egolf, eup_electric, golf_gte_hybrid)
+**`tests/e2e/`:**
+- Purpose: Live integration tests validating actual VW API behavior
+- Contains: Tests organized by feature area (login, token refresh, vehicle data, write commands)
+- Run command: `venv/bin/python -m pytest tests/e2e/ -v`
 
-**docs/:**
-- Purpose: Project documentation
-- Contains: Planning documents, guides
-- Key files: docs/plans/ contains phase planning documents
-
-**.planning/codebase/:**
-- Purpose: GSD codebase mapping documents
-- Contains: Architecture, structure, conventions, testing patterns analysis
-- Key files: ARCHITECTURE.md, STRUCTURE.md, CONVENTIONS.md, TESTING.md, CONCERNS.md, STACK.md, INTEGRATIONS.md
+**`.planning/codebase/`:**
+- Purpose: GSD codebase analysis documents
+- Generated: Yes (by `/gsd:map-codebase`)
+- Committed: No (`.planning/` is in `.gitignore`)
 
 ## Key File Locations
 
 **Entry Points:**
-
-- `volkswagencarnet/__init__.py`: Package namespace exports (empty/minimal)
-- `tests/conftest.py`: pytest configuration and fixture discovery
+- `volkswagencarnet/vw_connection.py:82`: `Connection` class definition
+- `volkswagencarnet/vw_connection.py:331`: `Connection.doLogin()` — primary entry point for all usage
+- `volkswagencarnet/vw_connection.py:2551`: `Connection.update()` — periodic poll entry point
+- `volkswagencarnet/vw_dashboard.py` (bottom): `dashboard()` factory for HA integration
 
 **Configuration:**
-
-- `setup.cfg`: Package metadata, build config, coverage settings, pytest config
-- `pyproject.toml`: Build system requirements, setuptools_scm for versioning
-- `.pre-commit-config.yaml`: Pre-commit hook definitions
+- `volkswagencarnet/vw_const.py:85`: `REGION_CONFIGS` dict — all per-region OAuth and API endpoint configuration
+- `volkswagencarnet/vw_const.py:122`: `COUNTRY_TO_REGION` mapping — region auto-detection
+- `volkswagencarnet/vw_const.py:260`: `Services` class — canonical service name strings
+- `volkswagencarnet/vw_const.py:293`: `Paths` class — all dot-notation paths into API response JSON
+- `setup.cfg`: package metadata, max line length (120), mypy and coverage config
 
 **Core Logic:**
-
-- `volkwagencarnet/vw_connection.py`: OAuth2 authentication, HTTP requests, token management
-- `volkwagencarnet/vw_vehicle.py`: Vehicle state, service discovery, control operations
-- `volkwagencarnet/vw_dashboard.py`: Home Assistant integration, entity classes
-
-**Supporting:**
-
-- `volkwagencarnet/vw_const.py`: Region configs, OAuth credentials, service IDs
-- `volkwagencarnet/vw_utilities.py`: JSON parsing, path navigation helpers
-- `volkwagencarnet/vw_exceptions.py`: Custom exception types
+- `volkswagencarnet/vw_connection.py:2109`: `_login_na()` — NA PKCE OAuth flow
+- `volkswagencarnet/vw_connection.py:2272`: `_login()` — EMEA OAuth flow
+- `volkswagencarnet/vw_connection.py:1321`: `_create_na_vehicle_session()` — NA vehicle token with optional SPIN
+- `volkswagencarnet/vw_connection.py:1683`: `_get_na_vehicle_data()` — NA RVS data fetch
+- `volkswagencarnet/vw_connection.py:1951`: `_na_write_request()` — NA command dispatch
+- `volkswagencarnet/vw_connection.py:2375`: `_request()` — unified HTTP method with retry/rate-limit
+- `volkswagencarnet/vw_vehicle.py:214`: `Vehicle.discover()` — capability discovery
+- `volkswagencarnet/vw_vehicle.py:304`: `Vehicle.update()` — per-vehicle refresh dispatcher
 
 **Testing:**
-
-- `tests/fixtures/connection.py`: Async session and connection fixtures
-- `tests/fixtures/mock_server.py`: Mock HTTP server for testing
-- `tests/fixtures/resources/`: Pre-recorded API responses
+- `tests/fixtures/mock_server.py`: aiohttp mock server responding to fixture JSON
+- `tests/fixtures/connection.py`: test `Connection` instance with mock session
+- `tests/vw_connection_test.py`: connection and auth unit tests
+- `tests/vw_vehicle_test.py`: vehicle property and command unit tests
 
 ## Naming Conventions
 
 **Files:**
-
-- `vw_*.py`: Volkswagen-specific modules (vw_connection, vw_vehicle, vw_const, etc.)
-- `*_test.py`: Test files (pytest discovers these automatically)
-- `conftest.py`: pytest configuration file (special name)
-- `*_fixture.py` or in `fixtures/`: Pytest fixtures
+- Source modules: `vw_{domain}.py` prefix (e.g., `vw_connection.py`, `vw_vehicle.py`)
+- Test files: `{module_name}_test.py` or `test_{feature}.py` (mixed — legacy uses `_test` suffix, newer e2e uses `test_` prefix)
 
 **Directories:**
-
-- `tests/fixtures/resources/responses/{vehicle_type}/`: One directory per test vehicle model
-- `.planning/codebase/`: GSD-specific planning documents
-- `.github/workflows/`: GitHub Actions CI/CD workflows
+- Lowercase snake_case for all directories
+- Test fixture directories named after vehicle type (e.g., `arteon_2023_diesel`, `na_vehicle`)
 
 **Classes:**
+- PascalCase: `Connection`, `Vehicle`, `Instrument`, `BinarySensor`, `Services`, `Paths`
 
-- `PascalCase` for all classes (Connection, Vehicle, Instrument, etc.)
-- Base classes use descriptive names (Vehicle, Instrument, VWError)
-- Subclasses follow pattern: `{Feature}{ComponentType}` (e.g., Climatisation, ChargingState)
+**Methods:**
+- Public async methods: lowercase snake_case (`doLogin`, `getSelectiveStatus` — some older methods use camelCase preserved from original codebase)
+- Private methods: `_underscore_prefix` (`_login_na`, `_request`, `_create_na_vehicle_session`)
+- NA-specific methods: suffixed with `_na` (`_login_na`, `lock_na`, `start_charging_na`, `_na_write_request`)
 
-**Functions/Methods:**
-
-- `snake_case` for all functions and methods
-- Async methods prefixed with `async def` (no naming convention distinction)
-- Private methods start with `_` (e.g., `_login()`, `_discover_endpoints()`)
-- Property accessors use `@property` decorator (e.g., `vin`, `unique_id`, `deactivated`)
+**Properties:**
+- Vehicle attributes: `snake_case` property name (e.g., `battery_level`, `outside_temperature`)
+- Support guards: `is_{attr}_supported` boolean property for every attribute
+- Timestamp accessors: `{attr}_last_updated` returning `datetime`
 
 **Constants:**
-
-- `UPPER_SNAKE_CASE` for module-level constants (BASE_API, CLIENT_ID, etc.)
-- Class-level enums like `Services.CHARGING`, `Services.CLIMATISATION`
-
-**Variables:**
-
-- `snake_case` for all variables
-- Private instance variables use `_prefix` (e.g., `_session`, `_vehicles`, `_services`)
-- Protected variables in inheritance hierarchy use `_prefix`
+- Module-level string constants: `UPPER_CASE` (e.g., `BASE_API`, `CLIENT_ID`, `USER_AGENT`)
+- Enum-like class attributes: `UPPER_CASE` within class (`Services.CHARGING`, `Paths.BATTERY_SOC`)
+- Token registry keys: lowercase with underscores (`"access_token"`, `"expires_at"`, `"vehicle_session"`)
 
 ## Where to Add New Code
 
-**New Feature (e.g., new control operation):**
+**New EMEA API endpoint (read-only data):**
+- Add `Paths.NEW_PATH = "service.subpath.value.field"` constant to `volkswagencarnet/vw_const.py`
+- Add `Services.NEW_SERVICE = "serviceName"` if it's a new service
+- Add `Vehicle._services[Services.NEW_SERVICE] = {"active": False}` in `Vehicle.__init__()`
+- Add fetching call in `Vehicle.update()` inside the `asyncio.gather()` block
+- Add `Vehicle.new_attr` property (read from `find_path(self.attrs, Paths.NEW_PATH)`)
+- Add `Vehicle.is_new_attr_supported` property (check `is_valid_path(self.attrs, Paths.NEW_PATH)`)
+- Add `Vehicle.new_attr_last_updated` property returning timestamp
+- Add `Sensor` or `BinarySensor` in `volkswagencarnet/vw_dashboard.py`
 
-- Primary code: `volkwagencarnet/vw_vehicle.py` (add method like `set_feature()`)
-  - Call existing Connection methods to perform HTTP operations
-  - Follow pattern: check `_in_progress()`, construct payload, call Connection, track request, wait for completion
-  - Handle response status and timestamps
+**New NA API endpoint (read-only data):**
+- Add fetch call in `Connection._get_na_vehicle_data()` using `_fetch_na_optional_endpoint()` or `_fetch_rvs_endpoint()`
+- Store result in returned dict with key `"na_{feature}"`
+- Update `Vehicle._update_na_vehicle()` to merge new key into `self._states`
+- Add property to `Vehicle` with NA guard: `na_data = self._states.get("na_{feature}"); if na_data: return na_data.get("field")`
 
-- Connection layer support: `volkwagencarnet/vw_connection.py` (add HTTP method like `setFeature()`)
-  - Wrap HTTP request to vehicle endpoint
-  - Handle retries and throttling automatically via `_request()` method
-  - Return parsed JSON response
+**New NA write command:**
+- Add method on `Connection` following pattern of `lock_na()` / `honk_and_flash_na()`:
+  ```python
+  async def new_command_na(self, vin: str) -> bool:
+      vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+      url = f"{self._base_api}/endpoint/v1/vehicle/{vehicle_id}/action"
+      return await self._na_write_request(vin, url, method="put", body={})
+  ```
+- Add corresponding `set_new_command()` on `Vehicle` with NA/EMEA dispatch pattern
+- Add `Switch` or similar in `vw_dashboard.py`
 
-- Constants: `volkwagencarnet/vw_const.py`
-  - Add service ID to `Services` class if new API capability
-  - Add operation IDs to relevant service definitions
+**New EMEA write command:**
+- Add method on `Connection` following `setClimater()` / `setCharging()` pattern (POST to API, parse response ID)
+- Add `Vehicle.set_new_command()` calling `Connection.setNewCommand()` then `_handle_response()`
 
-- Tests: `tests/vw_vehicle_test.py` or `tests/vw_connection_test.py`
-  - Use fixtures from `tests/fixtures/connection.py`
-  - Use pytest async test pattern with `@pytest.mark.asyncio` decorator
+**New utility function:**
+- Add to `volkswagencarnet/vw_utilities.py` with docstring and `Examples:` in docstring
 
-**New Component/Module:**
+**New test for existing feature:**
+- Unit tests: add to `tests/vw_vehicle_test.py` or `tests/vw_connection_test.py`
+- Uses `tests/fixtures/connection.py` for the `Connection` fixture and `tests/fixtures/mock_server.py` for mocked HTTP
 
-- Implementation: Create new file `volkwagencarnet/vw_{module_name}.py`
-- Imports: Follow existing pattern (imports from vw_const, vw_utilities, vw_exceptions)
-- Logging: Add module logger: `_LOGGER = logging.getLogger(__name__)`
-- Tests: Create corresponding `tests/vw_{module_name}_test.py`
-
-**New Home Assistant Entity Type:**
-
-- Implementation: Add class to `volkwagencarnet/vw_dashboard.py` inheriting from `Instrument`
-- Follow pattern: Set `is_mutable`, `icon`, `entity_type`, `device_class` properties
-- Implement `configurate()` if setup needed, `state` property for current value
-- Add `async def set_state()` method if mutable
-
-**Utilities (shared helpers):**
-
-- Shared helpers: `volkwagencarnet/vw_utilities.py`
-- Path navigation: Use existing `find_path()` function
-- JSON parsing: Use `json_loads()` for automatic datetime conversion
-- Slug formatting: Use `camel2slug()` for converting camelCase to slug
+**New test fixture (vehicle model):**
+- Add directory under `tests/fixtures/resources/responses/{vehicle_type}/`
+- Add JSON files matching the API endpoint response structures
 
 ## Special Directories
 
-**tests/fixtures/resources/responses/:**
-- Purpose: Pre-recorded API responses for different vehicle models
-- Generated: No, manually curated or captured from real API
-- Committed: Yes, committed to repository
-- Usage: Mock server uses these responses in tests to avoid live API calls
-- One subdirectory per vehicle type (arteon_2023_diesel, egolf, eup_electric, golf_gte_hybrid)
+**`.planning/`:**
+- Purpose: GSD workflow files (project state, roadmap, phase plans, analysis)
+- Generated: Yes (by GSD commands)
+- Committed: No (in `.gitignore`)
 
-**venv/ and .venv/:**
-- Purpose: Python virtual environment for development
-- Generated: Yes, created with `python3 -m venv venv`
-- Committed: No (listed in .gitignore)
-- Usage: Activate with `source venv/bin/activate` before running tests/development commands
+**`App-APK/`:**
+- Purpose: Holds the myVW Android APK used for traffic analysis and API reverse-engineering
+- Generated: No (manually added reference artifact)
+- Committed: Yes (binary XAPK file)
 
-**.planning/codebase/:**
-- Purpose: GSD-generated codebase analysis documents
-- Generated: Yes, by `/gsd:map-codebase` command
-- Committed: Yes, committed to repository for reference
-- Files: ARCHITECTURE.md, STRUCTURE.md, CONVENTIONS.md, TESTING.md, CONCERNS.md, STACK.md, INTEGRATIONS.md
+**`.trafficanalysis/`:**
+- Purpose: Captured HTTP traffic from mitmproxy sessions used for NA API research
+- Generated: No (manually captured)
+- Committed: Yes
+
+**`.VW_NA_Auth_Analysis/`:**
+- Purpose: NA authentication research notes and APK decompilation findings
+- Generated: No
+- Committed: Yes
+
+**`venv/` and `.venv/`:**
+- Purpose: Python virtual environments (two exist — `venv/` is the active one per CLAUDE.md)
+- Generated: Yes
+- Committed: No (in `.gitignore`)
 
 ---
 
-*Structure analysis: 2026-02-10*
+*Structure analysis: 2026-03-10*

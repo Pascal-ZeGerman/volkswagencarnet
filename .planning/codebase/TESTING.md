@@ -1,150 +1,254 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-02-10
+**Analysis Date:** 2026-03-10
 
 ## Test Framework
 
 **Runner:**
-- pytest 7.0.0+ (defined in `requirements-test.txt`)
-- Config: `pyproject.toml`
+- pytest >= 7.0.0
+- Config: `pyproject.toml` (`[tool.pytest.ini_options]`)
+- `asyncio_mode = "strict"` — all async tests must be explicitly marked
 
 **Assertion Library:**
-- Python's built-in `assert` statements
-- pytest exception checking with `pytest.raises()`
+- pytest `assert` statements (not `unittest.TestCase.assert*` where avoidable)
+- `unittest.TestCase` subclasses also used via `IsolatedAsyncioTestCase` for async test classes
 
 **Run Commands:**
 ```bash
-# Run all tests
+# Activate venv first
+source venv/bin/activate
+
+# Run all unit tests (e2e excluded)
 pytest
 
-# Run with coverage report
+# Run with verbose output
+pytest -v
+
+# Run with coverage
 pytest --cov=volkswagencarnet --cov-report=html
 
 # Run specific test file
-pytest tests/vw_connection_test.py
+pytest tests/vw_connection_test.py -v
 
-# Run specific test
-pytest tests/vw_vehicle_test.py::TestVehicle::test_init
+# Run specific test class
+pytest tests/vw_vehicle_test.py::VehiclePropertyTest -v
 
-# Watch mode (not configured, use pytest-watch separately)
-```
+# Run specific test method
+pytest tests/vw_vehicle_test.py::VehicleTest::test_init -v
 
-**Pytest Configuration (pyproject.toml):**
-```toml
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra"
-asyncio_mode = "strict"
-testpaths = ["tests"]
-python_files = ["*_test.py"]
+# Run e2e tests (requires VW_TEST_USERNAME + VW_TEST_PASSWORD)
+pytest tests/e2e/ -v
+
+# Skip coverage plugin (faster)
+pytest -p no:cov
 ```
 
 ## Test File Organization
 
-**Location:**
-- Tests co-located in separate `tests/` directory (not alongside source)
-- Integration tests: `tests/integration_test.py`
-- Feature-specific tests: `tests/region_support_test.py`
-- Dummy/placeholder tests: `tests/dummy_test.py`
+**Location:** All unit tests co-located in `tests/` directory. E2E tests separated in `tests/e2e/`.
+
+**Discovery rules (from `pyproject.toml`):**
+```toml
+testpaths = ["tests"]
+python_files = ["*_test.py", "test_*.py"]
+norecursedirs = ["tests/e2e"]  # e2e excluded from normal runs
+```
 
 **Naming:**
-- Test files: `<module>_test.py` (e.g., `vw_connection_test.py`, `vw_vehicle_test.py`)
-- Test classes: `PascalCase` with `Test` prefix: `class TestVehicle:`, `class TwoVehiclesConnection:`
-- Test methods: `test_<description>`: `test_init()`, `test_clear_cookies()`, `test_update_deactivated()`
+- Unit test files: `vw_connection_test.py`, `vw_vehicle_test.py`, `vw_utilities_test.py`, `vw_dashboard_test.py`
+- Feature test files: `region_support_test.py`, `reliability_test.py`, `code_quality_test.py`, `emea_regression_test.py`
+- E2E test files: `tests/e2e/test_na_login.py`, `tests/e2e/test_na_vehicle_data.py`, etc.
 
 **Structure:**
 ```
 tests/
-├── __init__.py
-├── conftest.py                          # Pytest configuration and shared fixtures
+├── conftest.py                   # Global fixtures: mock_aiohttp, session, connection
 ├── fixtures/
-│   ├── __init__.py
-│   ├── connection.py                    # Connection fixture
-│   ├── mock_server.py                   # Mock HTTP server
-│   ├── constants.py                     # Test constants
-│   └── resources/                       # Test resource files
-├── dummy_test.py                        # Placeholder async test
-├── vw_connection_test.py                # Connection tests
-├── vw_vehicle_test.py                   # Vehicle tests
-├── vw_utilities_test.py                 # Utility function tests
-├── integration_test.py                  # Integration tests (require credentials)
-└── region_support_test.py               # Region detection tests
+│   ├── connection.py             # session + connection fixtures
+│   ├── constants.py              # resource_path constant
+│   ├── mock_server.py            # Aioresponses-based mock server
+│   └── resources/
+│       └── responses/
+│           ├── egolf/            # E-Golf fixture JSON files
+│           ├── na_vehicle/       # NA vehicle fixture JSON files
+│           ├── arteon_2023_diesel/
+│           ├── eup_electric/
+│           └── golf_gte_hybrid/
+├── vw_connection_test.py         # Connection auth, rate limiting, NA OAuth
+├── vw_vehicle_test.py            # Vehicle properties, state management
+├── vw_utilities_test.py          # Utility function unit tests
+├── vw_dashboard_test.py          # Dashboard/Instrument hierarchy tests
+├── region_support_test.py        # Region detection and routing
+├── reliability_test.py           # Retry, discovery, home region routing
+├── code_quality_test.py          # AST/regex structural code quality checks
+├── emea_regression_test.py       # EMEA API contract regression tests
+├── integration_test.py           # Live credential tests (skipped without creds)
+└── e2e/
+    ├── conftest.py               # Module-scoped na_connection + first_vehicle fixtures
+    ├── test_na_login.py          # Live NA login + JWT validation
+    ├── test_na_token_refresh.py  # Token refresh lifecycle
+    ├── test_na_vehicle_data.py   # Vehicle data retrieval
+    └── test_na_write_commands.py # Lock, charge, climate write commands
 ```
 
 ## Test Structure
 
-**Suite Organization with Classes:**
+**Two class styles are used side by side:**
+
+**1. `IsolatedAsyncioTestCase` (unittest-style, preferred for async test classes):**
+```python
+from unittest import IsolatedAsyncioTestCase
+from unittest.mock import AsyncMock, MagicMock, patch
+
+class NAOAuthLoginTest(IsolatedAsyncioTestCase):
+    """Test NA OAuth login flow."""
+
+    def _make_na_conn(self):
+        """Create a Connection with country='US' and mocked session."""
+        mock_session = AsyncMock()
+        mock_session._cookie_jar = MagicMock()
+        mock_session._cookie_jar._cookies = {}
+        conn = Connection(mock_session, "user@example.com", "password", country="US")
+        return conn
+
+    async def test_na_login_success(self):
+        """Test successful NA login via the _login() dispatch chain."""
+        conn = self._make_na_conn()
+        with (
+            patch.object(conn, "get_openid_config", return_value=openid_config),
+            patch.object(conn, "_get_authorization_code_na", return_value="auth_code_123"),
+            patch.object(conn, "_exchange_code_for_tokens", return_value=token_response),
+        ):
+            result = await conn._login()
+        assert result is True
+```
+
+**2. Plain pytest classes (used for synchronous or `@pytest.mark.asyncio`-decorated tests):**
 ```python
 class TestRegionMapping:
     """Test region detection from country codes."""
 
     def test_us_maps_to_na(self):
         assert get_region_from_country("US") == "NA"
-        assert get_region_from_country("us") == "NA"
-
-class TestConnectionRegionDetection:
-    """Test Connection class region detection."""
 
     @pytest.mark.asyncio
     async def test_connection_defaults_to_emea(self):
-        """No country parameter should default to EMEA."""
         async with ClientSession() as session:
             conn = Connection(session, "test@example.com", "password")
             assert conn._session_region == "EMEA"
 ```
 
-**Async Test Pattern:**
+**Parametrized tests (used in `vw_vehicle_test.py`):**
 ```python
-class VehicleTest(IsolatedAsyncioTestCase):
-    """Test Vehicle methods."""
+BATTERY_CHARGING_CASES = [
+    ("battery_level", (int, type(None))),
+    ("charging_state", str),
+    ("charging", bool),
+]
 
-    @freeze_time("2022-02-14 03:04:05")
-    async def test_init(self):
-        """Test __init__."""
-        async with ClientSession() as conn:
-            vehicle = Vehicle(conn, url)
-            assert conn == vehicle._connection
-            assert url == vehicle._url
+@pytest.mark.parametrize("prop,expected_type", BATTERY_CHARGING_CASES)
+def test_egolf_battery_charging(self, egolf_vehicle, prop, expected_type):
+    """Verify battery/charging property returns expected type."""
+    value = getattr(egolf_vehicle, prop)
+    assert isinstance(value, expected_type)
 ```
 
-**Setup and Teardown:**
-- `IsolatedAsyncioTestCase` for async test class setup
-- Context managers for resource cleanup: `async with ClientSession() as session:`
-- Fixtures in `tests/fixtures/connection.py` provide pre-configured test resources
-
-**Assertion Patterns:**
+**Subtest pattern (used in `vw_utilities_test.py` for table-driven tests):**
 ```python
-# Direct assertions
-assert len(connection._session._cookie_jar._cookies) > 0
-
-# Property assertions
-assert conn.logged_in is True
-
-# Equality assertions
-assert vehicle._requests == expected_requests
-
-# Containment assertions
-assert "base_api_candidates" in config
-
-# Type/structure assertions
-assert isinstance(exc_info.value, expected)
+for key, expected in data.items():
+    with self.subTest(msg=key, v=key):
+        res = camel2slug(key)
+        assert expected == res
 ```
+
+## Mocking
+
+**Frameworks:** `unittest.mock` (`AsyncMock`, `MagicMock`, `patch`, `patch.object`)
+
+**Standard mock session setup — used across all connection tests:**
+```python
+mock_session = AsyncMock()
+mock_session._cookie_jar = MagicMock()
+mock_session._cookie_jar._cookies = {}
+conn = Connection(mock_session, "user@example.com", "password", country="US")
+```
+
+**Patching methods with `patch.object`:**
+```python
+with patch.object(conn, "_discover_market_config", new_callable=AsyncMock) as mock_discover:
+    mock_discover.return_value = False
+    result = await conn.doLogin()
+    mock_discover.assert_called_once()
+```
+
+**Context manager stacking (Python 3.10+ parenthesized style):**
+```python
+with (
+    patch.object(conn, "get_openid_config", return_value=openid_config),
+    patch.object(conn, "_get_authorization_code_na", return_value="auth_code_123"),
+    patch.object(conn, "_exchange_code_for_tokens", return_value=token_response),
+):
+    result = await conn._login()
+```
+
+**Mock HTTP response context manager pattern (for `conn._session.get`):**
+```python
+def _make_resp_ctx(status: int, json_data=None, headers=None):
+    resp = MagicMock()
+    resp.status = status
+    resp.headers = headers or {}
+    if json_data is not None:
+        resp.json = AsyncMock(return_value=json_data)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return ctx, resp
+
+# Usage:
+ctx, resp = _make_resp_ctx(200, json_data={"issuer": "..."})
+conn._session.get = MagicMock(return_value=ctx)
+```
+
+**`aioresponses` (for higher-level HTTP mocking via `mock_aiohttp` fixture):**
+```python
+# conftest.py provides:
+@pytest.fixture
+def mock_aiohttp():
+    with aioresponses() as m:
+        yield m
+
+# Usage in test:
+def test_something(mock_aiohttp):
+    mock_aiohttp.get("https://api.example.com/endpoint", payload={"key": "value"})
+```
+
+**`MagicMock(spec=Vehicle)` for spec-constrained mocks:**
+```python
+vehicle = MagicMock(spec=Vehicle, name="MockUpdateVehicle")
+vehicle.update = lambda: Vehicle.update(vehicle)
+vehicle._discovered = False
+await vehicle.update()
+vehicle.discover.assert_called_once()
+assert len(vehicle.method_calls) == 8
+```
+
+**What to Mock:**
+- `conn._session.get/post` when testing HTTP interaction without running a server
+- Specific connection methods (`get_openid_config`, `_login_na`, `_discover_market_config`) to isolate the method under test
+- `conn.put`, `conn.get` when testing higher-level methods like `setDepartureTimers`
+
+**What NOT to Mock:**
+- `Connection.__init__` — always instantiate real Connection with mock session
+- `Vehicle.__init__` — always instantiate real Vehicle; set `_discovered = True` and inject `_states` directly
+- Standard library functions (unless testing time-dependent behavior with `freeze_time`)
 
 ## Fixtures and Factories
 
-**Test Data and Fixtures:**
-
-Pytest fixtures defined in `tests/conftest.py`:
-```python
-pytest_plugins = ["pytest_cov"]
-pytest_plugins.append("tests.fixtures.connection")
-```
-
-Connection fixture from `tests/fixtures/connection.py`:
+**Global fixtures (`tests/conftest.py`):**
 ```python
 @pytest_asyncio.fixture
 async def session():
-    """Client session that can be used in tests."""
+    """Client session with pre-loaded cookie jar."""
     jar = CookieJar()
     jar.load(os.path.join(resource_path, "dummy_cookies.pickle"))
     sess = ClientSession(headers={"Connection": "keep-alive"}, cookie_jar=jar)
@@ -153,241 +257,166 @@ async def session():
 
 @pytest.fixture
 def connection(session):
-    """Real connection for integration tests."""
-    return Connection(
-        session=session,
-        username="",
-        password="",
-        country="DE",
-        interval=999,
-    )
+    """Real connection for integration tests (country='DE', EMEA)."""
+    return Connection(session=session, username="", password="", country="DE", interval=999)
+
+@pytest.fixture
+def mock_aiohttp():
+    """aioresponses context manager for mocking aiohttp requests."""
+    with aioresponses() as m:
+        yield m
 ```
 
-**Test Data Location:**
-- Fixtures: `tests/fixtures/connection.py`, `tests/fixtures/constants.py`
-- Cookie data: `tests/fixtures/resources/` (loaded by fixture)
-- Credentials (optional): `tests/credentials.py` (imported with fallback for missing credentials)
-
-**Factory Pattern in Tests:**
+**Fixture loading helper (used in `vw_vehicle_test.py` and `vw_dashboard_test.py`):**
 ```python
-# Mock vehicle factory within test
-vehicle1 = vw_connection.Vehicle(None, "vin1")
-vehicle2 = vw_connection.Vehicle(None, "vin2")
-return [vehicle1, vehicle2]
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses"
+
+def load_fixture(*parts):
+    """Load a JSON fixture file."""
+    with open(FIXTURE_DIR.joinpath(*parts)) as f:
+        return json.load(f)
 ```
 
-## Mocking
-
-**Framework:** Python's `unittest.mock` (MagicMock, AsyncMock, patch)
-
-**Import Pattern:**
+**Vehicle fixture pattern (pytest fixtures with injected JSON state):**
 ```python
-from unittest.mock import MagicMock, patch, AsyncMock
-from unittest import IsolatedAsyncioTestCase
+@pytest.fixture
+def egolf_vehicle():
+    """E-Golf with full selectivestatus data and parking position."""
+    vehicle = Vehicle(conn=None, url="WVWZZZ3CZHE123456")
+    vehicle._discovered = True
+    data = load_fixture("egolf", "selectivestatus_by_app.json")
+    vehicle._states.update(data)
+    parking = load_fixture("egolf", "parkingposition.json")
+    vehicle._states["parkingposition"] = parking.get("data", {})
+    trip = load_fixture("egolf", "last_trip.json")
+    vehicle._states[Services.TRIP_LAST] = trip.get("data", {})
+    return vehicle
 ```
 
-**Mocking Patterns:**
-
-1. **Mock Objects (MagicMock):**
+**NA vehicle fixture pattern (uses MagicMock connection to set `is_na = True`):**
 ```python
-vehicle = MagicMock(spec=Vehicle, name="MockUpdateVehicle")
-vehicle.update = lambda: Vehicle.update(vehicle)
-vehicle._discovered = False
-await vehicle.update()
-vehicle.discover.assert_not_called()
+@pytest.fixture
+def na_vehicle():
+    """NA vehicle with RVS data."""
+    conn = MagicMock()
+    conn.is_na = True
+    conn._session_region = "NA"
+    conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
+    vehicle = Vehicle(conn=conn, url="3VV4X7B27RM030662")
+    vehicle._discovered = True
+    vehicle._states["na_status"] = load_fixture("na_vehicle", "rvs_status.json")
+    vehicle._states["na_location"] = load_fixture("na_vehicle", "rvs_location.json")
+    return vehicle
 ```
 
-2. **Async Mocking (AsyncMock):**
+**Test helper factory functions (module-level, not pytest fixtures, for `IsolatedAsyncioTestCase`):**
 ```python
-sess = AsyncMock()
-conn = vw_connection.Connection(sess, "", "")
+def _make_na_conn(**kwargs) -> Connection:
+    mock_session = AsyncMock()
+    mock_session._cookie_jar = MagicMock()
+    mock_session._cookie_jar._cookies = {}
+    conn = Connection(mock_session, "user@example.com", "password", country="US", **kwargs)
+    conn._session_tokens = {"identity": {"access_token": "test_token"}}
+    conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
+    return conn
 ```
 
-3. **Patching Functions/Classes:**
-```python
-@patch("volkswagencarnet.vw_connection.Connection",
-       spec_set=vw_connection.Connection,
-       new=TwoVehiclesConnection)
-@patch("volkswagencarnet.vw_connection.MAX_RETRIES_ON_RATE_LIMIT", 1)
-async def test_rate_limit(self):
-    # Test using patched class/constant
-    pass
-```
-
-4. **Patching Object Methods:**
-```python
-with patch.object(conn, "_request", self.rateLimitedFunction):
-    res = await conn.get("foo")
-    assert res == {"status_code": 429}
-```
-
-**What to Mock:**
-- HTTP requests (via aiohttp session mocks)
-- External API responses
-- Time-dependent behavior (using `freezegun`)
-- Constants that should be different in test (patch module constants)
-
-**What NOT to Mock:**
-- Internal methods unless necessary for isolation
-- Data structures (dict, list) - test with actual data
-- Exception classes
-- Module imports (prefer fixtures instead)
-
-**Time Mocking with freezegun:**
-```python
-from freezegun import freeze_time
-
-@freeze_time("2022-02-14 03:04:05")
-async def test_init(self):
-    """Test with frozen time."""
-    target_date = datetime.fromisoformat("2022-02-14 03:04:05").replace(
-        tzinfo=UTC
-    )
-    # Assertions use target_date
-```
+**JSON fixture files location:** `tests/fixtures/resources/responses/`
+- `egolf/` — E-Golf EV: `selectivestatus_by_app.json`, `parkingposition.json`, `last_trip.json`
+- `na_vehicle/` — NA vehicle: `rvs_status.json`, `rvs_location.json`, `ev_charge.json`, `ev_charge_active.json`, `climate_settings.json`, `trip_stats.json`
+- `arteon_2023_diesel/`, `eup_electric/`, `golf_gte_hybrid/` — additional vehicle type fixtures
 
 ## Coverage
 
-**Requirements:** Not enforced by CI; optional local measurement
+**Requirements:** Branch coverage enabled (`branch = True` in `setup.cfg`). No minimum percentage enforced.
 
-**Coverage Configuration (setup.cfg):**
-```
+**Exclusions:**
+```ini
 [coverage:run]
-branch = True
 omit = tests/*,volkswagencarnet/version.py
 ```
 
 **View Coverage:**
 ```bash
 pytest --cov=volkswagencarnet --cov-report=html
-# Opens coverage HTML report in htmlcov/index.html
+# Open htmlcov/index.html in browser
 ```
 
 ## Test Types
 
-**Unit Tests:**
-- Scope: Individual functions/methods in isolation
-- Location: `tests/vw_utilities_test.py` (utility function tests), parts of `vw_vehicle_test.py`
-- Approach: Direct assertions on function output, no async required unless testing async code
-- Example: `test_camel_to_slug()`, `test_is_valid_path()`, `test_json_loads()`
+**Unit Tests (majority):**
+- Test individual methods in isolation
+- Mock external dependencies (HTTP session, other Connection methods)
+- Direct state injection into `Vehicle._states` and `Vehicle._services`
+- Located in `tests/vw_*_test.py` and `tests/*_test.py`
 
-**Integration Tests:**
-- Scope: Multiple components working together or with real API
-- Location: `tests/integration_test.py`
-- Approach: Use actual Connection with real or mocked sessions; skipped if credentials not available
-- Example: `test_successful_login()` - requires username/password in `credentials.py`
-- Marked with: `@pytest.mark.skipif(username is None or password is None, reason="...") ` and `@pytest.mark.asyncio`
+**Code Quality Tests (`tests/code_quality_test.py`):**
+- Unique structural pattern: AST parsing + regex applied to `vw_connection.py` source
+- Enforces: no bare `response.text` (coroutine reference bug), no dead methods, no stale lint suppression comments
+- Tests read source directly via `Path(__file__).parent.parent / "volkswagencarnet" / "vw_connection.py"`
 
-**Feature/Behavior Tests:**
-- Scope: Specific feature verification (region support, error handling)
-- Location: `tests/region_support_test.py`
-- Approach: Test classes organized by feature
-- Example: `TestRegionMapping`, `TestConnectionRegionDetection`, `TestConnectionLoginFlow`
+**Integration Tests (`tests/integration_test.py`):**
+- Require real credentials in `tests/credentials.py` (not committed; `credentials.py.sample` is provided)
+- Skipped automatically via `@pytest.mark.skipif` when credentials module is missing
+- Run in same pytest session but gated by import-time try/except
+
+**E2E Tests (`tests/e2e/`):**
+- Excluded from `pytest` normal runs via `norecursedirs = ["tests/e2e"]` in `pyproject.toml`
+- Require env vars: `VW_TEST_USERNAME`, `VW_TEST_PASSWORD`, optionally `VW_TEST_SPIN`
+- Fail loudly at import time if env vars are missing (credential guard in `tests/e2e/conftest.py`)
+- Use module-scoped `na_connection` fixture for shared live authentication
+- `loop_scope="module"` required on all e2e test classes to share event loop with module-scoped fixture:
+  ```python
+  pytestmark = pytest.mark.asyncio(loop_scope="module")
+  ```
 
 ## Common Patterns
 
-**Async Testing:**
+**Time freezing for datetime-dependent tests:**
 ```python
-# Using IsolatedAsyncioTestCase
-class VehicleTest(IsolatedAsyncioTestCase):
-    async def test_init(self):
-        async with ClientSession() as conn:
-            # Test async code
-            vehicle = Vehicle(conn, url)
-            assert vehicle._connection == conn
+from freezegun import freeze_time
 
-# Using pytest.mark.asyncio
-@pytest.mark.asyncio
-async def test_connection_defaults_to_emea(self):
-    async with ClientSession() as session:
-        conn = Connection(session, "test@example.com", "password")
-        assert conn._session_region == "EMEA"
+@freeze_time("2022-02-14 03:04:05")
+async def test_init(self):
+    target_date = datetime.fromisoformat("2022-02-14 03:04:05").replace(tzinfo=UTC)
+    vehicle = Vehicle(conn, url)
+    assert vehicle._requests["departuretimer"]["timestamp"] == target_date
 ```
 
-**Error Testing:**
+**Exception testing:**
 ```python
-# Test that exception is raised
-with pytest.raises(AuthenticationError) as exc_info:
-    # Code that should raise
-    pass
-assert isinstance(exc_info.value, AuthenticationError)
+with pytest.raises(AuthenticationError, match="Wrong username or password"):
+    await conn._login_na()
 
-# Test with mock raising exception
-ri = MagicMock(aiohttp.RequestInfo)
-e = client_exceptions.ClientResponseError(request_info=ri, history=tuple([]))
-e.status = 429
-raise e
+# Inspect exception message:
+with pytest.raises(Exception) as exc_info:
+    await vehicle.set_lock("any", "")
+assert str(exc_info.value) == "Invalid lock action: any"
 ```
 
-**Subtest Pattern (for parametrized data):**
+**Strict call-count verification:**
 ```python
-def test_camel_to_slug(self):
-    """Test camel_to_slug conversion."""
-    data = {
-        "foo": "foo",
-        "fooBar": "foo_bar",
-        "XYZ": "x_y_z",
-    }
-
-    for key, expected in data.items():
-        with self.subTest(msg=key, v=key):
-            res = camel2slug(key)
-            assert expected == res
-```
-
-**Mock Server Pattern:**
-```python
-# From tests/fixtures/mock_server.py
-class MockServerRequestHandler(BaseHTTPRequestHandler):
-    mock_responses = {"/ok": {"content": json.dumps([]), "code": 200}}
-
-    def do_GET(self):
-        """Respond with something."""
-        if self.path in self.mock_responses:
-            self.send_response(self.mock_responses.get(self.path).get("code"))
-        # ...
-
-def get_free_port():
-    """Find a free port on localhost."""
-    s = socket.socket(socket.AF_INET, type=socket.SOCK_STREAM)
-    s.bind(("localhost", 0))
-    address, port = s.getsockname()
-    s.close()
-    return port
-
-def start_mock_server(port):
-    """Start the server."""
-    mock_server = HTTPServer(("localhost", port), MockServerRequestHandler)
-    mock_server_thread = Thread(target=mock_server.serve_forever)
-    mock_server_thread.setDaemon(True)
-    mock_server_thread.start()
-```
-
-**Skip and Mark Patterns:**
-```python
-# Skip test if Python version too old
-@pytest.mark.skipif(
-    condition=sys.version_info < (3, 11),
-    reason="Test incompatible with Python < 3.11"
+vehicle = MagicMock(spec=Vehicle, name="MockUpdateVehicle")
+vehicle.update = lambda: Vehicle.update(vehicle)
+await vehicle.update()
+vehicle.discover.assert_called_once()
+assert len(vehicle.method_calls) == 8, (
+    f"Wrong number of methods called. Expected 8, got {len(vehicle.method_calls)}"
 )
-def test_clear_cookies(connection) -> None:
-    pass
-
-# Skip test if credentials missing
-@pytest.mark.skipif(
-    username is None or password is None,
-    reason="Username or password is not set. Check credentials.py.sample"
-)
-@pytest.mark.asyncio
-async def test_successful_login() -> None:
-    pass
-
-# Mark test as not yet implemented
-@pytest.mark.skip("Not yet implemented")
-async def test_spin_action() -> None:
-    pass
 ```
+
+**Async session timeout rule:**
+Any `self._session.post/get()` call outside of `_request()` MUST pass an explicit timeout parameter:
+```python
+await self._session.post(
+    url,
+    data=body,
+    headers=headers,
+    timeout=ClientTimeout(total=TIMEOUT.seconds),  # REQUIRED
+)
+```
+This prevents "Timeout context manager should be used inside a task" errors in aiohttp 3.13 + pytest-asyncio with mismatched loop scopes.
 
 ---
 
-*Testing analysis: 2026-02-10*
+*Testing analysis: 2026-03-10*
