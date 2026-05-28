@@ -4,10 +4,7 @@
 
 - ✅ **v1.0 NA Full API Values** — Phases 1-13 (shipped 2026-02-27)
 - ✅ **v1.1 Make Production Ready** — Phases 15-20 (shipped 2026-03-01)
-- ✅ **v1.2 PR Review Fixes** — Phases 21-24 (shipped 2026-03-07)
-- ✅ **v1.3 NA Endpoint Coverage** — Phases 25-33 (shipped 2026-03-10)
-- 🚧 **v1.4 Variable Parity & Enrichment** — Phases 34-36 (in progress)
-- 📋 **v1.5 Error Resilience & Code Hardening** — Phases 37-40 (planned)
+- **v1.2 PR Review Fixes** — Phases 21-23 (active)
 
 ## Phases
 
@@ -43,151 +40,24 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] Phase 19: Security + Code Cleanup (2/2 plans) — completed 2026-03-01
 - [x] Phase 20: Performance + Test Coverage (2/2 plans) — completed 2026-03-01
 
-Full details: `.planning/milestones/v1.1-ROADMAP.md`
-
 </details>
 
-<details>
-<summary>✅ v1.2 PR Review Fixes (Phases 21-24) — SHIPPED 2026-03-07</summary>
+## v1.2 Phases
 
-- [x] Phase 21: Fix Critical/High PR Review Issues (2/2 plans) — completed 2026-03-02
-- [x] Phase 22: Fix Medium & Nitpick PR Issues (2/2 plans) — completed 2026-03-02
-- [x] Phase 23: Create Holistic Test Suite (6/6 plans) — completed 2026-03-03
-- [x] Phase 24: Fix PR Review Issues: error handling, comment accuracy, test coverage (2/2 plans) — completed 2026-03-07
+- [x] **Phase 21: Fix Critical/High PR Review Issues** — Credential scrubbing, security logging, dead code removal (completed 2026-03-02)
+- [x] **Phase 22: Fix Medium & Nitpick Issues from PR Review** — Address remaining medium-severity and nitpick PR feedback (completed 2026-03-02)
+- [x] **Phase 23: Create Holistic Test Suite with Comprehensive Code Coverage** — Full test coverage across NA and EMEA paths (completed 2026-03-03)
 
-Full details: `.planning/milestones/v1.2-ROADMAP.md`
+### Phase 23: Create Holistic Test Suite with Comprehensive Code Coverage
+**Goal:** Achieve comprehensive unit test coverage across all NA and EMEA code paths, ensuring the library is well-tested before merging to main.
+**Scope:** Unit tests for connection logic (both regions), vehicle data parsing, token management, error handling, dashboard instruments, and utility functions.
+**Plans:** 6/6 plans complete
 
-</details>
-
-<details>
-<summary>✅ v1.3 NA Endpoint Coverage (Phases 25-33) — SHIPPED 2026-03-10</summary>
-
-- [x] Phase 25: Surface Existing RVS Data as Vehicle Properties (1/1 plans) — completed 2026-03-08
-- [x] Phase 26: Implement Optional RVS Vehicle Refresh Trigger (1/1 plans) — completed 2026-03-08
-- [x] Phase 27: Implement EV Charge Summary Endpoint (1/1 plans) — completed 2026-03-08
-- [x] Phase 28: Implement Pre-Trip Climate Settings (1/1 plans) — completed 2026-03-08
-- [x] Phase 29: Implement Trip Statistics Endpoint (1/1 plans) — completed 2026-03-08
-- [x] Phase 30: Implement Remote Lock/Unlock (1/1 plans) — completed 2026-03-08
-- [x] Phase 31: Implement Honk & Flash (1/1 plans) — completed 2026-03-08
-- [x] Phase 32: Implement EV Charging Start/Stop (1/1 plans) — completed 2026-03-08
-- [x] Phase 33: Implement Climate Start/Stop (1/1 plans) — completed 2026-03-08
-
-Full details: `.planning/milestones/v1.3-ROADMAP.md`
-
-</details>
-
-### v1.4 Variable Parity & Enrichment (In Progress)
-
-**Milestone Goal:** Surface all remaining NA API response fields as vehicle properties, achieving parity with EMEA where data exists and exposing NA-specific fields.
-
-- [x] **Phase 34: Door & Access Parity** - Wire per-door open/closed and per-door lock status from NA exteriorStatus (completed 2026-03-13)
-- [x] **Phase 35: EV Range, Trip & Metadata Parity** - Map electric range, trip speed, timestamps, parked status, and climate duration from existing NA data (completed 2026-03-13)
-- [x] **Phase 36: NA-Specific Properties** - Expose aggregate security status and range units indicator unique to NA (completed 2026-03-15)
-
-### v1.5 Error Resilience & Code Hardening (Planned)
-
-**Milestone Goal:** Fix critical control flow bugs, clean up exception patterns, add data integrity guards, and pass a full code review gate with zero critical findings.
-
-- [x] **Phase 37: Critical Fixes** - Fix control flow bugs where exceptions always raise, add missing timeouts and JWT guards (completed 2026-03-15)
-- [x] **Phase 38: Exception Hygiene & Data Integrity** - Replace bare Exception raises with domain types, fix return type inconsistencies, add None guards (completed 2026-03-16)
-- [ ] **Phase 39: Concurrency & Code Quality** - Add update lock, remove dead code, convert recursion to iteration, fix type annotations
-- [ ] **Phase 40: Code Review Gate** - Run /review-pr on full codebase, fix all critical findings iteratively until zero remain
-
-## Phase Details
-
-### Phase 34: Door & Access Parity
-**Goal**: NA users can see individual door, trunk, and hood open/closed status and per-door lock status
-**Depends on**: Phase 33 (v1.3 complete)
-**Requirements**: DOOR-01, DOOR-02, DOOR-03, DOOR-04, DOOR-05, DOOR-06, DOOR-07
-**Success Criteria** (what must be TRUE):
-  1. NA user can check open/closed status of each of the four doors individually (left front, right front, left back, right back)
-  2. NA user can check whether trunk and hood are closed
-  3. NA user can check per-door lock status (locked/unlocked for each door independently)
-  4. All door/lock properties return None gracefully when NA status data is unavailable
-  5. Existing EMEA door property behavior is unchanged
-**Plans:** 1/1 plans complete
 Plans:
-- [ ] 34-01-PLAN.md — Extend door helpers with NA branches and add per-door lock properties
-
-### Phase 35: EV Range, Trip & Metadata Parity
-**Goal**: NA users see electric range, trip average speed, odometer timestamp, parked status, and climate duration from already-fetched NA data
-**Depends on**: Phase 34
-**Requirements**: EVRNG-01, EVRNG-02, TRIP-01, META-01, META-02, META-03
-**Success Criteria** (what must be TRUE):
-  1. NA EV user sees electric_range populated from na_ev.electricRange; non-EV NA user sees None
-  2. NA user sees last_trip_average_speed populated from na_trip.averageSpeed
-  3. NA user sees odometer update timestamp from na_status.currentMileageTimestamp
-  4. NA user sees vehicle_moving correctly derived (inverted) from na_location.parked
-  5. NA user sees climatisation duration from na_climate.climatisationDuration
-**Plans:** 2/2 plans complete
-Plans:
-- [x] 35-01-PLAN.md — Write 15 failing tests for Phase 35 properties (RED) (completed 2026-03-13)
-- [ ] 35-02-PLAN.md — Implement NA branches and climatisation_duration triple (GREEN)
-
-### Phase 36: NA-Specific Properties
-**Goal**: NA users can access properties unique to the NA API that have no EMEA equivalent
-**Depends on**: Phase 35
-**Requirements**: NASPEC-01, NASPEC-02
-**Success Criteria** (what must be TRUE):
-  1. NA user can read aggregate security status (secure/locked/unlocked) from exteriorStatus.secure
-  2. NA user can read cruise range units indicator (MI/KM) from powerStatus.cruiseRangeUnits
-  3. Both properties return None for EMEA vehicles (no NA data source)
-**Plans**: 1 plan (unified — tests + implementation together; scope is 2 properties only)
-Plans:
-- [ ] 36-01-PLAN.md — Implement security_status and cruise_range_units with tests
-
-### Phase 37: Critical Fixes
-**Goal**: Vehicle action methods behave correctly on success and failure, EMEA token validation cannot crash on malformed tokens, and all session-level HTTP calls have explicit timeouts
-**Depends on**: Phase 36 (v1.4 complete)
-**Requirements**: CFIX-01, CFIX-02, CFIX-03, CFIX-04
-**Success Criteria** (what must be TRUE):
-  1. `set_refresh()`, `set_lock()`, and `set_honk_and_flash()` return successfully on happy path without raising exceptions
-  2. `_handle_response()` raises `APIError` (not bare `Exception`) when response is falsy
-  3. EMEA `validate_tokens()` returns False gracefully when JWT tokens are malformed or have missing exp claims, instead of crashing
-  4. EMEA `refresh_tokens()` and `get_openid_config()` complete or timeout within TIMEOUT.seconds, never hang indefinitely
-**Plans:** 1/1 plans complete
-Plans:
-- [x] 37-01-PLAN.md — Fix action method raises, APIError, JWT guard, and timeouts (TDD RED-GREEN) (completed 2026-03-15)
-
-### Phase 38: Exception Hygiene & Data Integrity
-**Goal**: All exceptions raised by the library are domain-specific types, traceback chains are preserved, and data-fetch methods handle None/missing data without crashing
-**Depends on**: Phase 37
-**Requirements**: EXCP-01, EXCP-02, EXCP-03, DATA-01, DATA-02, DATA-03
-**Success Criteria** (what must be TRUE):
-  1. No bare `Exception` is raised anywhere in vehicle action methods -- all use `APIError`, `UnsupportedOperationError`, or other domain types
-  2. `_request()` final catch preserves the original traceback chain (no `from None`)
-  3. Overly broad `except Exception` catches in `update()`, `_discover_market_config()`, and data-fetch methods are narrowed to specific expected exception types
-  4. `getVehicleData()` does not crash when API response has no "data" key
-  5. Data-fetch methods return `None` (not `False`) on error, and `expired()` compares datetimes consistently (both aware or both naive)
-**Plans**: 2 plans
-Plans:
-- [x] 38-01-PLAN.md — Replace bare Exception raises with UnsupportedOperationError, narrow vehicle/dashboard catches (TDD)
-- [x] 38-02-PLAN.md — Fix _request traceback chains, data-fetch None returns, getVehicleData guard, expired() datetime (TDD)
-
-### Phase 39: Concurrency & Code Quality
-**Goal**: Concurrent `update()` calls are safe, recursive wait methods are iterative, and type annotations are correct throughout
-**Depends on**: Phase 38
-**Requirements**: CONC-01, CONC-02, QUAL-01, QUAL-02, QUAL-03, QUAL-04
-**Success Criteria** (what must be TRUE):
-  1. Two concurrent `update()` calls do not produce duplicate API requests -- the second waits for the first to complete
-  2. Dead `response == 429` check is removed from `_handle_action_result()`
-  3. `wait_for_request()` and `wait_for_data_refresh()` use iterative loops instead of recursion
-  4. `assert self._connection is not None` replaced with explicit `if ... raise RuntimeError` checks that survive `python -O`
-  5. `model_year` type annotation is `int | None` and dead try/except in `_is_allowed_vw_domain()` is removed
-**Plans**: 2 plans
-Plans:
-- [x] 39-01-PLAN.md — Add update lock, remove dead 429 check and dead try/except (TDD) (completed 2026-03-16)
-- [ ] 39-02-PLAN.md — Convert recursion to iteration, replace assert guards, fix model_year type (TDD)
-
-### Phase 40: Code Review Gate
-**Goal**: Full codebase passes a comprehensive code review with zero critical findings remaining
-**Depends on**: Phase 39
-**Requirements**: REVIEW-01
-**Success Criteria** (what must be TRUE):
-  1. `/review-pr` run against the full codebase produces zero critical-severity recommendations
-  2. All critical findings from the review are fixed and verified in subsequent review iterations
-  3. All existing tests continue to pass after review-driven fixes (no regressions)
-**Plans**: [To be planned]
+- [ ] 23-01-PLAN.md — Connection tests: aioresponses setup, EMEA OAuth flow, action methods, data fetches, token management
+- [ ] 23-02-PLAN.md — Vehicle tests: parametrized property getters, action methods, update flows, discovery
+- [ ] 23-03-PLAN.md — Dashboard tests: Instrument hierarchy, Dashboard class, specialized subclasses, edge cases
+- [ ] 23-04-PLAN.md — Consolidation: merge phase-specific files, fill coverage gaps, verify 80%+ target
 
 ## Progress
 
@@ -201,22 +71,5 @@ Plans:
 | 19. Security + Code Cleanup | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 20. Performance + Test Coverage | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 21. Fix Critical/High PR Review Issues | v1.2 | 2/2 | Complete | 2026-03-02 |
-| 22. Fix Medium & Nitpick PR Issues | v1.2 | 2/2 | Complete | 2026-03-02 |
-| 23. Holistic Test Suite | v1.2 | 6/6 | Complete | 2026-03-03 |
-| 24. Fix PR Review Issues (error handling) | v1.2 | 2/2 | Complete | 2026-03-07 |
-| 25. Surface RVS Data as Vehicle Properties | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 26. Optional RVS Vehicle Refresh Trigger | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 27. EV Charge Summary Endpoint | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 28. Pre-Trip Climate Settings | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 29. Trip Statistics Endpoint | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 30. Remote Lock/Unlock | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 31. Honk & Flash | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 32. EV Charging Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 33. Climate Start/Stop | v1.3 | 1/1 | Complete | 2026-03-08 |
-| 34. Door & Access Parity | 1/1 | Complete    | 2026-03-13 | - |
-| 35. EV Range, Trip & Metadata Parity | 2/2 | Complete    | 2026-03-13 | - |
-| 36. NA-Specific Properties | 1/1 | Complete    | 2026-03-15 | - |
-| 37. Critical Fixes | v1.5 | Complete    | 2026-03-15 | 2026-03-15 |
-| 38. Exception Hygiene & Data Integrity | 2/2 | Complete    | 2026-03-16 | - |
-| 39. Concurrency & Code Quality | v1.5 | 1/2 | In progress | - |
-| 40. Code Review Gate | v1.5 | 0/? | Not started | - |
+| 22. Fix Medium & Nitpick PR Issues | 2/2 | Complete    | 2026-03-02 | - |
+| 23. Holistic Test Suite | 6/6 | Complete   | 2026-03-03 | - |

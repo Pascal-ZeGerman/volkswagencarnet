@@ -1429,8 +1429,65 @@ class Vehicle:
         return is_valid_path(self.attrs, Paths.MEASUREMENTS_ODO)
 
     @property
+    def health_report(self) -> dict | None:
+        """Return full vehicle health report dict (NA only)."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            return na_health
+        return None
+
+    @property
+    def is_health_report_supported(self) -> bool:
+        """Return true if vehicle health report is available."""
+        return self._states.get("na_health") is not None
+
+    @property
+    def health_report_priority(self) -> str | None:
+        """Return overall priority code from vehicle health report (e.g. GREEN, YELLOW, RED)."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            return na_health.get("overallPriorityCode")
+        return None
+
+    @property
+    def is_health_report_priority_supported(self) -> bool:
+        """Return true if health report priority code is available."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            return "overallPriorityCode" in na_health
+        return False
+
+    @property
+    def health_report_events(self) -> list | None:
+        """Return list of vehicle health maintenance events (NA only)."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            return na_health.get("vhrMaintEvents")
+        return None
+
+    @property
+    def is_health_report_events_supported(self) -> bool:
+        """Return true if health report events are available."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            return "vhrMaintEvents" in na_health
+        return False
+
+    def _na_health_event(self, event_type: str) -> dict | None:
+        """Return first VHS maintenance event matching event_type, or None."""
+        na_health = self._states.get("na_health")
+        if na_health is not None:
+            for evt in na_health.get("vhrMaintEvents", []):
+                if evt.get("eventType") == event_type:
+                    return evt
+        return None
+
+    @property
     def service_inspection(self) -> Any:
         """Return time left for service inspection."""
+        evt = self._na_health_event("INSPECTION")
+        if evt is not None:
+            return evt.get("dueInDays")
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_DAYS)
 
     @property
@@ -1441,11 +1498,16 @@ class Vehicle:
     @property
     def is_service_inspection_supported(self) -> bool:
         """Return true if days to service inspection is supported."""
+        if self._na_health_event("INSPECTION") is not None:
+            return True
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_DAYS)
 
     @property
     def service_inspection_distance(self) -> Any:
         """Return distance left for service inspection."""
+        evt = self._na_health_event("INSPECTION")
+        if evt is not None:
+            return evt.get("dueInMiles")
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_KM)
 
     @property
@@ -1456,11 +1518,16 @@ class Vehicle:
     @property
     def is_service_inspection_distance_supported(self) -> bool:
         """Return true if distance to service inspection is supported."""
+        if self._na_health_event("INSPECTION") is not None:
+            return True
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_INSPECTION_KM)
 
     @property
     def oil_inspection(self) -> Any:
         """Return time left for oil inspection."""
+        evt = self._na_health_event("OIL_SERVICE")
+        if evt is not None:
+            return evt.get("dueInDays")
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_DAYS)
 
     @property
@@ -1471,6 +1538,8 @@ class Vehicle:
     @property
     def is_oil_inspection_supported(self) -> bool:
         """Return true if days to oil inspection is supported."""
+        if self._na_health_event("OIL_SERVICE") is not None:
+            return True
         if not self.has_combustion_engine:
             return False
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_DAYS)
@@ -1478,6 +1547,9 @@ class Vehicle:
     @property
     def oil_inspection_distance(self) -> int | None:
         """Return distance left for oil inspection."""
+        evt = self._na_health_event("OIL_SERVICE")
+        if evt is not None:
+            return evt.get("dueInMiles")
         return find_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_KM)
 
     @property
@@ -1488,6 +1560,8 @@ class Vehicle:
     @property
     def is_oil_inspection_distance_supported(self) -> bool:
         """Return true if oil inspection distance is supported."""
+        if self._na_health_event("OIL_SERVICE") is not None:
+            return True
         if not self.has_combustion_engine:
             return False
         return is_valid_path(self.attrs, Paths.VEHICLE_HEALTH_OIL_KM)

@@ -1,230 +1,211 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-02-10
+**Analysis Date:** 2026-03-10
 
 ## Naming Patterns
 
 **Files:**
-- Module files use `vw_<component>.py` pattern (e.g., `vw_connection.py`, `vw_vehicle.py`, `vw_utilities.py`, `vw_const.py`, `vw_dashboard.py`, `vw_exceptions.py`)
-- Test files follow `<module>_test.py` pattern (e.g., `vw_connection_test.py`, `vw_utilities_test.py`)
-- Special integration tests: `integration_test.py`, `region_support_test.py`, `dummy_test.py`
+- `snake_case` with `vw_` prefix for all library modules: `vw_connection.py`, `vw_vehicle.py`, `vw_const.py`, `vw_utilities.py`, `vw_dashboard.py`, `vw_exceptions.py`
+- Test files use `_test.py` suffix (e.g., `vw_connection_test.py`) or `test_` prefix (e.g., `test_xqmauth.py`) — both patterns are accepted per `pyproject.toml`
 
-**Functions:**
-- Private functions use leading underscore: `_clear_cookies()`, `_discover_endpoints()`, `_request()`
-- Async functions explicitly declared with `async def`
-- Action methods use verb-first pattern: `doLogin()`, `postForm()`, `handleLoginWithPassword()`, `exchangeCodeForTokens()`
-- Query methods use `get*` prefix: `getOpenidConfig()`, `getAuthorizationPage()`, `getVehicleData()`, `getParkingPosition()`
-- Method names use mixedCase (camelCase) for all public/private functions
+**Classes:**
+- `PascalCase` for all classes: `Connection`, `Vehicle`, `Dashboard`, `Instrument`
+- Test classes use `PascalCase` with descriptive suffix: `NAOAuthLoginTest`, `VehiclePropertyTest`, `TestRegionMapping`, `MarketConfigDiscoveryTest`
 
-**Variables:**
-- Module/class variables use leading underscore: `_session`, `_connection`, `_vehicles`, `_states`, `_requests`, `_services`
-- Constants in `vw_const.py` use UPPER_SNAKE_CASE: `BASE_API`, `CLIENT_ID`, `HEADERS_SESSION`, `HEADERS_AUTH`, `MAX_RETRIES_ON_RATE_LIMIT`, `TIMEOUT`
-- Engine type constants use UPPER_SNAKE_CASE: `ENGINE_TYPE_ELECTRIC`, `ENGINE_TYPE_DIESEL`, `ENGINE_TYPE_GASOLINE`
-- Logger instances use `_LOGGER` (module-level)
-- Dictionary keys typically use camelCase for API-related keys: `{"id": ..., "status": ..., "timestamp": ...}`
+**Methods and Functions:**
+- `snake_case` for public methods: `do_login()`, `get_openid_config()`, `find_path()`
+- Exception: `camelCase` for legacy public API methods that mirror HA integration names: `doLogin()`, `setDepartureTimers()`, `get_selectivestatus()`
+- `_single_leading_underscore` for private methods: `_login_na()`, `_classify_endpoint()`, `_refresh_idk_token()`
+- Helper factory functions in tests use `_make_` prefix: `_make_na_conn()`, `_make_emea_conn()`, `_make_na_vehicle()`
 
-**Types:**
-- Type hints use Union syntax: `Dict[str, str]`, `Optional[str]`, `dict[str, object]` (newer style)
-- Union types for parameters: `src: dict | list` (PEP 604 style with `|`)
-- Return type hints explicitly declared: `-> bool`, `-> str`, `-> Dict[str, str]`
+**Variables and Attributes:**
+- `snake_case` for local variables and parameters
+- Private instance attributes use `_single_leading_underscore`: `self._session`, `self._base_api`, `self._session_tokens`
+- Module-level logger: `_LOGGER = logging.getLogger(__name__)` in every module
+- Module-level constants: `SCREAMING_SNAKE_CASE`: `MAX_RETRIES_ON_RATE_LIMIT`, `TIMEOUT`, `JWT_ALGORITHMS`
+
+**Engine type constants:**
+- String constants defined at module level in `vw_vehicle.py`:
+  ```python
+  ENGINE_TYPE_ELECTRIC = "electric"
+  ENGINE_TYPE_DIESEL = "diesel"
+  ENGINE_TYPE_GASOLINE = "gasoline"
+  ENGINE_TYPE_CNG = "cng"
+  ```
 
 ## Code Style
 
 **Formatting:**
-- Max line length: 120 characters (defined in `setup.cfg`)
-- Indentation: 4 spaces
-- Ignores E722 (do not enforce bare `except`)
+- `ruff format` — configured via `setup.cfg` / pre-commit
+- Max line length: 120 characters (`[pycodestyle] max_line_length=120`)
+- `E722` (bare except) is ignored (`[pycodestyle] ignore = E722`)
+- Trailing whitespace removed by pre-commit hook
 
 **Linting:**
-- Runs `pyupgrade` with Python 3.7+ syntax
-- Includes `mypy` type checking
-- pylint directives used sparingly (e.g., `# pylint: disable=unreachable`)
+- No dedicated ruff lint config found; mypy is the primary static checker
+- mypy enforces `disallow_untyped_defs = True` on `vw_connection.py` and `vw_vehicle.py`
+- pyupgrade enforces Python 3.7+ syntax (via pre-commit)
+- `detect-secrets` baseline enforced via pre-commit
 
-**Code quality tools:**
-- Pre-commit hooks enforce: JSON/YAML/TOML validation, no commits to main/master, trailing whitespace removal, requirements.txt sorting
-- Module docstrings at file top: `"""Communicate with Volkswagen Connect services."""`
-- Class docstrings: `"""Vehicle contains the state of sensors and methods for interacting with the car."""`
-- Function docstrings use imperative form: `"""Initialize the Vehicle with default values."""`, `"""Check if request is already in progress."""`
+**Type Annotations:**
+- All functions in `vw_connection.py` and `vw_vehicle.py` require full type annotations (enforced by mypy)
+- Use `from __future__ import annotations` at top of annotated files
+- Use `TYPE_CHECKING` guard for circular import avoidance:
+  ```python
+  from typing import TYPE_CHECKING
+  if TYPE_CHECKING:
+      from .vw_connection import Connection
+  ```
+- Use `|` union syntax (Python 3.10+ style enabled by `from __future__ import annotations`): `str | None`, `dict | list`
+- `Any` from `typing` used for aiohttp session and flexible response types
 
 ## Import Organization
 
 **Order:**
-1. Shebang and module docstring: `#!/usr/bin/env python3` followed by `"""Module description."""`
-2. Future imports: `from __future__ import annotations`
-3. Standard library imports (alphabetically)
-4. Third-party imports (alphabetically)
-5. Local/relative imports (alphabetically)
+1. `from __future__ import annotations` (if needed)
+2. Standard library modules (alphabetical)
+3. Third-party packages (aiohttp, bs4, jwt, freezegun, pytest)
+4. Intra-package relative imports (`.vw_const`, `.vw_exceptions`, `.vw_utilities`)
 
 **Example from `vw_connection.py`:**
 ```python
-#!/usr/bin/env python3
-"""Communicate with Volkswagen Connect services."""
-
 from __future__ import annotations
 
 import asyncio
 import base64
 from datetime import UTC, datetime, timedelta
 import hashlib
-import logging
-from random import randint, random
-import secrets
-from urllib.parse import parse_qs, urljoin, urlparse
-from typing import Dict, Optional
+...
 
+import aiohttp
 from aiohttp import ClientTimeout, client_exceptions
-from aiohttp.hdrs import METH_GET, METH_POST, METH_PUT
 from bs4 import BeautifulSoup
 import jwt
 
-from .vw_const import (...)
-from .vw_exceptions import (...)
-from .vw_utilities import json_loads
-from .vw_vehicle import Vehicle
+from .vw_const import (BASE_API, BRAND, ...)
+from .vw_exceptions import (AuthenticationError, APIError, ...)
+from .vw_utilities import json_loads, redact
 ```
 
-**Path Aliases:**
-- Relative imports only: `from .vw_const import ...`, `from .vw_exceptions import ...`
-- No absolute path aliases configured
-- All cross-module imports use relative notation
+**No path aliases** — all intra-package imports use relative dot notation.
 
 ## Error Handling
 
-**Custom Exception Hierarchy (from `vw_exceptions.py`):**
-```python
-class VWError(Exception):
-    """Base exception for VW CarNet errors."""
-    pass
+**Custom Exception Hierarchy:**
+- Base: `VWError(Exception)` in `volkswagencarnet/vw_exceptions.py`
+- Subclasses: `AuthenticationError`, `APIError`, `SPINError`, `RedirectError`, `RequestError`
+- `TermsAndConditionsError` extends `AuthenticationError` (double inheritance)
 
-class AuthenticationError(VWError):
-    """Authentication failed."""
-    pass
-
-class APIError(VWError):
-    """API request failed."""
-    pass
-
-class SPINError(VWError):
-    """S-PIN related error."""
-    pass
-
-class RedirectError(VWError):
-    """Redirect handling failed."""
-    pass
-
-class RequestError(VWError):
-    """Request execution failed."""
-    pass
-
-class TermsAndConditionsError(AuthenticationError):
-    """Terms and Conditions need to be accepted."""
-    pass
-```
-
-**Error Handling Patterns:**
-- Exceptions raised with descriptive messages: `raise AuthenticationError("Wrong username or password")`
-- Errors logged at appropriate levels before raising: `_LOGGER.error(...); raise APIError(...)`
-- Warnings for recoverable errors: `_LOGGER.warning("Failed to login...")`
-- Debug logs for detailed flow: `_LOGGER.debug("Requesting openid config from...")`
-- Try-except blocks catch broad exceptions then log: `except Exception as e: _LOGGER.warning(...)`
-- Some methods re-raise with context: `except ValueError as valerr: raise KeyError(...) from valerr`
+**Patterns:**
+- Raise specific custom exceptions with descriptive messages at failure site:
+  ```python
+  raise AuthenticationError("Wrong username or password")
+  raise RedirectError("Too many redirects")
+  raise APIError(f"Failed to fetch {url}: {e}")
+  ```
+- Never use bare `except:` (style guideline, though `E722` is ignored in pycodestyle)
+- Catch specific exception types and re-raise or convert:
+  ```python
+  except client_exceptions.ClientConnectionError as e:
+      raise AuthenticationError(f"Connection error: {e}") from e
+  ```
+- Callers that should not propagate errors return `False` instead:
+  ```python
+  except Exception as e:
+      _LOGGER.error("Login failed: %s", e)
+      return False
+  ```
+- Rate limiting: HTTP 429 is caught and returns `{"state": "Throttled"}` from `Connection.get()`
+- Bare `Exception` is used in `Vehicle._handle_response()` intentionally for generic topic errors
 
 ## Logging
 
-**Framework:** Python's built-in `logging` module with module-level logger
+**Framework:** Python stdlib `logging` module
 
-**Pattern:**
+**Logger instantiation** — every module declares at module level:
 ```python
-import logging
 _LOGGER = logging.getLogger(__name__)
 ```
 
-**Usage Levels:**
-- `_LOGGER.debug()`: Low-level detail (endpoint discovery, request parameters, state details)
-- `_LOGGER.info()`: Important events (login success, endpoint found, vehicle discovered)
-- `_LOGGER.warning()`: Recoverable errors (failed login attempt, authorization error)
-- `_LOGGER.error()`: Critical failures (authentication error, endpoint discovery failed)
+**Log levels used:**
+- `_LOGGER.debug()` — flow tracing, token details (redacted), URL decisions
+- `_LOGGER.info()` — significant state transitions (login success, vehicle found)
+- `_LOGGER.warning()` — non-fatal issues (rate limiting, discovery failure, throttling)
+- `_LOGGER.error()` — operation failures (login failed, lock failed)
 
-**Examples from codebase:**
+**Credential redaction — mandatory for any token/secret logging:**
 ```python
-_LOGGER.debug("Initiating new login")
-_LOGGER.info("Found working base API endpoint: %s", candidate)
-_LOGGER.warning("Error during fetching authorization page: %s", str(e))
-_LOGGER.error("Failed to get OpenID configuration, status: %s", req.status)
+from .vw_utilities import redact
+_LOGGER.debug("Token: %s", redact(token_value))
 ```
+`redact()` returns first 8 characters + `"..."` or `"(none)"` for empty/None.
+
+**Log message formatting:**
+- Use `%s` formatting (not f-strings) in logger calls: `_LOGGER.debug("URL: %s", url)`
+- Do NOT log `response.headers` or `response.text` in `_request()` (enforced by `code_quality_test.py`)
+- Only log `response.status` and URL in `_request()` debug calls
 
 ## Comments
 
 **When to Comment:**
-- Class-level summary docstring at class definition (never inline)
-- Method docstrings explaining purpose, not repeating code
-- Inline comments for complex logic or non-obvious decisions
-- `# TODO` comments for future work (seen in `vw_vehicle.py` line 16-20 for image endpoints)
-- pylint directives for necessary violations: `# pylint: disable=protected-access`
-- `# noinspection` comments for IDE hints: `# noinspection PyMissingConstructor`
+- Inline comments explain non-obvious decisions, especially API quirks and regional differences
+- `# noinspection PyPep8Naming` for intentional camelCase methods
+- Section dividers in long test files use `# ---...--- #` style banners
 
-**JSDoc/TSDoc:**
-- Not used (Python codebase)
-- Standard Python docstring format with triple quotes
-- Docstrings follow imperative form
-- Method docstring example:
-```python
-def extract_state_token(self, page_content: str) -> Optional[str]:
-    """Extract state token from response."""
-```
+**Docstrings:**
+- All public methods and classes have a one-line docstring minimum
+- Complex methods use multi-line Google-style docstrings with `Args:`, `Returns:`, `Raises:`, `Example:`:
+  ```python
+  def redact(value: str | None) -> str:
+      """Redact a credential value for safe logging.
+
+      Args:
+          value: The credential string to redact.
+
+      Returns:
+          Redacted string safe for log output.
+
+      Examples:
+          >>> redact("eyJhbGci...")
+          'eyJhbGci...'
+      """
+  ```
+- Doctests in `vw_utilities.py` functions serve as both documentation and executable examples
 
 ## Function Design
 
-**Size:** Functions range from 5-100+ lines. Longer functions handle complex logic like OAuth flow or HTTP request retries.
+**Size:** Long methods are acceptable in `vw_connection.py` for complex OAuth flows (functions like `_get_authorization_code_na()` are deliberately detailed)
 
 **Parameters:**
-- Use type hints on all parameters: `url: str`, `vin="", tries=0`
-- Default parameters in function signature: `async def doLogin(self, tries: int = 1)`
-- Keyword-only arguments for optional parameters
-- Consistent parameter ordering: `self`, required params, optional params with defaults
+- Keyword-only arguments used for Connection constructor: all parameters after `session`, `username`, `password` have defaults
+- `**kwargs` used in test helper factories to pass through to `Connection()`
 
 **Return Values:**
-- Type hints on all return values: `-> bool`, `-> str`, `-> Dict[str, str]`, `-> Optional[str]`
-- Boolean methods (status checks) return bool: `_in_progress() -> bool`, `_discover_endpoints() -> bool`
-- Data retrieval methods return data or None: `extract_state_token() -> Optional[str]`, `find_path() -> Any`
+- Boolean `True`/`False` for login/operation success/failure
+- `None` for operations that have no meaningful return
+- `dict` for API responses (typed as `dict[str, Any]`)
+- `str | None` for optional string results
+- Async methods that fetch data return `dict | None`
 
 ## Module Design
 
 **Exports:**
-- Classes: `Connection`, `Vehicle`, custom exceptions
-- Functions: Utility functions like `find_path()`, `is_valid_path()`, `json_loads()`
-- Constants: Configuration in `vw_const.py` (endpoints, headers, client IDs)
+- `volkswagencarnet/__init__.py` exists but is minimal (no explicit `__all__`)
+- Public API surfaces are `Connection` (from `vw_connection`) and `Vehicle` (from `vw_vehicle`)
 
-**Barrel Files:**
-- Not used; imports are explicit from specific modules
-- Each module imports what it needs from others
+**Constants Module (`vw_const.py`):**
+- All API credentials, endpoints, headers, and region configs live in `vw_const.py`
+- Region configs use a `REGION_CONFIGS` dict keyed by `"EMEA"` / `"NA"`:
+  ```python
+  REGION_CONFIGS = {
+      "EMEA": {"base_api": "...", "homeregion": "...", "client_id": "..."},
+      "NA":   {"base_api": "...", "homeregion": None,  "client_id": "..."},
+  }
+  ```
+- Helper functions `get_region_from_country()` and `get_region_config()` exported from `vw_const`
 
-**Module Structure Pattern:**
-```python
-# File: vw_<name>.py
-#!/usr/bin/env python3
-"""Module description."""
-
-from __future__ import annotations
-
-[imports]
-
-_LOGGER = logging.getLogger(__name__)
-[module constants]
-
-class ClassName:
-    """Class docstring."""
-
-    def __init__(...):
-        """Initialize."""
-
-    async def _private_async_method(...):
-        """Private async method."""
-
-    def public_method(...):
-        """Public method."""
-```
+**Barrel Files:** Not used — each module is imported directly by path.
 
 ---
 
-*Convention analysis: 2026-02-10*
+*Convention analysis: 2026-03-10*

@@ -1,0 +1,23 @@
+{
+  "data": {
+    "odoReadCount": 19850,
+    "overallPriorityCode": "GREEN",
+    "applicableCategories": ["MAINTENANCE"],
+    "vhrMaintEvents": [
+      {
+        "eventType": "OIL_SERVICE",
+        "description": "Oil change",
+        "dueInDays": 180,
+        "dueInMiles": 5000,
+        "priorityCode": "GREEN"
+      },
+      {
+        "eventType": "INSPECTION",
+        "description": "Regular inspection",
+        "dueInDays": 365,
+        "dueInMiles": 10000,
+        "priorityCode": "GREEN"
+      }
+    ]
+  }
+}

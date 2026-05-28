@@ -1,104 +1,86 @@
 # Technology Stack
 
-**Analysis Date:** 2026-02-10
+**Analysis Date:** 2026-03-10
 
 ## Languages
 
 **Primary:**
-- Python 3.11+ - Core library implementation (all files in `volkswagencarnet/`)
+- Python 3.11+ - All library code, tests, build scripts
 
 ## Runtime
 
 **Environment:**
-- Python 3.11+ (minimum specified in `setup.cfg`)
-- Virtual environment via venv (recommended in CLAUDE.md)
-- CPython 3.13.5 (actual environment detected)
+- Python 3.11+ (minimum), 3.13 used in pre-commit config
 
 **Package Manager:**
-- pip (via requirements.txt)
-- setuptools >= 65 (build system)
-- Lockfile: `requirements.txt`, `requirements-test.txt` (frozen, manually maintained)
+- pip with venv (`venv/` and `.venv/` both present)
+- Lockfile: Not present (requirements.txt pins without hashes)
 
 ## Frameworks
 
 **Core:**
-- aiohttp - Async HTTP client for API communication (`volkswagen.carnet/vw_connection.py`)
+- None — pure Python library (no web framework)
+- `aiohttp` — async HTTP client, the primary I/O mechanism throughout `vw_connection.py`
 
 **Testing:**
-- pytest >= 7.0.0 - Test runner and framework
-- pytest-asyncio - Async test support
-- pytest-cov >= 3.0.0 - Code coverage reporting
-- pytest-subtests - Subtest support for parameterized tests
+- `pytest` >=7.0.0 — test runner
+- `pytest-asyncio` — async test support (strict mode, configured in `pyproject.toml`)
+- `pytest-cov` >=3.0.0 — coverage reporting
+- `pytest-subtests` — subtest support
+- `aioresponses` >=0.7.4 — mock aiohttp responses in unit tests
+- `freezegun` >=1.0.0 — datetime mocking
 
 **Build/Dev:**
-- setuptools_scm >= 6.0 - Automatic versioning from git tags (writes to `volkswagencarnet/version.py`)
-- pre-commit - Git hook framework (`setup.cfg` and `.pre-commit-config.yaml`)
-- ruff - Code formatting tool (mentioned in CLAUDE.md for `ruff format`)
-
-**Utilities:**
-- beautifulsoup4 - HTML parsing for OAuth form extraction (`vw_connection.py`)
-- lxml - XML parsing library (dependency of beautifulsoup4)
-- PyJWT - JWT token validation for OAuth tokens (`vw_connection.py`)
-
-**Testing Dependencies:**
-- freezegun >= 1.0.0 - Time mocking for testing
+- `setuptools` >=65 — package build backend
+- `wheel` >=0.37.0 — wheel packaging
+- `setuptools_scm` >=6.0 — version derived from git tags, written to `volkswagencarnet/version.py`
+- `pre-commit` — pre-commit hooks for code quality
+- `ruff` — code formatting (referenced in `CLAUDE.md`, not listed in requirements-test.txt)
+- `mypy` v1.15.0 — type checking via pre-commit hook (targets `vw_connection.py` and `vw_vehicle.py`)
+- `pyupgrade` v2.31.0 — auto-upgrades to Python 3.7+ syntax
+- `detect-secrets` v1.5.0 — prevents committing secrets, baseline in `.secrets.baseline`
 
 ## Key Dependencies
 
 **Critical:**
-- aiohttp [all async HTTP] - All API communication, OAuth flows, token management
-- pyjwt [token validation] - Validates JWT tokens from OAuth identity provider
-- beautifulsoup4 [HTML parsing] - Extracts state tokens and form fields during OAuth login
-- lxml [XML parsing] - HTML parsing backend
+- `aiohttp` — all HTTP requests (GET/POST/PUT), session management, timeouts; used throughout `volkswagencarnet/vw_connection.py`
+- `beautifulsoup4` — HTML parsing of OAuth login forms, state token extraction; used in `vw_connection.py`
+- `lxml` — parser backend for BeautifulSoup (faster than html.parser)
+- `pyjwt` — JWT decode/verify for IDK tokens, RS256 algorithm; used in `vw_connection.py`
 
 **Infrastructure:**
-- setuptools_scm [versioning] - Automatic semantic versioning from git tags (stores in `version.py`)
+- `cryptography` — JWT signature verification support (test dependency, may also support RS256 in runtime)
 
 ## Configuration
 
 **Environment:**
-- Region auto-detection from `country` parameter (maps to EMEA or NA via `vw_const.py`)
-- EMEA (default): Base API `https://emea.bff.cariad.digital`, Client ID `a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com`
-- North America: Base API `https://b-h-s.spr.us00.p.con-veh.net`, Client ID `b680e751-7e1f-4008-8ec1-3a528183d215@apps_vw-dilab_com` (2026 confirmed)
-- Identity endpoint (NA only): `https://identity.na.vwgroup.io`
-- No .env file used - credentials passed at runtime
+- No `.env` loading library used — credentials passed directly as constructor arguments to `Connection(session, username, password, country)`
+- Testing credentials stored in `tests/credentials.py.sample` (sample only)
+- `testing_creds.env` file present at project root (not read by library code — for manual testing only)
 
 **Build:**
-- `setup.cfg` - Setuptools configuration, Python requirements, code style (max 120 chars)
-- `pyproject.toml` - PEP 517 build backend (setuptools), pytest configuration
-- `.pre-commit-config.yaml` - Git hooks for:
-  - JSON/YAML/TOML validation
-  - No commits to main/master branches
-  - Python 3.7+ syntax upgrade via pyupgrade
-  - mypy type checking
-  - Trailing whitespace cleanup
+- `pyproject.toml` — build system config, pytest options, `setuptools_scm` config
+- `setup.cfg` — package metadata, install_requires, pycodestyle, coverage, mypy settings
+- `.pre-commit-config.yaml` — pre-commit hooks configuration
+
+**Pytest configuration** (`pyproject.toml`):
+- `asyncio_mode = "strict"` — all async tests must be explicitly marked
+- `testpaths = ["tests"]`
+- `norecursedirs = ["tests/e2e"]` — e2e tests excluded from default run
 
 ## Platform Requirements
 
 **Development:**
-- Python 3.11+ (3.13.5 tested)
-- venv (project uses virtual environment)
-- pip >= 20.0 (for installing from requirements.txt)
-- Pre-commit hooks (optional, recommended in CLAUDE.md)
+- Python 3.11+
+- Virtual environment required (system Python is PEP 668 externally managed)
+- Use `venv/bin/python` or `.venv/bin/python` for commands
 
 **Production:**
-- Python 3.11+ runtime
-- aiohttp-compatible async environment (used in Home Assistant via `vw_dashboard.py`)
-- HTTPS connectivity to Volkswagen API endpoints (EMEA and NA)
-
-## Code Quality Standards
-
-**Formatting:**
-- Max line length: 120 characters (configured in `setup.cfg`)
-- Ignores E722 (do not enforce bare except)
-- Linting via ruff (format checks in pre-commit)
-- Type checking via mypy (in pre-commit)
-
-**Testing Coverage:**
-- Coverage configured in `setup.cfg` to track branch coverage
-- Omits `tests/*` and `volkswagencarnet/version.py` from coverage
-- Test discovery: files matching `*_test.py` in `tests/` directory
+- No server required — this is a client library
+- Intended for use as a dependency (e.g., Home Assistant integration)
+- Deployed via PyPI as `volkswagencarnet` package
+- Versioned from git tags via `setuptools_scm`
 
 ---
 
-*Stack analysis: 2026-02-10*
+*Stack analysis: 2026-03-10*

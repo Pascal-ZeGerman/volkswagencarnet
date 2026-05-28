@@ -259,8 +259,12 @@ class Connection:
 
     def _is_allowed_vw_domain(self, url: str) -> bool:
         """Return True if URL hostname ends with a known VW Group domain suffix."""
-        hostname = urlparse(url).hostname or ""
-        return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
+        try:
+            hostname = urlparse(url).hostname or ""
+            return any(hostname.endswith(suffix) for suffix in VW_DOMAIN_ALLOWLIST)
+        except Exception:
+            _LOGGER.debug("URL parse failed for domain check: %s", url)
+            return False
 
     async def _discover_market_config(self) -> bool:
         """Discover and cache market configuration from VW OIDC discovery endpoint.
@@ -287,7 +291,7 @@ class Connection:
         timeout = ClientTimeout(total=10)
 
         for candidate in candidates:
-            config_url = f"{candidate}/login/v1/idk/openid-configuration"
+            config_url = f"{candidate}/auth/v1/idk/oidc/openid-configuration"
             try:
                 _LOGGER.debug("Attempting market config discovery at %s", config_url)
                 async with self._session.get(url=config_url, timeout=timeout) as resp:
@@ -313,7 +317,7 @@ class Connection:
                     _LOGGER.debug("Market config discovery succeeded via %s", candidate)
                     return True
 
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 _LOGGER.debug("Config discovery attempt failed for %s: %s", candidate, exc)
                 continue
 
@@ -446,7 +450,7 @@ class Connection:
                 "token_endpoint": token_ep,
             }
 
-        config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
+        config_url = f"{self._base_api}/auth/v1/idk/oidc/openid-configuration"
         _LOGGER.debug("Requesting openid config from base API: %s", config_url)
         req = await self._session.get(url=config_url, timeout=ClientTimeout(total=TIMEOUT.seconds))
         if req.status != 200:
@@ -1442,15 +1446,7 @@ class Connection:
                     status = resp.status
 
                 if status == 200:
-                    try:
-                        data = await resp.json(content_type=None)
-                    except (json.JSONDecodeError, ValueError) as exc:
-                        body_text = await resp.text()
-                        _LOGGER.warning(
-                            "NA vehicle session: got 200 but body is not valid JSON: %s — body: %.300s",
-                            exc, body_text,
-                        )
-                        return None
+                    data = await resp.json()
                     _LOGGER.debug("NA vehicle session 200 response keys: %s", list(data.keys()))
                     # Support both flat {"carnetVehicleToken": "..."} and wrapped {"data": {"carnetVehicleToken": "..."}}
                     payload = data.get("data") if "data" in data else data
@@ -1634,21 +1630,11 @@ class Connection:
                         allow_redirects=False,
                     )
                     _LOGGER.debug("NA RVS %s: retry after 401 returned status=%s for vin=%s", label, resp.status, redact(vin))
-                    if resp.status not in (200, 202, 204):
+                    if resp.status != 200:
                         _LOGGER.warning("NA RVS %s: 401 retry failed (status=%s), giving up", label, resp.status)
                         return None
-                if resp.status == 204:
-                    return None  # 204 No Content — nothing to parse
-                if resp.status in (200, 202):
-                    try:
-                        data = await resp.json(content_type=None)
-                    except (json.JSONDecodeError, aiohttp.ContentTypeError) as exc:
-                        body_preview = await resp.text()
-                        _LOGGER.warning(
-                            "NA RVS %s: failed to decode JSON for vin=%s: %s — body: %.200s",
-                            label, redact(vin), exc, body_preview,
-                        )
-                        return None
+                if resp.status == 200:
+                    data = await resp.json()
                     if isinstance(data, dict) and "data" in data:
                         data = data["data"]
                     _LOGGER.debug("NA RVS %s response: %s", label, data)
@@ -1676,131 +1662,6 @@ class Connection:
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             _LOGGER.warning("NA RVS %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
-
-    async def _get_na_vehicle_data(self, vin: str) -> dict | None:
-        """Fetch NA vehicle telemetry from RVS and supplemental endpoints.
-
-        Calls ``_create_na_vehicle_session(vin)`` to obtain a
-        ``carnetVehicleToken``, then fetches:
-
-        - ``GET {base_api}/rvs/v1/location/vehicle/{vehicle_id}`` — GPS location
-        - ``GET {base_api}/rvs/v1/vehicle/{vehicle_id}`` — vehicle status / lock state
-        - ``GET {base_api}/ev/v1/vehicle/{vehicle_id}/charge/summary`` — EV battery/charging (404 for non-EV)
-        - ``GET {base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/settings`` — climate settings (404 for non-EV)
-        - ``GET {base_api}/remotetripstats/v1/vehicle/{vehicle_id}?type=SHORT_TERM`` — last trip stats
-
-        On HTTP 401 from any endpoint, the cached vehicle session is
-        invalidated and ``_create_na_vehicle_session`` is called once more
-        before a single retry.
-
-        Raw response bodies are logged at DEBUG level for diagnostics.
-
-        Token values (vehicle token, IDK tokens) are NEVER logged.
-
-        Args:
-            vin: Vehicle Identification Number.
-
-        Returns:
-            A dict with keys ``"na_location"``, ``"na_status"``, ``"na_ev"``,
-            ``"na_climate"``, and ``"na_trip"`` (any may be ``None`` if that
-            endpoint failed or is unsupported).  Returns ``None`` only when
-            vehicle session creation itself fails.
-        """
-        # Check RVS cache — skip API roundtrip if data is fresh
-        cached = self._na_rvs_cache.get(vin)
-        if cached and (time.time() - cached["fetched_at"]) < self._rvs_cache_ttl:
-            _LOGGER.debug(
-                "NA vehicle data: returning cached RVS data for vin=%s (age=%.1fs, ttl=%ds)",
-                redact(vin), time.time() - cached["fetched_at"], self._rvs_cache_ttl,
-            )
-            return cached["data"]
-
-        # Ensure IDK token is valid before proceeding
-        if not await self.validate_tokens():
-            _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", redact(vin))
-            return None
-
-        _LOGGER.debug("NA vehicle data: fetching data for vin=%s", redact(vin))
-        vehicle_token = await self._create_na_vehicle_session(vin)
-        if vehicle_token is None:
-            return None
-
-        # Parse userId from IDK id_token for RVS headers
-        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
-        decode_failed = False
-        try:
-            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
-            user_id = claims.get("sub", "")
-        except jwt.exceptions.InvalidTokenError as exc:
-            _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
-            user_id = ""
-            decode_failed = True
-
-        if not user_id:
-            if not decode_failed:
-                _LOGGER.warning(
-                    "NA: IDK id_token has no 'sub' claim for vin=%s — skipping vehicle data fetch",
-                    redact(vin),
-                )
-            return None
-
-        # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
-        rvs_headers: dict = {
-            "Authorization": f"Bearer {vehicle_token}",
-            "x-user-id": user_id,
-            "x-app-version": APP_VERSION,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        # Add x-mobile-session-id if cached from prior session response
-        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
-        if session_id:
-            rvs_headers["x-mobile-session-id"] = session_id
-
-        base_api = self._base_api
-        # Use the vehicleId (UUID from garage) for RVS paths — same as vehicle session.
-        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
-
-        # Fetch location and status via deduplicated helper
-        location_url = f"{base_api}/rvs/v1/location/vehicle/{vehicle_id}"
-        status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
-        _LOGGER.debug("NA vehicle data: fetching RVS for vin=%s urls=%s, %s", redact(vin), location_url, status_url)
-
-        location_data = await self._fetch_rvs_endpoint(location_url, vin, dict(rvs_headers), "location")
-        status_data = await self._fetch_rvs_endpoint(status_url, vin, dict(rvs_headers), "status")
-
-        # Fetch optional supplemental endpoints (404 expected for non-EV/non-supported vehicles)
-        ev_data = await self._fetch_na_optional_endpoint(
-            f"{base_api}/ev/v1/vehicle/{vehicle_id}/charge/summary",
-            vin, dict(rvs_headers), "ev_charge",
-        )
-        climate_data = await self._fetch_na_optional_endpoint(
-            f"{base_api}/ev/v1/vehicle/{vehicle_id}/pretripclimate/settings",
-            vin, dict(rvs_headers), "climate",
-        )
-        trip_data = await self._fetch_na_optional_endpoint(
-            f"{base_api}/remotetripstats/v1/vehicle/{vehicle_id}?type=SHORT_TERM",
-            vin, dict(rvs_headers), "trip_stats",
-        )
-
-        # Return partial data even if one endpoint failed
-        result = {
-            "na_location": location_data,
-            "na_status": status_data,
-            "na_ev": ev_data,
-            "na_climate": climate_data,
-            "na_trip": trip_data,
-        }
-        # Only cache if vehicle session is still valid (not invalidated by a 401)
-        if self._na_tokens.get(vin, {}).get("vehicle_session"):
-            self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
-        else:
-            _LOGGER.debug(
-                "NA vehicle data: skipping RVS cache for vin=%s — vehicle session was invalidated during fetch",
-                redact(vin),
-            )
-        return result
 
     async def _fetch_na_optional_endpoint(
         self,
@@ -1895,6 +1756,105 @@ class Connection:
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             _LOGGER.warning("NA optional endpoint %s fetch exception for %s: %s", label, redact(vin), exc)
         return None
+
+    async def _get_na_vehicle_data(self, vin: str) -> dict | None:
+        """Fetch NA vehicle telemetry from RVS endpoints.
+
+        Calls ``_create_na_vehicle_session(vin)`` to obtain a
+        ``carnetVehicleToken``, then fetches:
+
+        - ``GET {base_api}/rvs/v1/location/vehicle/{vehicle_id}`` — GPS location
+        - ``GET {base_api}/rvs/v1/vehicle/{vehicle_id}`` — vehicle status / lock state
+        - ``GET {base_api}/vhs/v2/vehicle/{vehicle_id}/refresh`` — vehicle health report
+
+        On HTTP 401 from either RVS endpoint, the cached vehicle session is
+        invalidated and ``_create_na_vehicle_session`` is called once more
+        before a single retry.
+
+        Raw response bodies are logged at DEBUG level for diagnostics.
+
+        Token values (vehicle token, IDK tokens) are NEVER logged.
+
+        Args:
+            vin: Vehicle Identification Number.
+
+        Returns:
+            A dict with keys ``"na_location"``, ``"na_status"``, and
+            ``"na_health"`` (any may be ``None`` if that particular fetch
+            failed).  Returns ``None`` only when vehicle session creation
+            itself fails (no data at all possible).
+        """
+        # Check RVS cache — skip API roundtrip if data is fresh
+        cached = self._na_rvs_cache.get(vin)
+        if cached and (time.time() - cached["fetched_at"]) < self._rvs_cache_ttl:
+            _LOGGER.debug(
+                "NA vehicle data: returning cached RVS data for vin=%s (age=%.1fs, ttl=%ds)",
+                redact(vin), time.time() - cached["fetched_at"], self._rvs_cache_ttl,
+            )
+            return cached["data"]
+
+        # Ensure IDK token is valid before proceeding
+        if not await self.validate_tokens():
+            _LOGGER.warning("NA: validate_tokens() returned False, skipping vehicle data fetch for %s", redact(vin))
+            return None
+
+        _LOGGER.debug("NA vehicle data: fetching data for vin=%s", redact(vin))
+        vehicle_token = await self._create_na_vehicle_session(vin)
+        if vehicle_token is None:
+            return None
+
+        # Parse userId from IDK id_token for RVS headers
+        idk_id_token = self._na_tokens.get("idk", {}).get("id_token", "")
+        try:
+            claims = jwt.decode(idk_id_token, options={"verify_signature": False})
+            user_id = claims.get("sub", "")
+        except jwt.exceptions.InvalidTokenError as exc:
+            _LOGGER.warning("NA: failed to decode IDK id_token for x-user-id header: %s", exc)
+            user_id = ""
+
+        if not user_id:
+            return None
+
+        # Build RVS headers (vehicle_token used in Authorization — NEVER logged)
+        rvs_headers: dict = {
+            "Authorization": f"Bearer {vehicle_token}",
+            "x-user-id": user_id,
+            "x-app-version": APP_VERSION,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        # Add x-mobile-session-id if cached from prior session response
+        # TBD: field name "x-mobile-session-id" derived from APK analysis (d20/i.java),
+        # not yet confirmed from live HTTP traffic — field name from APK decompilation only.
+        session_id = self._na_tokens.get(vin, {}).get("vehicle_session", {}).get("session_id")
+        if session_id:
+            rvs_headers["x-mobile-session-id"] = session_id
+
+        base_api = self._base_api
+        # Use the vehicleId (UUID from garage) for RVS paths — same as vehicle session.
+        vehicle_id = self._na_tokens.get(vin, {}).get("vehicle_id", vin)
+
+        # Fetch location and status via deduplicated helper
+        location_url = f"{base_api}/rvs/v1/location/vehicle/{vehicle_id}"
+        status_url = f"{base_api}/rvs/v1/vehicle/{vehicle_id}"
+        _LOGGER.debug("NA vehicle data: fetching RVS for vin=%s urls=%s, %s", redact(vin), location_url, status_url)
+
+        location_data = await self._fetch_rvs_endpoint(location_url, vin, dict(rvs_headers), "location")
+        status_data = await self._fetch_rvs_endpoint(status_url, vin, dict(rvs_headers), "status")
+
+        # Vehicle health report (optional — 404 on vehicles without VHS support)
+        health_url = f"{base_api}/vhs/v2/vehicle/{vehicle_id}/refresh"
+        health_data = await self._fetch_rvs_endpoint(health_url, vin, dict(rvs_headers), "vehicle_health")
+
+        # Return partial data even if one endpoint failed
+        result = {
+            "na_location": location_data,
+            "na_status": status_data,
+            "na_health": health_data,
+        }
+        self._na_rvs_cache[vin] = {"data": result, "fetched_at": time.time()}
+        return result
 
     # NA write commands (lock/unlock, honk/flash, EV charging, climate) #
 
@@ -2261,7 +2221,7 @@ class Connection:
             _LOGGER.error("NA network error during login: %s", error)
             self._session_logged_in = False
             return False
-        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
+        except Exception as error:
             _LOGGER.error("NA unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
@@ -2317,15 +2277,21 @@ class Connection:
                 self._session_logged_in = False
                 return False
 
+            # Store directly as "identity"
             self._session_tokens["identity"] = tokens
+
+            # Update authorization header
             self._session_headers["Authorization"] = (
                 "Bearer " + self._session_tokens["identity"]["access_token"]
             )
+
             _LOGGER.debug("Successfully stored authentication tokens")
+
+            # Mark session as logged in
             self._session_logged_in = True
             return True
 
-        # Note: EMEA login catches AuthenticationError and returns False, while NA re-raises it.
+        # TODO: EMEA login swallows AuthenticationError unlike NA which re-raises. Align behavior in future cleanup.
         except (AuthenticationError, RequestError, RedirectError) as error:
             _LOGGER.error("Authentication error during login: %s", error)
             self._session_logged_in = False
@@ -2338,7 +2304,7 @@ class Connection:
             _LOGGER.error("Missing required data during login: %s", error)
             self._session_logged_in = False
             return False
-        except (TypeError, ValueError, AttributeError, asyncio.TimeoutError) as error:
+        except Exception as error:
             _LOGGER.error("Unexpected error during login: %s", error, exc_info=True)
             self._session_logged_in = False
             return False
@@ -2347,6 +2313,8 @@ class Connection:
         response = await response_raw.json(loads=json_loads)
         if not response:
             raise APIError("Invalid or no response from action endpoint")
+        if response == 429:
+            return {"id": None, "state": "Throttled"}
         request_id = response.get("data", {}).get("requestID", 0)
         _LOGGER.debug("Request returned with request id: %s", request_id)
         return {"id": str(request_id)}
@@ -2367,7 +2335,7 @@ class Connection:
             if self._session_tokens.get("identity", {}).get("refresh_token"):
                 _LOGGER.info("Revoking Identity Refresh Token")
                 params = {"token": self._session_tokens["identity"]["refresh_token"]}
-                await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
+                await self.post(f"{self._base_api}/auth/v1/idk/oidc/revoke", data=params)
 
     # HTTP methods to API
     async def _request(self, method: str, url: str, return_raw: bool = False, _retry_401: bool = False,
@@ -2456,7 +2424,7 @@ class Connection:
                                 "Not success status code [%s]",
                                 response.status,
                             )
-                    except (json.JSONDecodeError, aiohttp.ContentTypeError, KeyError, ValueError) as exc:
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
                         res = {}
                         _LOGGER.warning(
                             "Request to '%s' failed to parse response [status %s]: %s",
@@ -2480,7 +2448,7 @@ class Connection:
             except (client_exceptions.ClientConnectionError, client_exceptions.ServerTimeoutError) as net_err:
                 if _no_retry or attempt >= MAX_RETRIES_ON_RATE_LIMIT:
                     await self.update_service_status(url, 1000)
-                    raise
+                    raise net_err from None
                 delay = float(2 ** attempt)
                 attempt += 1
                 _LOGGER.warning(
@@ -2491,12 +2459,12 @@ class Connection:
                 # continue is implicit — while loop wraps the try/except
 
             except client_exceptions.ClientResponseError as httperror:
-                await self.update_service_status(url, httperror.status)
-                raise
+                await self.update_service_status(url, httperror.code)
+                raise httperror from None
 
-            except (TypeError, ValueError, asyncio.TimeoutError) as error:
+            except Exception as error:
                 await self.update_service_status(url, 1000)
-                raise
+                raise error from None
 
     async def get(self, url: str, vin: str = "", tries: int = 0) -> Any:
         """Perform a get query."""
@@ -2583,11 +2551,11 @@ class Connection:
                 response["refreshTimestamp"] = datetime.now(UTC)
                 return response
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning(
                 "Could not fetch information for pending requests, error: %s", error
             )
-        return None
+        return False
 
     async def getOperationList(self, vin: str) -> Any:
         """Collect operationlist for VIN, supported/licensed functions."""
@@ -2608,7 +2576,7 @@ class Connection:
             else:
                 _LOGGER.info("Could not fetch operation list: %s", response)
                 data = {"error": "unknown"}
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch operation list, error: %s", error)
             data = {"error": "unknown"}
         return data
@@ -2634,9 +2602,9 @@ class Connection:
                 response.update({"refreshTimestamp": datetime.now(UTC)})
                 return response
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch selectivestatus, error: %s", error)
-        return None
+        return False
 
     async def getVehicleData(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2645,15 +2613,15 @@ class Connection:
         try:
             response = await self.get(f"{self._base_api}/vehicle/v2/vehicles", "")
 
-            for vehicle in (response.get("data") or []):
+            for vehicle in response.get("data"):
                 if vehicle.get("vin") == vin:
                     return {"vehicle": vehicle}
 
             _LOGGER.warning("Could not fetch vehicle data for vin %s", vin)
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch vehicle data, error: %s", error)
-        return None
+        return False
 
     async def getParkingPosition(self, vin: str) -> Any:
         """Get information about the parking position."""
@@ -2681,9 +2649,9 @@ class Connection:
                 _LOGGER.info(
                     "Unhandled error while trying to fetch parkingposition data"
                 )
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch parkingposition, error: %s", error)
-        return None
+        return False
 
     async def getTripLast(self, vin: str) -> Any:
         """Get car information like VIN, nickname, etc."""
@@ -2703,9 +2671,9 @@ class Connection:
                     "Could not fetch last trip data, server response: %s", response
                 )
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return None
+        return False
 
     async def getTripRefuel(self, vin: str) -> Any:
         """Get information about the trip since last refuel"""
@@ -2725,9 +2693,9 @@ class Connection:
                     "Could not fetch refuel trip data, server response: %s", response
                 )
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return None
+        return False
 
     async def getTripLongterm(self, vin: str) -> Any:
         """Get information about the trip last longterm"""
@@ -2747,9 +2715,9 @@ class Connection:
                     "Could not fetch longterm trip data, server response: %s", response
                 )
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not fetch last trip data, error: %s", error)
-        return None
+        return False
 
     async def wakeUpVehicle(self, vin: str) -> Any:
         """Wake up vehicle to send updated data to VW Backend."""
@@ -2762,9 +2730,9 @@ class Connection:
                 return_raw=True,
             )
 
-        except (client_exceptions.ClientError, asyncio.TimeoutError, KeyError, TypeError) as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not refresh the data, error: %s", error)
-        return None
+        return False
 
     async def get_request_status(self, vin: str, requestId: str, actionId: str = "") -> Any:
         """Return status of a request ID for a given section ID."""
@@ -2782,8 +2750,6 @@ class Connection:
                     raise AuthenticationError(f"Login for {BRAND} account failed")
 
             response = await self.getPendingRequests(vin)
-            if not response:
-                return "Unknown"
 
             requests = response.get("data", [])
             result = None
@@ -3162,7 +3128,7 @@ class Connection:
                 "client_id": self._client_id,  # Use region-specific client ID
             }
             response = await self._session.post(
-                url=f"{self._base_api}/login/v1/idk/token",
+                url=f"{self._base_api}/auth/v1/idk/oidc/token",
                 headers=tHeaders,
                 data=body,
                 timeout=ClientTimeout(total=TIMEOUT.seconds),

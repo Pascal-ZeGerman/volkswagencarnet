@@ -53,7 +53,7 @@ XQMAUTH_PREFIX = "v1:01da27b0:"
 CLIENT_TOKEN_TYPES = "code"
 
 APP_VERSION = "2025.12.10-8414"  # x-app-version header value (from APK manifest)
-APP_VERSION_SHORT = "3.51.1"  # Short version for User-Agent and MBB registration
+APP_VERSION_SHORT = "3.61.0"  # Short version for User-Agent and MBB registration
 USER_AGENT = f"Volkswagen/{APP_VERSION_SHORT}-android/14"
 APP_URI = "weconnect://authenticated"
 ANDROID_PACKAGE_NAME = "com.volkswagen.weconnect"
@@ -68,7 +68,6 @@ HEADERS_SESSION = {
     "Accept-charset": "UTF-8",
     "Accept": "application/json",
     "User-Agent": USER_AGENT,
-    "tokentype": "IDK_TECHNICAL",
     "x-android-package-name": ANDROID_PACKAGE_NAME,
 }
 
@@ -78,6 +77,7 @@ HEADERS_AUTH = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
     "Accept-Encoding": "gzip, deflate",
     "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": USER_AGENT,
     "x-android-package-name": ANDROID_PACKAGE_NAME,
 }
 
@@ -536,4 +536,4 @@ class Paths:
     )
     READINESS_DAILY_POWER_BUDGET_AVAILABLE = f"{Services.READINESS}.readinessStatus.value.connectionState.dailyPowerBudgetAvailable"
     READINESS_INSUFFICIENT_BATTERY_LEVEL_WARNING = f"{Services.READINESS}.readinessStatus.value.connectionWarning.insufficientBatteryLevelWarning"
-    READINESS_DAILY_POWER_BUDGET_WARNING = f"{Services.READINESS}.readinessStatus.value.connectionWarning.dailyPowerBudgetWarning"
+    READINESS_DAILY_POWER_BUDGET_WARNING = f"{Services.READINESS}.readinessStatus.value.connectionWarning.insufficientBatteryLevelWarning"
