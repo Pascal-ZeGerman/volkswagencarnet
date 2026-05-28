@@ -291,7 +291,7 @@ class Connection:
         timeout = ClientTimeout(total=10)
 
         for candidate in candidates:
-            config_url = f"{candidate}/login/v1/idk/openid-configuration"
+            config_url = f"{candidate}/auth/v1/idk/oidc/openid-configuration"
             try:
                 _LOGGER.debug("Attempting market config discovery at %s", config_url)
                 async with self._session.get(url=config_url, timeout=timeout) as resp:
@@ -450,7 +450,7 @@ class Connection:
                 "token_endpoint": token_ep,
             }
 
-        config_url = f"{self._base_api}/login/v1/idk/openid-configuration"
+        config_url = f"{self._base_api}/auth/v1/idk/oidc/openid-configuration"
         _LOGGER.debug("Requesting openid config from base API: %s", config_url)
         req = await self._session.get(url=config_url, timeout=ClientTimeout(total=TIMEOUT.seconds))
         if req.status != 200:
@@ -2335,7 +2335,7 @@ class Connection:
             if self._session_tokens.get("identity", {}).get("refresh_token"):
                 _LOGGER.info("Revoking Identity Refresh Token")
                 params = {"token": self._session_tokens["identity"]["refresh_token"]}
-                await self.post(f"{self._base_api}/login/v1/idk/revoke", data=params)
+                await self.post(f"{self._base_api}/auth/v1/idk/oidc/revoke", data=params)
 
     # HTTP methods to API
     async def _request(self, method: str, url: str, return_raw: bool = False, _retry_401: bool = False,
@@ -3128,7 +3128,7 @@ class Connection:
                 "client_id": self._client_id,  # Use region-specific client ID
             }
             response = await self._session.post(
-                url=f"{self._base_api}/login/v1/idk/token",
+                url=f"{self._base_api}/auth/v1/idk/oidc/token",
                 headers=tHeaders,
                 data=body,
                 timeout=ClientTimeout(total=TIMEOUT.seconds),
