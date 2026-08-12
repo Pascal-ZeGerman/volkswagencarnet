@@ -61,6 +61,35 @@ MBB_BRAND_CONFIG = "myvw"  # VW brand identifier for Brand/MBB token exchanges
 MAX_REDIRECT_DEPTH = 10  # Maximum redirects during OAuth login flow
 COUNTRY_TO_LOCALE = {"US": "en-US", "CA": "en-CA", "GB": "en-GB"}
 
+# North America (Car-Net / AZS) app-identity headers.
+# The myVW NA Android app (decompiled 2026.7.28-9380) stamps these on every
+# request to *.con-veh.net via an OkHttp interceptor (defpackage/zw0). The AZS
+# authorization server (/azs) rejects the token exchange with a 401
+# "Unauthorized exception" when they are absent. All values are client-generated
+# or static constants — none are server-issued secrets:
+#   x-app-uuid           persisted random UUID (per install)
+#   x-mobile-session-id  random UUID (per session)
+#   x-app-version        hardcoded app version string
+#   x-user-agent         literal "mobile-android"
+#   x-app-device-model   Build.MODEL
+#   x-app-device-os      Build.VERSION.SDK_INT
+#   x-user-country       ISO country code
+#   x-user-locale        language tag
+NA_APP_VERSION = "2026.7.28-9380"  # x-app-version (hardcoded in NA app)
+NA_APP_USER_AGENT = "mobile-android"  # x-user-agent literal
+NA_DEVICE_MODEL = "Pixel 7"  # x-app-device-model (any plausible Android model)
+NA_DEVICE_OS_SDK = "34"  # x-app-device-os (Android 14 API level)
+
+# The NA app sends a `play_integrity_token` (Google Play Integrity attestation)
+# as the first field of the token-exchange and refresh bodies. The AZS server
+# rejects the request with 401 "Unauthorized exception" when the field is
+# ABSENT, but — confirmed live 2026-08-12 — only checks that it is PRESENT and
+# non-empty; it does not (currently) cryptographically validate the value. A
+# headless client cannot produce a genuine attestation, so Connection sends a
+# random per-install opaque placeholder (see Connection._na_play_integrity_token,
+# overridable via the VW_NA_PLAY_INTEGRITY_TOKEN env var) if VW ever begins
+# enforcing it.
+
 # Used when fetching data
 HEADERS_SESSION = {
     "Connection": "keep-alive",
