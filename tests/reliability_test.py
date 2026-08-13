@@ -5,6 +5,7 @@ Covers:
   INT-04 — Per-vehicle home region routing with session caching
   INT-05 — Rate limit retry with exponential backoff and Retry-After support
 """
+
 from __future__ import annotations
 
 from unittest import IsolatedAsyncioTestCase
@@ -21,12 +22,15 @@ from volkswagencarnet.vw_vehicle import Vehicle
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_na_conn(**kwargs) -> Connection:
     """Create a minimal NA Connection with a mocked aiohttp session."""
     mock_session = AsyncMock()
     mock_session._cookie_jar = MagicMock()
     mock_session._cookie_jar._cookies = {}
-    conn = Connection(mock_session, "user@example.com", "password", country="US", **kwargs)
+    conn = Connection(
+        mock_session, "user@example.com", "password", country="US", **kwargs
+    )
     conn._session_tokens = {"identity": {"access_token": "test_token"}}
     conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
     return conn
@@ -72,6 +76,7 @@ def _make_resp_ctx(status: int, json_data=None, headers=None):
 # INT-01: Market Config Discovery
 # ---------------------------------------------------------------------------
 
+
 class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
     """Test market config discovery — INT-01."""
 
@@ -91,8 +96,13 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
             result = await conn._discover_market_config()
 
         self.assertTrue(result)
-        self.assertEqual(conn.discovery_config.get("issuer"), "https://identity.na.vwgroup.io")
-        self.assertEqual(conn.discovery_config.get("token_endpoint"), "https://identity.na.vwgroup.io/token")
+        self.assertEqual(
+            conn.discovery_config.get("issuer"), "https://identity.na.vwgroup.io"
+        )
+        self.assertEqual(
+            conn.discovery_config.get("token_endpoint"),
+            "https://identity.na.vwgroup.io/token",
+        )
         self.assertEqual(conn._service_status.get("discovery"), "Success")
 
     async def test_discovery_rejects_malicious_urls_from_response(self):
@@ -143,7 +153,12 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
         self.assertEqual(conn._service_status.get("discovery"), "Failed")
-        self.assertTrue(any("Discovery failed" in m or "falling back" in m.lower() for m in log.output))
+        self.assertTrue(
+            any(
+                "Discovery failed" in m or "falling back" in m.lower()
+                for m in log.output
+            )
+        )
 
     async def test_discovery_skipped_for_emea(self):
         """EMEA connections skip discovery entirely and return True."""
@@ -158,9 +173,16 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
 
     async def test_vw_domain_allowlist_contains_expected_domains(self):
         """VW_DOMAIN_ALLOWLIST contains the expected set of VW Group domain suffixes."""
-        expected = {".vwgroup.io", ".con-veh.net", ".cariad.digital", ".vwg-connect.com"}
+        expected = {
+            ".vwgroup.io",
+            ".con-veh.net",
+            ".cariad.digital",
+            ".vwg-connect.com",
+        }
         for domain in expected:
-            self.assertIn(domain, VW_DOMAIN_ALLOWLIST, f"Missing expected domain: {domain}")
+            self.assertIn(
+                domain, VW_DOMAIN_ALLOWLIST, f"Missing expected domain: {domain}"
+            )
 
     async def test_is_allowed_vw_domain_accepts_known_vw_urls(self):
         """_is_allowed_vw_domain returns True for known VW Group hostnames."""
@@ -191,6 +213,7 @@ class MarketConfigDiscoveryTest(IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 # INT-04: Home Region Routing
 # ---------------------------------------------------------------------------
+
 
 class HomeRegionDiscoveryTest(IsolatedAsyncioTestCase):
     """Test per-vehicle home region discovery — INT-04."""
@@ -283,6 +306,7 @@ class HomeRegionDiscoveryTest(IsolatedAsyncioTestCase):
 # INT-05: Rate Limit Retry / Backoff
 # ---------------------------------------------------------------------------
 
+
 class RetryBackoffTest(IsolatedAsyncioTestCase):
     """Test retry with exponential backoff and Retry-After — INT-05."""
 
@@ -308,7 +332,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
             resp.cookies = {}
             resp.raise_for_status = MagicMock(
                 side_effect=(
-                    client_exceptions.ClientResponseError(MagicMock(), MagicMock(), status=status)
+                    client_exceptions.ClientResponseError(
+                        MagicMock(), MagicMock(), status=status
+                    )
                     if status >= 400
                     else None
                 )
@@ -333,7 +359,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
             with self.assertRaises(Exception):
                 await conn._request("GET", "https://b-h-s.spr.us00.p.con-veh.net/test")
 
-        self.assertEqual(call_count[0], 4, f"Expected 4 calls (1 + 3 retries), got {call_count[0]}")
+        self.assertEqual(
+            call_count[0], 4, f"Expected 4 calls (1 + 3 retries), got {call_count[0]}"
+        )
 
     async def test_429_with_retry_after_header_uses_header_delay(self):
         """Retry-After header value is used as the sleep delay (not exponential backoff)."""
@@ -354,7 +382,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
                 await conn._request("GET", "https://b-h-s.spr.us00.p.con-veh.net/test")
 
         delays = [call.args[0] for call in mock_sleep.call_args_list]
-        self.assertTrue(all(d == 7.0 for d in delays), f"Expected all delays 7.0, got: {delays}")
+        self.assertTrue(
+            all(d == 7.0 for d in delays), f"Expected all delays 7.0, got: {delays}"
+        )
 
     async def test_429_without_retry_after_uses_exponential_backoff(self):
         """Without Retry-After, delays follow 2^attempt pattern (1, 2, 4 seconds)."""
@@ -396,7 +426,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
                 # First request: 429 exhausted after 1 attempt? No — only 1 of 3 retries.
                 # Actually with [429, 200]: attempt=0 hits 429, retries → attempt=1 hits 200.
                 # So the request should SUCCEED on second try.
-                result = await conn._request("GET", "https://b-h-s.spr.us00.p.con-veh.net/test")
+                result = await conn._request(
+                    "GET", "https://b-h-s.spr.us00.p.con-veh.net/test"
+                )
             except Exception:
                 pass
 
@@ -417,7 +449,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
             with self.assertRaises(client_exceptions.ServerDisconnectedError):
                 await conn._request("GET", "https://b-h-s.spr.us00.p.con-veh.net/test")
 
-        self.assertEqual(call_count[0], 4, f"Expected 4 calls (1 + 3 retries), got {call_count[0]}")
+        self.assertEqual(
+            call_count[0], 4, f"Expected 4 calls (1 + 3 retries), got {call_count[0]}"
+        )
 
     async def test_no_retry_flag_skips_retry_on_429(self):
         """_no_retry=True causes 429 to propagate immediately without retrying."""
@@ -433,7 +467,9 @@ class RetryBackoffTest(IsolatedAsyncioTestCase):
                     _no_retry=True,
                 )
 
-        self.assertEqual(call_count[0], 1, "Expected exactly 1 call with _no_retry=True")
+        self.assertEqual(
+            call_count[0], 1, "Expected exactly 1 call with _no_retry=True"
+        )
         mock_sleep.assert_not_called()
 
     async def test_get_returns_throttled_state_after_retry_exhaustion(self):

@@ -38,7 +38,9 @@ class TestRegionMapping:
         """base_api_candidates is intentionally empty — hardcoded base_api is used directly."""
         config = get_region_config("NA")
         assert "base_api_candidates" in config
-        assert config["base_api_candidates"] == []  # intentionally empty: hardcoded base_api used instead
+        assert (
+            config["base_api_candidates"] == []
+        )  # intentionally empty: hardcoded base_api used instead
         assert config["base_api"] == "https://b-h-s.spr.us00.p.con-veh.net"
 
 
@@ -113,8 +115,12 @@ class TestEndpointDiscovery:
             # No session.get mock needed — empty candidates means no HTTP calls are made
             result = await conn._discover_market_config()
 
-            assert result is False  # empty candidates → discovery always returns False for NA
-            assert conn._base_api == initial_base_api  # hardcoded value preserved, not cleared
+            assert (
+                result is False
+            )  # empty candidates → discovery always returns False for NA
+            assert (
+                conn._base_api == initial_base_api
+            )  # hardcoded value preserved, not cleared
             assert conn._service_status.get("discovery") == "Failed"
 
     @pytest.mark.asyncio

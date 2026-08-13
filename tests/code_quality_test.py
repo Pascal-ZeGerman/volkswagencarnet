@@ -5,6 +5,7 @@ These tests verify code quality properties (no bare response.text, no dead code 
 
 Merged from phase21_pr_review_fixes_test.py (structural test classes).
 """
+
 from __future__ import annotations
 
 import ast
@@ -12,7 +13,9 @@ import re
 from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
 
-VW_CONNECTION_SRC = Path(__file__).parent.parent / "volkswagencarnet" / "vw_connection.py"
+VW_CONNECTION_SRC = (
+    Path(__file__).parent.parent / "volkswagencarnet" / "vw_connection.py"
+)
 
 
 def _read_source() -> str:
@@ -23,6 +26,7 @@ def _read_source() -> str:
 # ---------------------------------------------------------------------------
 # H-4: _request() Logs Only Status Code and URL
 # ---------------------------------------------------------------------------
+
 
 class RequestLoggingTest(IsolatedAsyncioTestCase):
     """Tests for H-4: _request() logs only status code and URL, no response body/headers."""
@@ -36,20 +40,21 @@ class RequestLoggingTest(IsolatedAsyncioTestCase):
                 request_source = ast.get_source_segment(source, node)
                 if request_source:
                     header_log_matches = re.findall(
-                        r'_LOGGER\.\w+\([^)]*response\.headers[^)]*\)',
-                        request_source
+                        r"_LOGGER\.\w+\([^)]*response\.headers[^)]*\)", request_source
                     )
                     self.assertEqual(
-                        len(header_log_matches), 0,
-                        f"Found response.headers in _LOGGER calls: {header_log_matches}"
+                        len(header_log_matches),
+                        0,
+                        f"Found response.headers in _LOGGER calls: {header_log_matches}",
                     )
                     body_log_matches = re.findall(
-                        r'_LOGGER\.\w+\([^)]*(?:response\.text|resp_text|response_body)[^)]*\)',
-                        request_source
+                        r"_LOGGER\.\w+\([^)]*(?:response\.text|resp_text|response_body)[^)]*\)",
+                        request_source,
                     )
                     self.assertEqual(
-                        len(body_log_matches), 0,
-                        f"Found response body in _LOGGER calls: {body_log_matches}"
+                        len(body_log_matches),
+                        0,
+                        f"Found response body in _LOGGER calls: {body_log_matches}",
                     )
                 break
 
@@ -61,8 +66,8 @@ class RequestLoggingTest(IsolatedAsyncioTestCase):
             if isinstance(node, ast.AsyncFunctionDef) and node.name == "_request":
                 request_source = ast.get_source_segment(source, node)
                 if request_source:
-                    self.assertIn('response.status', request_source)
-                    self.assertIn('url', request_source)
+                    self.assertIn("response.status", request_source)
+                    self.assertIn("url", request_source)
                 break
 
     def test_no_bare_response_text_in_request_method(self):
@@ -73,10 +78,13 @@ class RequestLoggingTest(IsolatedAsyncioTestCase):
             if isinstance(node, ast.AsyncFunctionDef) and node.name == "_request":
                 request_source = ast.get_source_segment(source, node)
                 if request_source:
-                    bare_text_refs = re.findall(r'response\.text(?!\s*\()', request_source)
+                    bare_text_refs = re.findall(
+                        r"response\.text(?!\s*\()", request_source
+                    )
                     self.assertEqual(
-                        len(bare_text_refs), 0,
-                        f"Found {len(bare_text_refs)} bare response.text reference(s) in _request()"
+                        len(bare_text_refs),
+                        0,
+                        f"Found {len(bare_text_refs)} bare response.text reference(s) in _request()",
                     )
                 break
 
@@ -85,28 +93,32 @@ class RequestLoggingTest(IsolatedAsyncioTestCase):
 # H-3: response.text Bare Coroutine Bug Eliminated
 # ---------------------------------------------------------------------------
 
+
 class ResponseTextCoroutineBugTest(IsolatedAsyncioTestCase):
     """Tests for H-3: No bare response.text (without parentheses) in log calls."""
 
     def test_no_bare_response_text_in_logger_calls(self):
         """No _LOGGER call references response.text without () -- would be a coroutine object."""
         source = _read_source()
-        matches = re.findall(r'_LOGGER\.\w+\([^)]*response\.text(?!\s*\()[^)]*\)', source)
+        matches = re.findall(
+            r"_LOGGER\.\w+\([^)]*response\.text(?!\s*\()[^)]*\)", source
+        )
         self.assertEqual(
-            len(matches), 0,
-            f"Found {len(matches)} _LOGGER call(s) with bare response.text: {matches}"
+            len(matches),
+            0,
+            f"Found {len(matches)} _LOGGER call(s) with bare response.text: {matches}",
         )
 
     def test_all_response_text_calls_have_parentheses(self):
         """Every response.text in the source is followed by () (properly called)."""
         source = _read_source()
-        all_response_text = list(re.finditer(r'response\.text', source))
+        all_response_text = list(re.finditer(r"response\.text", source))
         for match in all_response_text:
-            after = source[match.end():match.end() + 5].strip()
+            after = source[match.end() : match.end() + 5].strip()
             self.assertTrue(
                 after.startswith("("),
                 f"Found bare response.text at position {match.start()}: "
-                f"...{source[max(0, match.start()-20):match.end()+20]}..."
+                f"...{source[max(0, match.start() - 20) : match.end() + 20]}...",
             )
 
 
@@ -114,16 +126,18 @@ class ResponseTextCoroutineBugTest(IsolatedAsyncioTestCase):
 # H-6: Stale pylint disable=unreachable Comment Removed
 # ---------------------------------------------------------------------------
 
+
 class StalePylintCommentTest(IsolatedAsyncioTestCase):
     """Tests for H-6: No stale pylint disable=unreachable comment."""
 
     def test_no_pylint_disable_unreachable_in_source(self):
         """vw_connection.py contains no 'pylint: disable=unreachable' comment."""
         source = _read_source()
-        matches = re.findall(r'pylint:\s*disable=unreachable', source)
+        matches = re.findall(r"pylint:\s*disable=unreachable", source)
         self.assertEqual(
-            len(matches), 0,
-            f"Found {len(matches)} stale 'pylint: disable=unreachable' comment(s)"
+            len(matches),
+            0,
+            f"Found {len(matches)} stale 'pylint: disable=unreachable' comment(s)",
         )
 
 
@@ -131,30 +145,34 @@ class StalePylintCommentTest(IsolatedAsyncioTestCase):
 # H-1: Dead _discover_endpoints Method Removed
 # ---------------------------------------------------------------------------
 
+
 class DeadCodeRemovalTest(IsolatedAsyncioTestCase):
     """Tests for H-1: _discover_endpoints dead code is removed."""
 
     def test_connection_has_no_discover_endpoints_method(self):
         """Connection class does not have a _discover_endpoints method."""
         from volkswagencarnet.vw_connection import Connection
+
         self.assertFalse(
             hasattr(Connection, "_discover_endpoints"),
-            "Connection still has _discover_endpoints method -- should be removed"
+            "Connection still has _discover_endpoints method -- should be removed",
         )
 
     def test_no_discover_endpoints_reference_in_source(self):
         """No reference to '_discover_endpoints' exists anywhere in vw_connection.py."""
         source = _read_source()
-        matches = re.findall(r'_discover_endpoints', source)
+        matches = re.findall(r"_discover_endpoints", source)
         self.assertEqual(
-            len(matches), 0,
-            f"Found {len(matches)} reference(s) to _discover_endpoints in source"
+            len(matches),
+            0,
+            f"Found {len(matches)} reference(s) to _discover_endpoints in source",
         )
 
 
 # ---------------------------------------------------------------------------
 # C-1 / H-5: Git Tracking (Structural Tests)
 # ---------------------------------------------------------------------------
+
 
 class GitIgnoreStructureTest(IsolatedAsyncioTestCase):
     """Tests for C-1/H-5: .gitignore contains proper credential and docs rules."""

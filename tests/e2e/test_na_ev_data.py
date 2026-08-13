@@ -9,6 +9,7 @@ Requires real VW credentials:
   export VW_TEST_PASSWORD='...'
 Run with: pytest tests/e2e/test_na_ev_data.py -v
 """
+
 import logging
 
 import pytest
@@ -34,7 +35,9 @@ class TestNAEVData:
         if data and data.get("na_ev") is None:
             pytest.skip("Vehicle is not electric — EV endpoint returned 404")
         level = first_vehicle.battery_level
-        assert isinstance(level, int), f"battery_level expected int, got {type(level).__name__}"
+        assert isinstance(level, int), (
+            f"battery_level expected int, got {type(level).__name__}"
+        )
         assert 0 <= level <= 100, f"battery_level={level} outside [0, 100]"
 
     async def test_na_charging_state(self, na_connection, first_vehicle):
@@ -77,7 +80,9 @@ class TestNAClimateData:
             pytest.skip("Climate endpoint not available for this vehicle")
         assert isinstance(first_vehicle.climatisation_state, str)
 
-    async def test_na_climatisation_target_temperature(self, na_connection, first_vehicle):
+    async def test_na_climatisation_target_temperature(
+        self, na_connection, first_vehicle
+    ):
         """climatisation_target_temperature is float for climate-capable vehicles."""
         data = await na_connection._get_na_vehicle_data(first_vehicle.vin)
         if data and data.get("na_climate") is None:
@@ -103,7 +108,9 @@ class TestNATripData:
         if data and data.get("na_trip") is None:
             pytest.skip("Trip stats endpoint not available for this vehicle")
         length = first_vehicle.last_trip_length
-        assert isinstance(length, (int, float)), f"expected numeric, got {type(length).__name__}"
+        assert isinstance(length, (int, float)), (
+            f"expected numeric, got {type(length).__name__}"
+        )
         assert length >= 0
 
     async def test_na_last_trip_duration(self, na_connection, first_vehicle):
@@ -112,5 +119,7 @@ class TestNATripData:
         if data and data.get("na_trip") is None:
             pytest.skip("Trip stats endpoint not available for this vehicle")
         duration = first_vehicle.last_trip_duration
-        assert isinstance(duration, (int, float)), f"expected numeric, got {type(duration).__name__}"
+        assert isinstance(duration, (int, float)), (
+            f"expected numeric, got {type(duration).__name__}"
+        )
         assert duration >= 0

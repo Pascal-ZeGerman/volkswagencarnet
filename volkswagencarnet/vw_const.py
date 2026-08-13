@@ -6,9 +6,7 @@ COUNTRY = "DE"
 
 # Data used in communication
 CLIENT_ID = "a24fba63-34b3-4d43-b181-942111e6bda8@apps_vw-dilab_com"  # EMEA
-CLIENT_ID_US = (
-    "59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID"  # North America (confirmed from APK 2026)
-)
+CLIENT_ID_US = "59992128-69a9-42c3-8621-7942041ba824_MYVW_ANDROID"  # North America (confirmed from APK 2026)
 CLIENT_SCOPE = "openid profile badge cars dealers vin"
 
 # X-QMAuth HMAC-SHA256 shared secret (VW Group apps)

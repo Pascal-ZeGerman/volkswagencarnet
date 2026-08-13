@@ -63,12 +63,16 @@ class Vehicle:
         self._connection = conn
         self._url = url
         # Get homeregion from connection's region config
-        if conn is not None and hasattr(conn, '_session_region_config'):
+        if conn is not None and hasattr(conn, "_session_region_config"):
             region_config = conn._session_region_config
-            self._homeregion = region_config.get("homeregion") or "https://msg.volkswagen.de"
+            self._homeregion = (
+                region_config.get("homeregion") or "https://msg.volkswagen.de"
+            )
         else:
             self._homeregion = "https://msg.volkswagen.de"
-        self._home_region_discovered: bool = False  # session cache guard for lazy discovery
+        self._home_region_discovered: bool = (
+            False  # session cache guard for lazy discovery
+        )
         self._discovered = False
         self._states: dict[str, Any] = {}
         self._requests: dict[str, Any] = {
@@ -188,7 +192,8 @@ class Vehicle:
             # Validate candidate before probing — skip malformed entries
             if not self._connection._is_allowed_vw_domain(candidate):
                 _LOGGER.debug(
-                    "Home region candidate %r failed domain validation, skipping", candidate
+                    "Home region candidate %r failed domain validation, skipping",
+                    candidate,
                 )
                 continue
 
@@ -206,19 +211,24 @@ class Vehicle:
                         self._homeregion = candidate
                         _LOGGER.debug(
                             "Home region for %s: %s (HTTP %d)",
-                            self._url, candidate, resp.status,
+                            self._url,
+                            candidate,
+                            resp.status,
                         )
                         return
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                 _LOGGER.debug(
                     "Home region probe failed for %s at %s: %s",
-                    self._url, candidate, exc,
+                    self._url,
+                    candidate,
+                    exc,
                 )
                 continue
 
         _LOGGER.warning(
             "Could not discover home region for %s, using fallback: %s",
-            self._url, self._homeregion,
+            self._url,
+            self._homeregion,
         )
         # self._homeregion retains its initialized value (from __init__)
 
@@ -311,7 +321,9 @@ class Vehicle:
             _LOGGER.warning("NA vehicle %s: all telemetry fetches failed", self.vin)
             return False
         self._states.update({k: v for k, v in data.items() if v is not None})
-        _LOGGER.debug("NA vehicle %s: updated states keys=%s", self.vin, list(data.keys()))
+        _LOGGER.debug(
+            "NA vehicle %s: updated states keys=%s", self.vin, list(data.keys())
+        )
         return True
 
     async def update(self) -> None:
@@ -438,7 +450,9 @@ class Vehicle:
         for _ in range(retry_count - 1):
             try:
                 await self.get_selectivestatus([Services.MEASUREMENTS])
-                refresh_trigger_time = self._requests.get("refresh", {}).get("timestamp")
+                refresh_trigger_time = self._requests.get("refresh", {}).get(
+                    "timestamp"
+                )
                 if self.last_connected >= refresh_trigger_time:
                     return "successful"
                 await asyncio.sleep(10)
@@ -458,21 +472,31 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Charging action "{action}" is not supported.'
+                )
             if not self.is_charging_supported:
                 _LOGGER.error("No charging support (vehicle may not be electric)")
                 raise UnsupportedOperationError("No charging support.")
             if self._in_progress("charging", unknown_offset=-5):
-                _LOGGER.debug("NA: charging command already in progress for vin=%s, ignoring duplicate", self.vin)
+                _LOGGER.debug(
+                    "NA: charging command already in progress for vin=%s, ignoring duplicate",
+                    self.vin,
+                )
                 return False
             self._requests["latest"] = "Batterycharge"
-            self._requests["charging"] = {"id": "na-charging-in-flight", "timestamp": datetime.now(UTC)}
+            self._requests["charging"] = {
+                "id": "na-charging-in-flight",
+                "timestamp": datetime.now(UTC),
+            }
             if action == "start":
                 result = await self._connection.start_charging_na(self.vin)
             else:
                 result = await self._connection.stop_charging_na(self.vin)
             if not result:
-                _LOGGER.warning("NA: %s_charging command failed for vin=%s", action, self.vin)
+                _LOGGER.warning(
+                    "NA: %s_charging command failed for vin=%s", action, self.vin
+                )
             self._requests["charging"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -483,7 +507,9 @@ class Vehicle:
         if self.is_charging_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Charging action "%s" is not supported', action)
-                raise UnsupportedOperationError(f'Charging action "{action}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Charging action "{action}" is not supported.'
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Batterycharge"
@@ -506,7 +532,9 @@ class Vehicle:
         ):
             if setting == "reduced_ac_charging" and value not in ["reduced", "maximum"]:
                 _LOGGER.error('Charging setting "%s" is not supported', value)
-                raise UnsupportedOperationError(f'Charging setting "{value}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Charging setting "{value}" is not supported.'
+                )
             if setting == "max_charge_amperage" and int(value) not in [
                 5,
                 10,
@@ -569,7 +597,9 @@ class Vehicle:
         if self.is_battery_care_mode_supported:
             if value not in ["activated", "deactivated"]:
                 _LOGGER.error('Charging care mode "%s" is not supported', value)
-                raise UnsupportedOperationError(f'Charging care mode "{value}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Charging care mode "{value}" is not supported.'
+                )
             data = {"batteryCareMode": value}
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
@@ -590,7 +620,9 @@ class Vehicle:
         if self.is_optimised_battery_use_supported:
             if value not in [True, False]:
                 _LOGGER.error('Battery support mode "%s" is not supported', value)
-                raise UnsupportedOperationError(f'Battery support mode "{value}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Battery support mode "{value}" is not supported.'
+                )
             data = {"batterySupportEnabled": value}
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
@@ -679,7 +711,9 @@ class Vehicle:
                     error_msg="Failed to set climatisation settings",
                 )
             _LOGGER.error('Set climatisation setting to "%s" is not supported', value)
-            raise UnsupportedOperationError(f'Set climatisation setting to "{value}" is not supported.')
+            raise UnsupportedOperationError(
+                f'Set climatisation setting to "{value}" is not supported.'
+            )
         _LOGGER.error("Climatisation settings are not supported")
         raise UnsupportedOperationError("Climatisation settings are not supported.")
 
@@ -688,7 +722,9 @@ class Vehicle:
         if self.is_window_heater_supported:
             if action not in ["start", "stop"]:
                 _LOGGER.error('Window heater action "%s" is not supported', action)
-                raise UnsupportedOperationError(f'Window heater action "{action}" is not supported.')
+                raise UnsupportedOperationError(
+                    f'Window heater action "{action}" is not supported.'
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
@@ -709,21 +745,33 @@ class Vehicle:
         if self._connection is not None and self._connection.is_na:
             if action not in ["start", "stop"]:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
+                raise UnsupportedOperationError(
+                    f"Invalid climatisation action: {action}"
+                )
             if not self.is_climatisation_state_supported:
-                _LOGGER.error("No climatisation support (vehicle may not support pre-trip climate)")
+                _LOGGER.error(
+                    "No climatisation support (vehicle may not support pre-trip climate)"
+                )
                 raise UnsupportedOperationError("No climatisation support.")
             if self._in_progress("climatisation", unknown_offset=-5):
-                _LOGGER.debug("NA: climatisation command already in progress for vin=%s, ignoring duplicate", self.vin)
+                _LOGGER.debug(
+                    "NA: climatisation command already in progress for vin=%s, ignoring duplicate",
+                    self.vin,
+                )
                 return False
             self._requests["latest"] = "Climatisation"
-            self._requests["climatisation"] = {"id": "na-climatisation-in-flight", "timestamp": datetime.now(UTC)}
+            self._requests["climatisation"] = {
+                "id": "na-climatisation-in-flight",
+                "timestamp": datetime.now(UTC),
+            }
             if action == "start":
                 result = await self._connection.start_climatisation_na(self.vin)
             else:
                 result = await self._connection.stop_climatisation_na(self.vin)
             if not result:
-                _LOGGER.warning("NA: %s_climatisation command failed for vin=%s", action, self.vin)
+                _LOGGER.warning(
+                    "NA: %s_climatisation command failed for vin=%s", action, self.vin
+                )
             self._requests["climatisation"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -753,7 +801,9 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid climatisation action: %s", action)
-                raise UnsupportedOperationError(f"Invalid climatisation action: {action}")
+                raise UnsupportedOperationError(
+                    f"Invalid climatisation action: {action}"
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
@@ -780,7 +830,9 @@ class Vehicle:
                 data = {}
             else:
                 _LOGGER.error("Invalid auxiliary heater action: %s", action)
-                raise UnsupportedOperationError(f"Invalid auxiliary heater action: {action}")
+                raise UnsupportedOperationError(
+                    f"Invalid auxiliary heater action: {action}"
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             self._requests["latest"] = "Climatisation"
@@ -800,7 +852,9 @@ class Vehicle:
         if self.is_departure_timer_supported(timer_id):
             if not isinstance(enable, bool):
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
+                raise UnsupportedOperationError(
+                    "Charging departure timers setting is not supported."
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             data = None
@@ -839,12 +893,16 @@ class Vehicle:
         _LOGGER.error("Departure timers are not supported")
         raise UnsupportedOperationError("Departure timers are not supported.")
 
-    async def update_departure_timer(self, timer_id: int, spin: str, timer_data: dict[str, Any]) -> bool:
+    async def update_departure_timer(
+        self, timer_id: int, spin: str, timer_data: dict[str, Any]
+    ) -> bool:
         """Turn on/off departure timer."""
         if self.is_departure_timer_supported(timer_id):
             if timer_data is None:
                 _LOGGER.error("Charging departure timers setting is not supported")
-                raise UnsupportedOperationError("Charging departure timers setting is not supported.")
+                raise UnsupportedOperationError(
+                    "Charging departure timers setting is not supported."
+                )
             if self._connection is None:
                 raise RuntimeError("Vehicle not associated with a connection")
             data = None
@@ -907,9 +965,13 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError(
+            "Climatisation departure timers are not supported."
+        )
 
-    async def update_ac_departure_timer(self, timer_id: int, timer_data: dict[str, Any]) -> bool:
+    async def update_ac_departure_timer(
+        self, timer_id: int, timer_data: dict[str, Any]
+    ) -> bool:
         """Turn on/off ac departure timer."""
         if self.is_ac_departure_timer_supported(timer_id):
             if timer_data is None:
@@ -935,7 +997,9 @@ class Vehicle:
                 error_msg="Failed to change climatisation departure timers setting.",
             )
         _LOGGER.error("Climatisation departure timers are not supported")
-        raise UnsupportedOperationError("Climatisation departure timers are not supported.")
+        raise UnsupportedOperationError(
+            "Climatisation departure timers are not supported."
+        )
 
     # Lock (RLU)
     async def set_lock(self, action: str, spin: str) -> bool:
@@ -946,10 +1010,16 @@ class Vehicle:
                 _LOGGER.error("Invalid lock action: %s", action)
                 raise UnsupportedOperationError(f"Invalid lock action: {action}")
             if self._in_progress("lock", unknown_offset=-5):
-                _LOGGER.debug("NA: lock command already in progress for vin=%s, ignoring duplicate", self.vin)
+                _LOGGER.debug(
+                    "NA: lock command already in progress for vin=%s, ignoring duplicate",
+                    self.vin,
+                )
                 return False
             self._requests["latest"] = "Lock"
-            self._requests["lock"] = {"id": "na-lock-in-flight", "timestamp": datetime.now(UTC)}
+            self._requests["lock"] = {
+                "id": "na-lock-in-flight",
+                "timestamp": datetime.now(UTC),
+            }
             result = await self._connection.lock_na(self.vin, action)
             if not result:
                 _LOGGER.warning("NA: %s command failed for vin=%s", action, self.vin)
@@ -995,13 +1065,21 @@ class Vehicle:
         # NA path
         if self._connection is not None and self._connection.is_na:
             if self._in_progress("honk_and_flash", unknown_offset=-5):
-                _LOGGER.debug("NA: honk_and_flash command already in progress for vin=%s, ignoring duplicate", self.vin)
+                _LOGGER.debug(
+                    "NA: honk_and_flash command already in progress for vin=%s, ignoring duplicate",
+                    self.vin,
+                )
                 return False
             self._requests["latest"] = "HonkAndFlash"
-            self._requests["honk_and_flash"] = {"id": "na-honk-in-flight", "timestamp": datetime.now(UTC)}
+            self._requests["honk_and_flash"] = {
+                "id": "na-honk-in-flight",
+                "timestamp": datetime.now(UTC),
+            }
             result = await self._connection.honk_and_flash_na(self.vin)
             if not result:
-                _LOGGER.warning("NA: honk_and_flash command failed for vin=%s", self.vin)
+                _LOGGER.warning(
+                    "NA: honk_and_flash command failed for vin=%s", self.vin
+                )
             self._requests["honk_and_flash"] = {
                 "status": "Completed" if result else "Failed",
                 "timestamp": datetime.now(UTC),
@@ -1105,7 +1183,9 @@ class Vehicle:
         """Check if access to service has expired."""
         try:
             now = datetime.now(UTC)
-            expiration: datetime | bool = self._services.get(service, {}).get("expiration", False)
+            expiration: datetime | bool = self._services.get(service, {}).get(
+                "expiration", False
+            )
             if not expiration:
                 _LOGGER.debug(
                     "Could not determine end of access for service %s, assuming it is valid",
@@ -1591,7 +1671,11 @@ class Vehicle:
         """
         na_ev = self._states.get("na_ev")
         if na_ev is not None:
-            return na_ev.get("chargingStatus") in ("CHARGING", "CHARGING_AC", "CHARGING_DC")
+            return na_ev.get("chargingStatus") in (
+                "CHARGING",
+                "CHARGING_AC",
+                "CHARGING_DC",
+            )
         return find_path(self.attrs, Paths.CHARGING_STATE) == "charging"
 
     @property
@@ -2172,7 +2256,10 @@ class Vehicle:
     def is_cruise_range_units_supported(self) -> bool:
         """Return true if cruise range units is supported."""
         na_status = self._states.get("na_status")
-        return na_status is not None and (na_status.get("powerStatus") or {}).get("cruiseRangeUnits") is not None
+        return (
+            na_status is not None
+            and (na_status.get("powerStatus") or {}).get("cruiseRangeUnits") is not None
+        )
 
     @property
     def fuel_range(self) -> int | None:
@@ -2279,7 +2366,9 @@ class Vehicle:
         """Return true if fuel level reporting is supported."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            return (na_status.get("powerStatus") or {}).get("fuelPercentRemaining") is not None
+            return (na_status.get("powerStatus") or {}).get(
+                "fuelPercentRemaining"
+            ) is not None
         return (
             is_valid_path(self.attrs, Paths.FUEL_STATUS_PRIMARY_LVL)
             and not self.is_primary_drive_gas()
@@ -2841,7 +2930,9 @@ class Vehicle:
             if na_status is None:
                 return None
             na_key = _NA_DOOR_NAMES.get(door_name, door_name)
-            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            door_status = (na_status.get("exteriorStatus") or {}).get(
+                "doorStatus"
+            ) or {}
             value = door_status.get(na_key)
             if value is None or value == "NOTAVAILABLE":
                 return None
@@ -2875,7 +2966,9 @@ class Vehicle:
             if na_status is None:
                 return False
             na_key = _NA_DOOR_NAMES.get(door_name, door_name)
-            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            door_status = (na_status.get("exteriorStatus") or {}).get(
+                "doorStatus"
+            ) or {}
             value = door_status.get(na_key)
             return value is not None and value != "NOTAVAILABLE"
         # EMEA: existing logic unchanged
@@ -2901,7 +2994,9 @@ class Vehicle:
         na_status = self._states.get("na_status")
         if na_status is None:
             return None
-        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        lock_status = (na_status.get("exteriorStatus") or {}).get(
+            "doorLockStatus"
+        ) or {}
         value = lock_status.get(door_name)
         if value is None:
             return None
@@ -2921,7 +3016,9 @@ class Vehicle:
         na_status = self._states.get("na_status")
         if na_status is None:
             return False
-        lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
+        lock_status = (na_status.get("exteriorStatus") or {}).get(
+            "doorLockStatus"
+        ) or {}
         return door_name in lock_status
 
     def _get_trip_value(self, trip_type: str, key: str, default: Any = None) -> Any:
@@ -3167,7 +3264,11 @@ class Vehicle:
         """Return security status last updated timestamp."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            ts = (na_status.get("exteriorStatus") or {}).get("doorStatus", {}).get("doorStatusTimestamp")
+            ts = (
+                (na_status.get("exteriorStatus") or {})
+                .get("doorStatus", {})
+                .get("doorStatusTimestamp")
+            )
             if ts is not None:
                 try:
                     return datetime.fromisoformat(ts)
@@ -3179,7 +3280,10 @@ class Vehicle:
     def is_security_status_supported(self) -> bool:
         """Return true if aggregate security status is supported."""
         na_status = self._states.get("na_status")
-        return na_status is not None and (na_status.get("exteriorStatus") or {}).get("secure") is not None
+        return (
+            na_status is not None
+            and (na_status.get("exteriorStatus") or {}).get("secure") is not None
+        )
 
     @property
     def trunk_locked(self) -> bool:
@@ -3251,7 +3355,9 @@ class Vehicle:
         """True if any entry in ``exteriorStatus.doorStatus`` is ``"OPEN"``. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            door_status = (na_status.get("exteriorStatus") or {}).get("doorStatus") or {}
+            door_status = (na_status.get("exteriorStatus") or {}).get(
+                "doorStatus"
+            ) or {}
             return any(v == "OPEN" for v in door_status.values() if isinstance(v, str))
         return False
 
@@ -3268,8 +3374,12 @@ class Vehicle:
         """True if any door lock status is UNLOCKED. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            lock_status = (na_status.get("exteriorStatus") or {}).get("doorLockStatus") or {}
-            return any(v == "UNLOCKED" for v in lock_status.values() if isinstance(v, str))
+            lock_status = (na_status.get("exteriorStatus") or {}).get(
+                "doorLockStatus"
+            ) or {}
+            return any(
+                v == "UNLOCKED" for v in lock_status.values() if isinstance(v, str)
+            )
         return False
 
     @property
@@ -3277,7 +3387,9 @@ class Vehicle:
         """True if any_door_unlocked data is available. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            return (na_status.get("exteriorStatus") or {}).get("doorLockStatus") is not None
+            return (na_status.get("exteriorStatus") or {}).get(
+                "doorLockStatus"
+            ) is not None
         return False
 
     @property
@@ -3285,8 +3397,12 @@ class Vehicle:
         """True if any window is open. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            window_status = (na_status.get("exteriorStatus") or {}).get("windowStatus") or {}
-            return any(v == "OPEN" for v in window_status.values() if isinstance(v, str))
+            window_status = (na_status.get("exteriorStatus") or {}).get(
+                "windowStatus"
+            ) or {}
+            return any(
+                v == "OPEN" for v in window_status.values() if isinstance(v, str)
+            )
         return False
 
     @property
@@ -3294,7 +3410,9 @@ class Vehicle:
         """True if any_window_open data is available. NA region only."""
         na_status = self._states.get("na_status")
         if na_status is not None:
-            return (na_status.get("exteriorStatus") or {}).get("windowStatus") is not None
+            return (na_status.get("exteriorStatus") or {}).get(
+                "windowStatus"
+            ) is not None
         return False
 
     # Doors, hood and trunk

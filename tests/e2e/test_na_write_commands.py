@@ -76,14 +76,18 @@ class TestNAClimatisation:
     """Pre-trip climate start/stop via /ev/v1/.../pretripclimate/start|stop."""
 
     @_skip_write
-    async def test_na_start_climatisation_returns_true(self, na_connection, first_vehicle):
+    async def test_na_start_climatisation_returns_true(
+        self, na_connection, first_vehicle
+    ):
         """start_climatisation_na returns True on success."""
         result = await na_connection.start_climatisation_na(first_vehicle.vin)
         assert result is True
         _log.info("start_climatisation_na result: %s", result)
 
     @_skip_write
-    async def test_na_stop_climatisation_returns_true(self, na_connection, first_vehicle):
+    async def test_na_stop_climatisation_returns_true(
+        self, na_connection, first_vehicle
+    ):
         """stop_climatisation_na returns True on success."""
         result = await na_connection.stop_climatisation_na(first_vehicle.vin)
         assert result is True

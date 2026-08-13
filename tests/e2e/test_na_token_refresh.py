@@ -7,6 +7,7 @@ the NA Car-Net API (b-h-s.spr.us00.p.con-veh.net) — those tests are marked xfa
 These tests require real VW credentials and a live network connection.
 Run with: pytest tests/e2e/test_na_token_refresh.py -v
 """
+
 import logging
 import time
 
@@ -70,8 +71,12 @@ class TestNATokenRefresh:
         entry = na_connection._na_tokens.get("idk", {})
         exp = entry.get("expires_at")
         if exp is not None:
-            _soft_assert(failures, exp > now, f"idk token expired: exp={exp}, now={now}")
+            _soft_assert(
+                failures, exp > now, f"idk token expired: exp={exp}, now={now}"
+            )
         else:
             _log.warning("idk token has no 'expires_at' field")
         if failures:
-            raise AssertionError("Token expiry failures:\n" + "\n".join(f"  - {f}" for f in failures))
+            raise AssertionError(
+                "Token expiry failures:\n" + "\n".join(f"  - {f}" for f in failures)
+            )
