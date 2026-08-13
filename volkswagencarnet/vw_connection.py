@@ -1301,6 +1301,9 @@ class Connection:
             "User-Agent": USER_AGENT,
             "x-android-package-name": ANDROID_PACKAGE_NAME,
         }
+        # AZS rejects the token exchange (401) without these app-identity headers;
+        # they're required on refresh too since it hits the same con-veh.net endpoint.
+        refresh_headers.update(self._na_app_identity_headers())
 
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
