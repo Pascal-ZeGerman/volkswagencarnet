@@ -10,10 +10,12 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 from random import random
 import re
 import secrets
 import time
+import uuid
 from urllib.parse import parse_qs, urljoin, urlparse
 from typing import Any
 
@@ -39,6 +41,10 @@ from .vw_const import (
     HEADERS_SESSION,
     MAX_REDIRECT_DEPTH,
     MBB_BRAND_CONFIG,
+    NA_APP_USER_AGENT,
+    NA_APP_VERSION,
+    NA_DEVICE_MODEL,
+    NA_DEVICE_OS_SDK,
     USER_AGENT,
     XQMAUTH_PREFIX,
     XQMAUTH_SECRET,
@@ -166,6 +172,18 @@ class Connection:
         self._update_lock = asyncio.Lock()
         # NA token endpoint URL (populated during _login_na, needed for IDK refresh)
         self._na_token_endpoint: str | None = None
+        # NA app-identity: persistent per-install UUID sent as x-app-uuid on every
+        # con-veh.net request (mirrors the app's persisted UuidGenerator value).
+        self._na_app_uuid: str = str(uuid.uuid4())
+        # NA play_integrity_token: the AZS server requires this field present on
+        # the token exchange/refresh (401 without it) but does not validate the
+        # value. Default to a random per-install opaque token so the value is not
+        # identical across every installation; override with a real attestation
+        # via the VW_NA_PLAY_INTEGRITY_TOKEN env var if VW ever begins enforcing
+        # it.
+        self._na_play_integrity_token: str = os.environ.get(
+            "VW_NA_PLAY_INTEGRITY_TOKEN"
+        ) or secrets.token_urlsafe(48)
 
     def _clear_cookies(self) -> None:
         self._session._cookie_jar._cookies.clear()  # pylint: disable=protected-access
@@ -919,6 +937,32 @@ class Connection:
         _LOGGER.debug("NA: authorization code obtained")
         return code
 
+    def _na_app_identity_headers(self) -> dict[str, str]:
+        """Build the NA app-identity headers required by the con-veh.net API.
+
+        The myVW NA Android app (decompiled 2026.7.28-9380) stamps these on
+        every request to ``*.con-veh.net`` via an OkHttp interceptor
+        (``defpackage/zw0``). The AZS authorization server (``/azs``) rejects the
+        token exchange with ``401 "Unauthorized exception"`` when they are
+        missing. Every value is client-generated or a static constant — none are
+        server-issued secrets. ``x-mobile-session-id`` is a fresh UUID per call
+        (matches the app's ``UUID.randomUUID()``); ``x-app-uuid`` is the stable
+        per-install UUID generated in ``__init__``.
+
+        Returns:
+            Header dict for the current NA session/country.
+        """
+        return {
+            "x-app-uuid": self._na_app_uuid,
+            "x-mobile-session-id": str(uuid.uuid4()),
+            "x-app-version": NA_APP_VERSION,
+            "x-user-agent": NA_APP_USER_AGENT,
+            "x-app-device-model": NA_DEVICE_MODEL,
+            "x-app-device-os": NA_DEVICE_OS_SDK,
+            "x-user-country": self._session_country,
+            "x-user-locale": COUNTRY_TO_LOCALE.get(self._session_country, "en-US"),
+        }
+
     async def _exchange_code_for_tokens(
         self, auth_code: str, token_endpoint: str
     ) -> Any:
@@ -952,10 +996,29 @@ class Connection:
             token_body["code_verifier"] = self._pkce_verifier
             _LOGGER.debug("Added PKCE verifier to token exchange")
 
-        # X-QMAuth is required for token exchange but must NOT be sent during IDK refresh
-        # (causes HTTP 400). See _refresh_idk_token().
-        if self._session_region == "NA":
+        # X-QMAuth is an EMEA-only HMAC header. The NA myVW app (decompiled
+        # 2026.7.28-9380) never sends it — "QMAuth" appears nowhere in the APK;
+        # NA is a public PKCE client. Sending it makes the NA AZS server reject
+        # the exchange with "400 Internal Service validation failure" (the same
+        # reason it must be omitted from the NA IDK refresh — see
+        # _refresh_idk_token()). Only inject it for EMEA.
+        if self._session_region != "NA":
             self._session_auth_headers["X-QMAuth"] = self._calculate_xqmauth()
+        else:
+            # Defensively drop any X-QMAuth left over from an earlier step so it
+            # can't poison the NA token POST.
+            self._session_auth_headers.pop("X-QMAuth", None)
+            # The NA AZS server (/azs) requires the app-identity headers the app
+            # sends via its OkHttp interceptor; without them it returns
+            # 401 "Unauthorized exception". See _na_app_identity_headers().
+            self._session_auth_headers.update(self._na_app_identity_headers())
+
+        # The NA AZS server requires a `play_integrity_token` field on the token
+        # exchange; without it the exchange fails with 401 "Unauthorized
+        # exception". The value is not validated (confirmed live 2026-08-12), so
+        # a non-empty placeholder suffices. See self._na_play_integrity_token.
+        if self._session_region == "NA":
+            token_body["play_integrity_token"] = self._na_play_integrity_token
 
         _LOGGER.debug(
             "Token exchange request: endpoint=%s keys=%s has_verifier=%s",
@@ -1225,6 +1288,10 @@ class Connection:
             "client_id": self._client_id,
             "code_verifier": pkce_verifier,
         }
+        # AzsRefreshRequest also carries play_integrity_token; the AZS server
+        # requires the field present (401 without it) but does not validate the
+        # value. See self._na_play_integrity_token / _exchange_code_for_tokens().
+        refresh_body["play_integrity_token"] = self._na_play_integrity_token
         # Public PKCE client (59992128_MYVW_ANDROID) does NOT use X-QMAuth —
         # that header causes HTTP 400 "Internal Service validation failure" from b-h-s server.
         refresh_headers = {
@@ -1234,6 +1301,9 @@ class Connection:
             "User-Agent": USER_AGENT,
             "x-android-package-name": ANDROID_PACKAGE_NAME,
         }
+        # AZS rejects the token exchange (401) without these app-identity headers;
+        # they're required on refresh too since it hits the same con-veh.net endpoint.
+        refresh_headers.update(self._na_app_identity_headers())
 
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):

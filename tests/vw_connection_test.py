@@ -4412,11 +4412,16 @@ class Plan24_02_RegressionTests(IsolatedAsyncioTestCase):
 
 
 class TestNATokenExchangeXQMAuth:
-    """Test X-QMAuth header presence in NA token exchange."""
+    """NA token exchange must NOT send X-QMAuth (EMEA-only header).
+
+    Previously this asserted the opposite; sending X-QMAuth on the NA public
+    PKCE client gets HTTP 400 "Internal Service validation failure". Confirmed
+    live 2026-08-12 — see na-login-broken-2026-08.
+    """
 
     @pytest.mark.asyncio
-    async def test_na_token_exchange_includes_xqmauth_header(self):
-        """NA token exchange should include X-QMAuth header."""
+    async def test_na_token_exchange_omits_xqmauth_and_sends_play_integrity(self):
+        """NA token exchange must omit X-QMAuth and include play_integrity_token."""
         conn = _make_connection(country="US")
         conn._pkce_verifier = "test-verifier"
 
@@ -4429,12 +4434,13 @@ class TestNATokenExchangeXQMAuth:
 
         await conn._exchange_code_for_tokens("auth_code", "https://example.com/token")
 
-        # Verify X-QMAuth header was set before the POST
         call_kwargs = conn._session.post.call_args
         post_headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get(
             "headers"
         )
-        assert "X-QMAuth" in post_headers
+        post_body = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert "X-QMAuth" not in post_headers
+        assert post_body.get("play_integrity_token")
 
 
 class NAWriteCommandTest(IsolatedAsyncioTestCase):
