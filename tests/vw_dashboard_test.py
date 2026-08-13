@@ -113,14 +113,22 @@ class TestInstantiateDefsFunction:
     """Test _instantiate_def helper."""
 
     def test_sensor_instantiation(self):
-        def_item = (Sensor, [], {"attr": "test", "name": "Test", "icon": "mdi:test", "unit": "km"})
+        def_item = (
+            Sensor,
+            [],
+            {"attr": "test", "name": "Test", "icon": "mdi:test", "unit": "km"},
+        )
         inst = _instantiate_def(def_item)
         assert isinstance(inst, Sensor)
         assert inst.attr == "test"
         assert inst.unit == "km"
 
     def test_binary_sensor_instantiation(self):
-        def_item = (BinarySensor, [], {"attr": "test", "name": "Test", "device_class": "lock"})
+        def_item = (
+            BinarySensor,
+            [],
+            {"attr": "test", "name": "Test", "device_class": "lock"},
+        )
         inst = _instantiate_def(def_item)
         assert isinstance(inst, BinarySensor)
         assert inst.device_class == "lock"
@@ -138,8 +146,7 @@ class TestInstrumentBase:
     def test_setup_with_supported_vehicle(self):
         vehicle = _make_egolf_vehicle()
         sensor = Sensor(
-            attr="battery_level", name="Battery level",
-            icon="mdi:battery", unit="%"
+            attr="battery_level", name="Battery level", icon="mdi:battery", unit="%"
         )
         result = sensor.setup(vehicle)
         assert result is True
@@ -148,8 +155,7 @@ class TestInstrumentBase:
     def test_setup_with_unsupported_data(self):
         vehicle = _make_egolf_vehicle()
         sensor = Sensor(
-            attr="nonexistent_thing", name="Nothing",
-            icon="mdi:cancel", unit=""
+            attr="nonexistent_thing", name="Nothing", icon="mdi:cancel", unit=""
         )
         result = sensor.setup(vehicle)
         assert result is False
@@ -259,7 +265,12 @@ class TestSensor:
     def test_state_with_mpg_conversion(self):
         """When convert is True and unit is mpg, value is converted."""
         vehicle = _make_egolf_vehicle()
-        sensor = Sensor(attr="last_trip_average_fuel_consumption", name="FC", icon=None, unit="L/100km")
+        sensor = Sensor(
+            attr="last_trip_average_fuel_consumption",
+            name="FC",
+            icon=None,
+            unit="L/100km",
+        )
         sensor.vehicle = vehicle
         sensor.configurate(miles=True)
         # Even if state is None, the conversion path should not raise
@@ -291,8 +302,18 @@ class TestBinarySensor:
     def test_reverse_state(self):
         """reverse_state=True inverts the boolean."""
         vehicle = _make_egolf_vehicle()
-        bs_normal = BinarySensor(attr="door_locked", name="Doors locked", device_class="lock", reverse_state=False)
-        bs_reverse = BinarySensor(attr="door_locked", name="Doors locked", device_class="lock", reverse_state=True)
+        bs_normal = BinarySensor(
+            attr="door_locked",
+            name="Doors locked",
+            device_class="lock",
+            reverse_state=False,
+        )
+        bs_reverse = BinarySensor(
+            attr="door_locked",
+            name="Doors locked",
+            device_class="lock",
+            reverse_state=True,
+        )
         if bs_normal.setup(vehicle) and bs_reverse.setup(vehicle):
             if isinstance(bs_normal.state, bool):
                 assert bs_normal.state != bs_reverse.state
@@ -301,7 +322,13 @@ class TestBinarySensor:
         """Lock device_class returns 'Locked'/'Unlocked'."""
         vehicle = _make_egolf_vehicle()
         from volkswagencarnet.vw_const import VWDeviceClass
-        bs = BinarySensor(attr="door_locked", name="Doors locked", device_class=VWDeviceClass.LOCK, reverse_state=True)
+
+        bs = BinarySensor(
+            attr="door_locked",
+            name="Doors locked",
+            device_class=VWDeviceClass.LOCK,
+            reverse_state=True,
+        )
         if bs.setup(vehicle):
             assert bs.str_state in ("Locked", "Unlocked")
 
@@ -309,14 +336,25 @@ class TestBinarySensor:
         """Door device_class returns 'Open'/'Closed'."""
         vehicle = _make_egolf_vehicle()
         from volkswagencarnet.vw_const import VWDeviceClass
-        bs = BinarySensor(attr="door_closed_left_front", name="Door LF", device_class=VWDeviceClass.DOOR, reverse_state=True)
+
+        bs = BinarySensor(
+            attr="door_closed_left_front",
+            name="Door LF",
+            device_class=VWDeviceClass.DOOR,
+            reverse_state=True,
+        )
         if bs.setup(vehicle):
             assert bs.str_state in ("Open", "Closed")
 
     def test_str_state_plug_device_class(self):
         """Plug device_class returns 'Charging'/'Plug removed'."""
         from volkswagencarnet.vw_const import VWDeviceClass
-        bs = BinarySensor(attr="charging_cable_connected", name="Cable", device_class=VWDeviceClass.PLUG)
+
+        bs = BinarySensor(
+            attr="charging_cable_connected",
+            name="Cable",
+            device_class=VWDeviceClass.PLUG,
+        )
         vehicle = _make_egolf_vehicle()
         if bs.setup(vehicle):
             assert bs.str_state in ("Charging", "Plug removed")
@@ -602,6 +640,7 @@ class TestSpecializedSubclasses:
     @pytest.mark.asyncio
     async def test_door_lock_lock_action(self):
         from volkswagencarnet.vw_const import VWDeviceClass
+
         vehicle = MagicMock(spec=Vehicle)
         vehicle.set_lock = AsyncMock(return_value=True)
         vehicle.update = AsyncMock()
@@ -723,6 +762,7 @@ class TestSpecializedSubclasses:
 
     def test_scan_interval_last_refresh_returns_datetime(self):
         from datetime import datetime
+
         si = ScanInterval()
         assert isinstance(si.last_refresh, datetime)
 
@@ -777,6 +817,7 @@ class TestDepartureTimers:
 
     def test_departure_timer_init(self):
         from volkswagencarnet.vw_dashboard import DepartureTimer
+
         dt = DepartureTimer(1)
         assert dt.attr == "departure_timer1"
         assert dt.name == "Departure Timer 1"
@@ -784,17 +825,20 @@ class TestDepartureTimers:
 
     def test_departure_timer_configurate_spin(self):
         from volkswagencarnet.vw_dashboard import DepartureTimer
+
         dt = DepartureTimer(2)
         dt.configurate(spin="4321")
         assert dt.spin == "4321"
 
     def test_departure_timer_assumed_state_false(self):
         from volkswagencarnet.vw_dashboard import DepartureTimer
+
         dt = DepartureTimer(1)
         assert dt.assumed_state is False
 
     def test_departure_timer_attributes_empty_when_none(self):
         from volkswagencarnet.vw_dashboard import DepartureTimer
+
         vehicle = MagicMock(spec=Vehicle)
         vehicle.timer_attributes = MagicMock(return_value=None)
         dt = DepartureTimer(1)
@@ -803,17 +847,20 @@ class TestDepartureTimers:
 
     def test_ac_departure_timer_init(self):
         from volkswagencarnet.vw_dashboard import ACDepartureTimer
+
         adt = ACDepartureTimer(2)
         assert adt.attr == "ac_departure_timer2"
         assert adt.name == "AC Departure Timer 2"
 
     def test_ac_departure_timer_assumed_state_false(self):
         from volkswagencarnet.vw_dashboard import ACDepartureTimer
+
         adt = ACDepartureTimer(1)
         assert adt.assumed_state is False
 
     def test_ac_departure_timer_attributes_empty_when_none(self):
         from volkswagencarnet.vw_dashboard import ACDepartureTimer
+
         vehicle = MagicMock(spec=Vehicle)
         vehicle.ac_timer_attributes = MagicMock(return_value=None)
         adt = ACDepartureTimer(1)
@@ -826,6 +873,7 @@ class TestRequestResults:
 
     def test_request_results_state_unknown(self):
         from volkswagencarnet.vw_dashboard import RequestResults
+
         vehicle = MagicMock(spec=Vehicle)
         type(vehicle).request_results = PropertyMock(return_value={})
         rr = RequestResults()
@@ -834,6 +882,7 @@ class TestRequestResults:
 
     def test_request_results_state_with_value(self):
         from volkswagencarnet.vw_dashboard import RequestResults
+
         vehicle = MagicMock(spec=Vehicle)
         type(vehicle).request_results = PropertyMock(return_value={"state": "Success"})
         rr = RequestResults()
@@ -842,8 +891,11 @@ class TestRequestResults:
 
     def test_request_results_attributes(self):
         from volkswagencarnet.vw_dashboard import RequestResults
+
         vehicle = MagicMock(spec=Vehicle)
-        type(vehicle).request_results = PropertyMock(return_value={"state": "Ok", "info": "data"})
+        type(vehicle).request_results = PropertyMock(
+            return_value={"state": "Ok", "info": "data"}
+        )
         rr = RequestResults()
         rr.vehicle = vehicle
         attrs = rr.attributes
@@ -852,6 +904,7 @@ class TestRequestResults:
 
     def test_request_results_assumed_state_false(self):
         from volkswagencarnet.vw_dashboard import RequestResults
+
         rr = RequestResults()
         assert rr.assumed_state is False
 
@@ -1065,7 +1118,9 @@ class TestBinarySensorEdgeCase:
 
     def test_binary_sensor_string_val_normal(self):
         """BinarySensor with string 'Normal' returns False."""
-        bs = BinarySensor(attr="parking_light", name="Parking Light", device_class="light")
+        bs = BinarySensor(
+            attr="parking_light", name="Parking Light", device_class="light"
+        )
         vehicle = MagicMock()
         vehicle.parking_light = "Normal"
         bs.vehicle = vehicle
@@ -1073,7 +1128,9 @@ class TestBinarySensorEdgeCase:
 
     def test_binary_sensor_string_val_not_normal(self):
         """BinarySensor with non-'Normal' string returns True."""
-        bs = BinarySensor(attr="parking_light", name="Parking Light", device_class="light")
+        bs = BinarySensor(
+            attr="parking_light", name="Parking Light", device_class="light"
+        )
         vehicle = MagicMock()
         vehicle.parking_light = "Warning"
         bs.vehicle = vehicle
@@ -1090,6 +1147,7 @@ class TestBinarySensorEdgeCase:
     def test_binary_sensor_str_state_safety_warning(self):
         """BinarySensor with safety device_class returns 'Warning!' when True."""
         from volkswagencarnet.vw_dashboard import VWDeviceClass
+
         bs = BinarySensor(attr="any_warning", name="Warning", device_class="safety")
         vehicle = MagicMock()
         vehicle.any_warning = True
@@ -1107,7 +1165,10 @@ class TestBinarySensorEdgeCase:
     def test_binary_sensor_str_state_plug(self):
         """BinarySensor with plug device_class returns 'Charging'/'Plug removed'."""
         from volkswagencarnet.vw_dashboard import VWDeviceClass
-        bs = BinarySensor(attr="external_power", name="Power", device_class=VWDeviceClass.PLUG)
+
+        bs = BinarySensor(
+            attr="external_power", name="Power", device_class=VWDeviceClass.PLUG
+        )
         vehicle = MagicMock()
         vehicle.external_power = True
         bs.vehicle = vehicle
@@ -1123,7 +1184,9 @@ class TestBinarySensorEdgeCase:
 
     def test_binary_sensor_str_state_on_off(self):
         """BinarySensor with generic device_class returns 'On'/'Off'."""
-        bs = BinarySensor(attr="request_in_progress", name="Request", device_class="running")
+        bs = BinarySensor(
+            attr="request_in_progress", name="Request", device_class="running"
+        )
         vehicle = MagicMock()
         vehicle.request_in_progress = True
         bs.vehicle = vehicle
@@ -1134,7 +1197,9 @@ class TestBinarySensorEdgeCase:
 
     def test_binary_sensor_reverse_state(self):
         """BinarySensor with reverse_state flips True to False."""
-        bs = BinarySensor(attr="door_closed", name="Door", device_class="door", reverse_state=True)
+        bs = BinarySensor(
+            attr="door_closed", name="Door", device_class="door", reverse_state=True
+        )
         vehicle = MagicMock()
         vehicle.door_closed = True
         bs.vehicle = vehicle
@@ -1150,6 +1215,7 @@ class TestClimateEdgeCase:
     def test_climate_base_abstract_methods(self):
         """Climate base class abstract methods return None."""
         from volkswagencarnet.vw_dashboard import Climate
+
         c = Climate(attr="test", name="Test", icon="")
         vehicle = MagicMock()
         c.vehicle = vehicle

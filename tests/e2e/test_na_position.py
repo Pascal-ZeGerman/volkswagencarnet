@@ -7,6 +7,7 @@ from the production VW CarNet API — not None or fixture data.
 These tests require real VW credentials and a live network connection.
 Run with: pytest tests/e2e/test_na_position.py -v
 """
+
 import logging
 from datetime import datetime
 from datetime import timezone
@@ -46,33 +47,58 @@ class TestNAPosition:
     async def test_position_is_not_none(self, first_vehicle):
         """Assert vehicle.position returns non-None lat/lng from a live NA vehicle."""
         pos = first_vehicle.position
-        assert pos is not None, "vehicle.position returned None — RVS location endpoint may have failed"
+        assert pos is not None, (
+            "vehicle.position returned None — RVS location endpoint may have failed"
+        )
         if pos.get("lat") is None:
-            pytest.skip("vehicle.position['lat'] is None — VW_TEST_SPIN may not be set or RVS failed")
+            pytest.skip(
+                "vehicle.position['lat'] is None — VW_TEST_SPIN may not be set or RVS failed"
+            )
         assert pos.get("lng") is not None, "vehicle.position['lng'] is None"
-        _log.info("vehicle.position: lat=%s, lng=%s, timestamp=%s", pos["lat"], pos["lng"], pos.get("timestamp"))
+        _log.info(
+            "vehicle.position: lat=%s, lng=%s, timestamp=%s",
+            pos["lat"],
+            pos["lng"],
+            pos.get("timestamp"),
+        )
 
     async def test_position_coordinate_ranges(self, first_vehicle):
         """Assert GPS coordinates are valid floats within Earth's lat/lng bounds."""
         pos = first_vehicle.position
         if pos is None or pos.get("lat") is None:
-            pytest.skip("vehicle.position lat is None — VW_TEST_SPIN may not be set or RVS failed")
-        assert isinstance(pos["lat"], float), f"position['lat'] is not a float: {type(pos['lat']).__name__!r}"
-        assert isinstance(pos["lng"], float), f"position['lng'] is not a float: {type(pos['lng']).__name__!r}"
-        assert -90.0 <= pos["lat"] <= 90.0, f"latitude {pos['lat']} outside valid range [-90, 90]"
-        assert -180.0 <= pos["lng"] <= 180.0, f"longitude {pos['lng']} outside valid range [-180, 180]"
+            pytest.skip(
+                "vehicle.position lat is None — VW_TEST_SPIN may not be set or RVS failed"
+            )
+        assert isinstance(pos["lat"], float), (
+            f"position['lat'] is not a float: {type(pos['lat']).__name__!r}"
+        )
+        assert isinstance(pos["lng"], float), (
+            f"position['lng'] is not a float: {type(pos['lng']).__name__!r}"
+        )
+        assert -90.0 <= pos["lat"] <= 90.0, (
+            f"latitude {pos['lat']} outside valid range [-90, 90]"
+        )
+        assert -180.0 <= pos["lng"] <= 180.0, (
+            f"longitude {pos['lng']} outside valid range [-180, 180]"
+        )
         assert pos["lat"] != 0.0 or pos["lng"] != 0.0, (
             "position is (0.0, 0.0) — likely no-fix indicator, not a real location"
         )
-        print(f"\n--- NA Position ---\nlat: {pos['lat']}\nlng: {pos['lng']}\ntimestamp: {pos.get('timestamp')}\n---")
+        print(
+            f"\n--- NA Position ---\nlat: {pos['lat']}\nlng: {pos['lng']}\ntimestamp: {pos.get('timestamp')}\n---"
+        )
 
     async def test_position_timestamp_freshness(self, first_vehicle):
         """Assert GPS timestamp is not None and is within 7 days."""
         pos = first_vehicle.position
         if pos is None or pos.get("lat") is None:
-            pytest.skip("vehicle.position lat is None — VW_TEST_SPIN may not be set or RVS failed")
+            pytest.skip(
+                "vehicle.position lat is None — VW_TEST_SPIN may not be set or RVS failed"
+            )
         ts_str = pos.get("timestamp")
-        assert ts_str is not None, "vehicle.position['timestamp'] is None — RVS may not include timestamp"
+        assert ts_str is not None, (
+            "vehicle.position['timestamp'] is None — RVS may not include timestamp"
+        )
         try:
             # Server may return Unix epoch ms (int) or ISO string
             if isinstance(ts_str, (int, float)):
@@ -89,8 +115,12 @@ class TestNAPosition:
         """Assert na_location raw RVS state has valid lat/lng and freshness (double coverage)."""
         na_loc = first_vehicle._states.get("na_location")
         if na_loc is None:
-            pytest.skip("na_location not in vehicle._states — VW_TEST_SPIN may not be set")
-        assert na_loc.get("location") is not None, "na_location has no 'location' sub-dict"
+            pytest.skip(
+                "na_location not in vehicle._states — VW_TEST_SPIN may not be set"
+            )
+        assert na_loc.get("location") is not None, (
+            "na_location has no 'location' sub-dict"
+        )
         raw_lat = na_loc["location"].get("latitude")
         raw_lng = na_loc["location"].get("longitude")
         assert raw_lat is not None and raw_lng is not None, (
@@ -122,6 +152,10 @@ class TestNAPosition:
             except (ValueError, OSError) as exc:
                 pytest.fail(f"Could not parse RVS location timestamp {ts_str!r}: {exc}")
             age_days = (datetime.now(timezone.utc) - ts).days
-            assert age_days <= 7, f"RVS location timestamp {ts_str!r} is older than 7 days"
+            assert age_days <= 7, (
+                f"RVS location timestamp {ts_str!r} is older than 7 days"
+            )
         else:
-            _log.warning("na_location has no 'eventTimeStamp' field — skipping freshness check")
+            _log.warning(
+                "na_location has no 'eventTimeStamp' field — skipping freshness check"
+            )

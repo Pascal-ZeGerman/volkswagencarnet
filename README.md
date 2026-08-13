@@ -62,66 +62,68 @@ from aiohttp import ClientSession
 
 logging.basicConfig(level=logging.DEBUG)
 
-VW_USERNAME='test@example.com'
-VW_PASSWORD='mysecretpassword'
+VW_USERNAME = "test@example.com"
+VW_PASSWORD = "mysecretpassword"
 
 
 COMPONENTS = {
-    'sensor': 'sensor',
-    'binary_sensor': 'binary_sensor',
-    'lock': 'lock',
-    'device_tracker': 'device_tracker',
-    'switch': 'switch',
-    'climate': 'climate'
+    "sensor": "sensor",
+    "binary_sensor": "binary_sensor",
+    "lock": "lock",
+    "device_tracker": "device_tracker",
+    "switch": "switch",
+    "climate": "climate",
 }
 
 RESOURCES = [
-    'position',
-    'distance',
-    'electric_climatisation',
-    'combustion_climatisation',
-    'window_heater',
-    'combustion_engine_heating',
-    'charging',
-    'adblue_level',
-    'battery_level',
-    'fuel_level',
-    'service_inspection',
-    'oil_inspection',
-    'last_connected',
-    'charging_time_left',
-    'electric_range',
-    'combustion_range',
-    'combined_range',
-    'charge_max_ampere',
-    'climatisation_target_temperature',
-    'external_power',
-    'parking_light',
-    'climatisation_without_external_power',
-    'door_locked',
-    'trunk_locked',
-    'request_in_progress',
-    'windows_closed',
-    'sunroof_closed',
-    'trip_last_average_speed',
-    'trip_last_average_electric_consumption',
-    'trip_last_average_fuel_consumption',
-    'trip_last_duration',
-    'trip_last_length',
-    'trip_refuel_average_speed',
-    'trip_refuel_average_electric_consumption',
-    'trip_refuel_average_fuel_consumption',
-    'trip_refuel_duration',
-    'trip_refuel_length'
+    "position",
+    "distance",
+    "electric_climatisation",
+    "combustion_climatisation",
+    "window_heater",
+    "combustion_engine_heating",
+    "charging",
+    "adblue_level",
+    "battery_level",
+    "fuel_level",
+    "service_inspection",
+    "oil_inspection",
+    "last_connected",
+    "charging_time_left",
+    "electric_range",
+    "combustion_range",
+    "combined_range",
+    "charge_max_ampere",
+    "climatisation_target_temperature",
+    "external_power",
+    "parking_light",
+    "climatisation_without_external_power",
+    "door_locked",
+    "trunk_locked",
+    "request_in_progress",
+    "windows_closed",
+    "sunroof_closed",
+    "trip_last_average_speed",
+    "trip_last_average_electric_consumption",
+    "trip_last_average_fuel_consumption",
+    "trip_last_duration",
+    "trip_last_length",
+    "trip_refuel_average_speed",
+    "trip_refuel_average_electric_consumption",
+    "trip_refuel_average_fuel_consumption",
+    "trip_refuel_duration",
+    "trip_refuel_length",
 ]
+
 
 def is_enabled(attr):
     """Return true if the user has enabled the resource."""
     return attr in RESOURCES
 
+
 async def main():
     """Main method."""
-    async with ClientSession(headers={'Connection': 'keep-alive'}) as session:
+    async with ClientSession(headers={"Connection": "keep-alive"}) as session:
         connection = Connection(session, VW_USERNAME, VW_PASSWORD)
         if await connection.doLogin():
             if await connection.update():
@@ -138,21 +140,22 @@ async def main():
                     dashboard = vehicle.dashboard(mutable=True)
 
                     for instrument in (
-                            instrument
-                            for instrument in dashboard.instruments
-                            if instrument.component in COMPONENTS
-                            and is_enabled(instrument.slug_attr)):
-
+                        instrument
+                        for instrument in dashboard.instruments
+                        if instrument.component in COMPONENTS
+                        and is_enabled(instrument.slug_attr)
+                    ):
                         instruments.add(instrument)
 
                 # Output all supported instruments
                 for instrument in instruments:
-                    print(f'name: {instrument.full_name}')
-                    print(f'str_state: {instrument.str_state}')
-                    print(f'state: {instrument.state}')
-                    print(f'supported: {instrument.is_supported}')
-                    print(f'attr: {instrument.attr}')
-                    print(f'attributes: {instrument.attributes}')
+                    print(f"name: {instrument.full_name}")
+                    print(f"str_state: {instrument.str_state}")
+                    print(f"state: {instrument.state}")
+                    print(f"supported: {instrument.is_supported}")
+                    print(f"attr: {instrument.attr}")
+                    print(f"attributes: {instrument.attributes}")
+
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
@@ -172,6 +175,7 @@ import asyncio
 from aiohttp import ClientSession
 from volkswagencarnet.vw_connection import Connection
 
+
 async def main():
     async with ClientSession(headers={"Connection": "keep-alive"}) as session:
         connection = Connection(session, "user@example.com", "password", country="US")
@@ -181,6 +185,7 @@ async def main():
                 print(f"VIN: {vehicle.vin}")
                 print(f"Position: {vehicle.position}")
                 print(f"Doors locked: {vehicle.door_locked}")
+
 
 asyncio.run(main())
 ```
