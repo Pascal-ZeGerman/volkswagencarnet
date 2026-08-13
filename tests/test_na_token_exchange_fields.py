@@ -15,10 +15,11 @@ both confirmed live against VW's server and fixed 2026-08-12:
 These tests pin both behaviours so they cannot silently regress.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
+from tests.vw_connection_test import _make_connection
 from volkswagencarnet.vw_connection import Connection
 
 TOKEN_ENDPOINT = "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/token"
@@ -27,21 +28,20 @@ _FAKE_TOKENS = (
 )
 
 
-def _connection(country: str) -> tuple[Connection, MagicMock]:
+def _connection(country: str) -> tuple[Connection, AsyncMock]:
     """Build a Connection whose session.post returns a fake 200 token response.
 
     Returns the connection plus the mocked ``session.post`` so callers can
     inspect the exact body/headers that were sent.
     """
-    session = MagicMock()
-    resp = MagicMock()
+    conn = _make_connection(country=country)
+    conn._pkce_verifier = "test-code-verifier"
+
+    resp = AsyncMock()
     resp.status = 200
     resp.text = AsyncMock(return_value=_FAKE_TOKENS)
-    session.post = AsyncMock(return_value=resp)
-
-    conn = Connection(session, "user@example.com", "password", country=country)
-    conn._pkce_verifier = "test-code-verifier"
-    return conn, session.post
+    conn._session.post = AsyncMock(return_value=resp)
+    return conn, conn._session.post
 
 
 class TestNATokenExchangeFields:

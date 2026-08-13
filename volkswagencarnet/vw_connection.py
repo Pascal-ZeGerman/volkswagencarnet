@@ -973,7 +973,7 @@ class Connection:
         # exchange; without it the exchange fails with 401 "Unauthorized
         # exception". The value is not validated (confirmed live 2026-08-12), so
         # a non-empty placeholder suffices. See self._na_play_integrity_token.
-        if self._session_region == "NA" and self._na_play_integrity_token:
+        if self._session_region == "NA":
             token_body["play_integrity_token"] = self._na_play_integrity_token
 
         _LOGGER.debug(
@@ -1238,8 +1238,7 @@ class Connection:
         # AzsRefreshRequest also carries play_integrity_token; the AZS server
         # requires the field present (401 without it) but does not validate the
         # value. See self._na_play_integrity_token / _exchange_code_for_tokens().
-        if self._na_play_integrity_token:
-            refresh_body["play_integrity_token"] = self._na_play_integrity_token
+        refresh_body["play_integrity_token"] = self._na_play_integrity_token
         # Public PKCE client (59992128_MYVW_ANDROID) does NOT use X-QMAuth —
         # that header causes HTTP 400 "Internal Service validation failure" from b-h-s server.
         refresh_headers = {
