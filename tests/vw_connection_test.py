@@ -4435,7 +4435,9 @@ class TestNATokenExchangeXQMAuth:
         await conn._exchange_code_for_tokens("auth_code", "https://example.com/token")
 
         call_kwargs = conn._session.post.call_args
-        post_headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        post_headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get(
+            "headers"
+        )
         post_body = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
         assert "X-QMAuth" not in post_headers
         assert post_body.get("play_integrity_token")

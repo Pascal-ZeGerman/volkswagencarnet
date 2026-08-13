@@ -88,7 +88,5 @@ class TestNATokenExchangeFields:
 
         body = post.call_args.kwargs["data"]
         headers = post.call_args.kwargs["headers"]
-        assert "play_integrity_token" not in body, (
-            "play_integrity_token is NA-only"
-        )
+        assert "play_integrity_token" not in body, "play_integrity_token is NA-only"
         assert "X-QMAuth" in headers, "EMEA still requires X-QMAuth"
