@@ -1,5 +1,8 @@
+# Disabled: this fork has no SNYK_TOKEN secret configured, so every run fails
+# immediately with no useful output. Re-enable by switching `on:` back to
+# `push` once a token is added (repo Settings > Secrets and variables > Actions).
 name: "Snyk"
-on: push
+on: workflow_dispatch
 jobs:
   snyk:
     name: "Snyk"
