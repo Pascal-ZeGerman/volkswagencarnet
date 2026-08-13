@@ -9,6 +9,7 @@ Run with: pytest tests/e2e/test_na_login.py -v
 NA Car-Net API uses IDK-only auth (no Brand/MBB tokens).
 Tokens issued by https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/
 """
+
 import asyncio
 import logging
 import time
@@ -23,7 +24,9 @@ from tests.e2e.conftest import _truncate_token
 
 _log = logging.getLogger(__name__)
 
-NA_OIDC_CONFIG_URL = "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/.well-known/openid-configuration"
+NA_OIDC_CONFIG_URL = (
+    "https://b-h-s.spr.us00.p.con-veh.net/oidc/v1/.well-known/openid-configuration"
+)
 
 
 async def _get_jwks_uri() -> str:
@@ -88,9 +91,13 @@ class TestNALogin:
         access_token = idk.get("access_token")
         refresh_token = idk.get("refresh_token")
         assert access_token, "IDK access_token is missing or empty"
-        assert isinstance(access_token, str), f"IDK access_token: expected str, got {type(access_token).__name__}"
+        assert isinstance(access_token, str), (
+            f"IDK access_token: expected str, got {type(access_token).__name__}"
+        )
         assert refresh_token, "IDK refresh_token is missing or empty"
-        assert isinstance(refresh_token, str), f"IDK refresh_token: expected str, got {type(refresh_token).__name__}"
+        assert isinstance(refresh_token, str), (
+            f"IDK refresh_token: expected str, got {type(refresh_token).__name__}"
+        )
         _log.info(
             "IDK tokens: access=%s, refresh=%s",
             _truncate_token(access_token),
@@ -118,7 +125,9 @@ class TestNALogin:
         """IDK access_token claims include the 'openid' scope or was issued for openid client."""
         token = na_connection._na_tokens["idk"]["access_token"]
         # Decode without signature verification to inspect claims
-        claims = jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+        claims = jwt.decode(
+            token, options={"verify_signature": False, "verify_aud": False}
+        )
         # NA token server may omit scope from access_token (scope embedded in id_token instead)
         # Check scope if present; otherwise verify audience matches the NA openid client_id
         scope_str = claims.get("scope", "") or " ".join(claims.get("scp", []))
@@ -130,11 +139,17 @@ class TestNALogin:
             # Scope absent from access_token — verify the id_token instead
             id_token = na_connection._na_tokens["idk"].get("id_token", "")
             if id_token:
-                id_claims = jwt.decode(id_token, options={"verify_signature": False, "verify_aud": False})
-                id_scope = id_claims.get("scope", "") or " ".join(id_claims.get("scp", []))
+                id_claims = jwt.decode(
+                    id_token, options={"verify_signature": False, "verify_aud": False}
+                )
+                id_scope = id_claims.get("scope", "") or " ".join(
+                    id_claims.get("scp", [])
+                )
                 _log.info("Scope not in access_token — id_token scope: %r", id_scope)
             else:
-                _log.info("Scope claims absent from access_token (normal for NA token server)")
+                _log.info(
+                    "Scope claims absent from access_token (normal for NA token server)"
+                )
 
     async def test_na_tokens_present(self, na_connection):
         """TEST-02 extension: IDK token is present and non-empty (NA Car-Net uses IDK-only)."""
@@ -147,7 +162,9 @@ class TestNALogin:
 
         now = time.time()
         try:
-            claims = jwt.decode(idk_access, options={"verify_signature": False, "verify_aud": False})
+            claims = jwt.decode(
+                idk_access, options={"verify_signature": False, "verify_aud": False}
+            )
             exp = claims.get("exp")
             if exp is not None:
                 assert exp > now, f"IDK token is expired: exp={exp}, now={now}"

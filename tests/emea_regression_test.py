@@ -6,6 +6,7 @@ broken the EMEA login flow and that the public Connection API surface is frozen.
 
 Phase 6 plan 06-01 — COMPAT-01, COMPAT-02
 """
+
 import asyncio
 import inspect
 from unittest import IsolatedAsyncioTestCase
@@ -29,7 +30,9 @@ class ConnectionAPIContractTest(IsolatedAsyncioTestCase):
         sig = inspect.signature(Connection.__init__)
         params = sig.parameters
         for name in ("session", "username", "password", "country"):
-            assert name in params, f"Frozen arg '{name}' missing from Connection.__init__"
+            assert name in params, (
+                f"Frozen arg '{name}' missing from Connection.__init__"
+            )
 
     def test_country_defaults_to_de(self):
         """country='DE' is the backward compat default — EMEA users need zero code changes."""
@@ -88,8 +91,12 @@ async def test_emea_login_calls_all_three_steps_in_sequence(connection):
     assert result is True
     # Each step of the EMEA sequence fires exactly once — no skipping, no doubling
     assert mock_openid.call_count == 1, "get_openid_config must be called exactly once"
-    assert mock_auth_code.call_count == 1, "_get_authorization_code must be called exactly once"
-    assert mock_exchange.call_count == 1, "_exchange_code_for_tokens must be called exactly once"
+    assert mock_auth_code.call_count == 1, (
+        "_get_authorization_code must be called exactly once"
+    )
+    assert mock_exchange.call_count == 1, (
+        "_exchange_code_for_tokens must be called exactly once"
+    )
     # Tokens stored under 'identity' key (EMEA contract)
     assert connection._session_tokens["identity"]["access_token"] == "emea_at"
     assert connection._session_region == "EMEA"
@@ -110,9 +117,17 @@ async def test_emea_login_stores_tokens_under_identity_key(connection):
     }
 
     with (
-        patch.object(connection, "get_openid_config", AsyncMock(return_value=openid_config)),
-        patch.object(connection, "_get_authorization_code", AsyncMock(return_value="auth_code")),
-        patch.object(connection, "_exchange_code_for_tokens", AsyncMock(return_value=token_response)),
+        patch.object(
+            connection, "get_openid_config", AsyncMock(return_value=openid_config)
+        ),
+        patch.object(
+            connection, "_get_authorization_code", AsyncMock(return_value="auth_code")
+        ),
+        patch.object(
+            connection,
+            "_exchange_code_for_tokens",
+            AsyncMock(return_value=token_response),
+        ),
     ):
         await connection._login()
 
@@ -131,7 +146,9 @@ async def test_non_na_countries_stay_in_emea_path(session):
         conn = Connection(session, "", "", country=country)
         assert conn._session_region == "EMEA", f"Expected EMEA for country={country}"
         with patch.object(conn, "_login_na") as mock_na:
-            with patch.object(conn, "get_openid_config", side_effect=Exception("stop early")):
+            with patch.object(
+                conn, "get_openid_config", side_effect=Exception("stop early")
+            ):
                 await conn._login()
         assert mock_na.call_count == 0, f"_login_na was called for country={country}"
 
@@ -142,7 +159,11 @@ async def test_emea_login_returns_false_on_auth_error(connection):
     from volkswagencarnet.vw_exceptions import AuthenticationError
 
     with patch.object(connection, "_login_na") as mock_na:
-        with patch.object(connection, "get_openid_config", side_effect=AuthenticationError("bad creds")):
+        with patch.object(
+            connection,
+            "get_openid_config",
+            side_effect=AuthenticationError("bad creds"),
+        ):
             result = await connection._login()
 
     assert result is False
@@ -166,9 +187,17 @@ async def test_emea_connection_has_no_na_tokens_after_login(connection):
     }
 
     with (
-        patch.object(connection, "get_openid_config", AsyncMock(return_value=openid_config)),
-        patch.object(connection, "_get_authorization_code", AsyncMock(return_value="code")),
-        patch.object(connection, "_exchange_code_for_tokens", AsyncMock(return_value=token_response)),
+        patch.object(
+            connection, "get_openid_config", AsyncMock(return_value=openid_config)
+        ),
+        patch.object(
+            connection, "_get_authorization_code", AsyncMock(return_value="code")
+        ),
+        patch.object(
+            connection,
+            "_exchange_code_for_tokens",
+            AsyncMock(return_value=token_response),
+        ),
     ):
         result = await connection._login()
 

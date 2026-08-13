@@ -6,6 +6,7 @@ They are excluded from normal pytest runs via norecursedirs in pyproject.toml.
 
 To run: pytest tests/e2e/ -v
 """
+
 import logging
 import os
 
@@ -107,15 +108,22 @@ async def na_connection():
         # NA Car-Net API only requires IDK token — Brand/MBB paths do not exist on
         # b-h-s.spr.us00.p.con-veh.net (confirmed from APK decompilation 2026).
         # The garage endpoint uses idToken query param directly, not a Brand token.
-        tokens_present = list(conn._na_tokens.keys()) if hasattr(conn, "_na_tokens") else []
+        tokens_present = (
+            list(conn._na_tokens.keys()) if hasattr(conn, "_na_tokens") else []
+        )
         if "idk" not in tokens_present:
-            _log.error("IDK token missing — na_auth_level=%s, tokens_present=%s",
-                       conn.na_auth_level, tokens_present)
+            _log.error(
+                "IDK token missing — na_auth_level=%s, tokens_present=%s",
+                conn.na_auth_level,
+                tokens_present,
+            )
             raise AssertionError(
                 f"NA IDK token not obtained — na_auth_level={conn.na_auth_level!r}\n"
                 f"Tokens present: {tokens_present}"
             )
 
-        _log.info("IDK auth confirmed (na_auth_level=%s) — yielding connection to test module",
-                  conn.na_auth_level)
+        _log.info(
+            "IDK auth confirmed (na_auth_level=%s) — yielding connection to test module",
+            conn.na_auth_level,
+        )
         yield conn

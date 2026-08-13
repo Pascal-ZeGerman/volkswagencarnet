@@ -1387,7 +1387,9 @@ class TestVehicleDataMethods:
         """get_selectivestatus stores data in _states."""
         conn = MagicMock()
         conn.getSelectiveStatus = AsyncMock(
-            return_value={"charging": {"batteryStatus": {"value": {"currentSOC_pct": 80}}}}
+            return_value={
+                "charging": {"batteryStatus": {"value": {"currentSOC_pct": 80}}}
+            }
         )
         vehicle = Vehicle(conn=conn, url="TESTVIN123")
         await vehicle.get_selectivestatus([Services.CHARGING])
@@ -1469,7 +1471,9 @@ class TestVehicleDataMethods:
 # Merged from na_vehicle_compat_test.py
 # ===========================================================================
 
-NA_VEHICLE_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "resources" / "responses" / "na_vehicle"
+NA_VEHICLE_FIXTURE_DIR = (
+    Path(__file__).parent / "fixtures" / "resources" / "responses" / "na_vehicle"
+)
 
 
 def _make_na_conn() -> Connection:
@@ -1479,7 +1483,13 @@ def _make_na_conn() -> Connection:
     sess._cookie_jar._cookies = {}
     conn = Connection(sess, "user@example.com", "password", country="US")
     conn._na_auth_level = "full"
-    conn._na_tokens = {"idk": {"access_token": "idk_at", "refresh_token": "idk_rt", "id_token": "idk_id"}}
+    conn._na_tokens = {
+        "idk": {
+            "access_token": "idk_at",
+            "refresh_token": "idk_rt",
+            "id_token": "idk_id",
+        }
+    }
     conn._session_tokens = {"identity": {"access_token": "idk_at"}}
     conn._base_api = "https://b-h-s.spr.us00.p.con-veh.net"
     return conn
@@ -1489,7 +1499,10 @@ def _load_compat_fixture(*path_parts) -> dict:
     """Load a fixture JSON file from tests/fixtures/resources/responses/."""
     fixture_path = os.path.join(
         os.path.dirname(__file__),
-        "fixtures", "resources", "responses", *path_parts,
+        "fixtures",
+        "resources",
+        "responses",
+        *path_parts,
     )
     with open(fixture_path) as f:
         return json.load(f)
@@ -1502,7 +1515,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Electric vehicle battery properties parse correctly from EMEA fixture under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.battery_level == 71
@@ -1516,7 +1531,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Charging state and support flags parse correctly from EMEA fixture under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.charging_state == "Not ready"
@@ -1530,7 +1547,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Climatisation properties parse correctly from EMEA fixture under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.climatisation_state == "off"
@@ -1543,10 +1562,14 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Door lock, door closed, trunk, and windows properties parse correctly under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
-        vehicle._states["na_status"] = _load_compat_fixture("na_vehicle", "rvs_status.json")
+        vehicle._states["na_status"] = _load_compat_fixture(
+            "na_vehicle", "rvs_status.json"
+        )
         assert vehicle.door_locked is True
         assert isinstance(vehicle.door_locked, bool)
         assert vehicle.door_closed_left_front is True
@@ -1560,7 +1583,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Service inspection and odometer properties parse correctly under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.service_inspection == 402
@@ -1574,7 +1599,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """car_type and is_car_type_electric parse correctly under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3CZHE123456")
-        vehicle._states.update(_load_compat_fixture("egolf", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("egolf", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.car_type == "Electric"
@@ -1585,7 +1612,9 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
         """Diesel vehicle fuel properties parse correctly from EMEA fixture under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ3HZPK002581")
-        vehicle._states.update(_load_compat_fixture("arteon_2023_diesel", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("arteon_2023_diesel", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.fuel_level == 19
@@ -1598,11 +1627,15 @@ class NAVehiclePropertyCompatTest(IsolatedAsyncioTestCase):
 class NAGolfGteHybridCompatTest(IsolatedAsyncioTestCase):
     """Verify Golf GTE hybrid Vehicle properties under NA auth context."""
 
-    async def test_golf_gte_hybrid_has_both_fuel_and_charging_services_via_na_conn(self):
+    async def test_golf_gte_hybrid_has_both_fuel_and_charging_services_via_na_conn(
+        self,
+    ):
         """Hybrid vehicle reports both fuel and charging services as supported under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
-        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.is_charging_supported is True
@@ -1613,7 +1646,9 @@ class NAGolfGteHybridCompatTest(IsolatedAsyncioTestCase):
         """Hybrid charging state and battery level parse correctly under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
-        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.charging_state == "Not ready"
@@ -1626,7 +1661,9 @@ class NAGolfGteHybridCompatTest(IsolatedAsyncioTestCase):
         """Hybrid door/lock access properties parse correctly under NA auth."""
         conn = _make_na_conn()
         vehicle = Vehicle(conn, "WVWZZZ5KZME100000")
-        vehicle._states.update(_load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json"))
+        vehicle._states.update(
+            _load_compat_fixture("golf_gte_hybrid", "selectivestatus_by_app.json")
+        )
         vehicle._discovered = True
 
         assert vehicle.door_locked is False
@@ -1817,11 +1854,17 @@ def _make_action_vehicle(**overrides):
     conn.setAuxiliary = AsyncMock(return_value={"state": "Queued", "id": 6})
     conn.setDepartureTimers = AsyncMock(return_value={"state": "Queued", "id": 7})
     conn.setDepartureProfiles = AsyncMock(return_value={"state": "Queued", "id": 8})
-    conn.setAuxiliaryHeatingTimers = AsyncMock(return_value={"state": "Queued", "id": 9})
+    conn.setAuxiliaryHeatingTimers = AsyncMock(
+        return_value={"state": "Queued", "id": 9}
+    )
     conn.setClimatisationTimers = AsyncMock(return_value={"state": "Queued", "id": 10})
     conn.setChargingSettings = AsyncMock(return_value={"state": "Queued", "id": 11})
-    conn.setChargingCareModeSettings = AsyncMock(return_value={"state": "Queued", "id": 12})
-    conn.setReadinessBatterySupport = AsyncMock(return_value={"state": "Queued", "id": 13})
+    conn.setChargingCareModeSettings = AsyncMock(
+        return_value={"state": "Queued", "id": 12}
+    )
+    conn.setReadinessBatterySupport = AsyncMock(
+        return_value={"state": "Queued", "id": 13}
+    )
     conn.setClimaterSettings = AsyncMock(return_value={"state": "Queued", "id": 14})
     conn.wakeUpVehicle = AsyncMock()
     conn.get_request_status = AsyncMock(return_value="successful")
@@ -1901,9 +1944,7 @@ class TestSetChargingSettings:
     @pytest.mark.asyncio
     async def test_battery_target_charge_level(self):
         v = _make_action_vehicle()
-        v._states["charging"] = {
-            "chargingSettings": {"value": {"targetSOC_pct": 80}}
-        }
+        v._states["charging"] = {"chargingSettings": {"value": {"targetSOC_pct": 80}}}
         result = await v.set_charging_settings("battery_target_charge_level", 90)
         assert result is True
 
@@ -1923,9 +1964,12 @@ class TestSetChargingCareSettings:
     @pytest.mark.asyncio
     async def test_activated(self):
         v = _make_action_vehicle()
-        v._states["batteryCareMode"] = {"batteryCareMode": {"value": {"batteryCareMode": "deactivated"}}}
+        v._states["batteryCareMode"] = {
+            "batteryCareMode": {"value": {"batteryCareMode": "deactivated"}}
+        }
         # Need to populate correct path for is_battery_care_mode_supported
         from volkswagencarnet.vw_const import Paths
+
         # Use the nested path format
         v._states["batteryChargingCare"] = {
             "chargingCareSettings": {"value": {"batteryCareMode": "deactivated"}}
@@ -2032,9 +2076,7 @@ class TestSetClimatisationSettings:
             }
         }
         with pytest.raises(Exception, match="not supported"):
-            await v.set_climatisation_settings(
-                "climatisation_target_temperature", 50.0
-            )
+            await v.set_climatisation_settings("climatisation_target_temperature", 50.0)
 
     @pytest.mark.asyncio
     async def test_not_supported(self):
@@ -2100,9 +2142,7 @@ class TestSetDepartureTimer:
         v = _make_action_vehicle()
         v._states["departureTimers"] = {
             "departureTimersStatus": {
-                "value": {
-                    "timers": [{"id": 1, "enabled": False}]
-                }
+                "value": {"timers": [{"id": 1, "enabled": False}]}
             }
         }
         result = await v.set_departure_timer(1, "1234", True)
@@ -2114,9 +2154,7 @@ class TestSetDepartureTimer:
         v = _make_action_vehicle()
         v._states["departureTimers"] = {
             "departureTimersStatus": {
-                "value": {
-                    "timers": [{"id": 1, "enabled": False}]
-                }
+                "value": {"timers": [{"id": 1, "enabled": False}]}
             }
         }
         with pytest.raises(Exception, match="not supported"):
@@ -2140,9 +2178,7 @@ class TestSetAcDepartureTimer:
         v = _make_action_vehicle()
         v._states["climatisationTimers"] = {
             "climatisationTimersStatus": {
-                "value": {
-                    "timers": [{"id": 1, "enabled": False}]
-                }
+                "value": {"timers": [{"id": 1, "enabled": False}]}
             }
         }
         result = await v.set_ac_departure_timer(1, True)
@@ -2154,9 +2190,7 @@ class TestSetAcDepartureTimer:
         v = _make_action_vehicle()
         v._states["climatisationTimers"] = {
             "climatisationTimersStatus": {
-                "value": {
-                    "timers": [{"id": 1, "enabled": False}]
-                }
+                "value": {"timers": [{"id": 1, "enabled": False}]}
             }
         }
         with pytest.raises(Exception, match="not supported"):
@@ -2180,14 +2214,16 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "singleTimer": {
-                            "startDateTimeLocal": "2026-03-01T08:00:00"
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [0],
+                            "singleTimer": {
+                                "startDateTimeLocal": "2026-03-01T08:00:00"
+                            },
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2201,14 +2237,16 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "singleTimer": {
-                            "departureDateTimeLocal": "2026-03-01T08:00:00"
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [0],
+                            "singleTimer": {
+                                "departureDateTimeLocal": "2026-03-01T08:00:00"
+                            },
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2220,15 +2258,21 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "recurringTimer": {
-                            "startTimeLocal": "07:30",
-                            "recurringOn": {"monday": True, "tuesday": False, "wednesday": True}
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [0],
+                            "recurringTimer": {
+                                "startTimeLocal": "07:30",
+                                "recurringOn": {
+                                    "monday": True,
+                                    "tuesday": False,
+                                    "wednesday": True,
+                                },
+                            },
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2243,15 +2287,17 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "recurringTimer": {
-                            "departureTimeLocal": "08:00",
-                            "recurringOn": {"monday": True}
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [0],
+                            "recurringTimer": {
+                                "departureTimeLocal": "08:00",
+                                "recurringOn": {"monday": True},
+                            },
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2264,20 +2310,26 @@ class TestTimerAttributes:
         v._states["departureProfiles"] = {
             "departureProfilesStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [10],
-                        "singleTimer": {"startDateTimeLocal": "2026-03-01T08:00:00"}
-                    }],
-                    "profiles": [{
-                        "id": 10,
-                        "name": "Morning",
-                        "charging": True,
-                        "climatisation": False,
-                        "targetSOC_pct": 80,
-                        "maxChargeCurrentAC": "reduced"
-                    }]
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [10],
+                            "singleTimer": {
+                                "startDateTimeLocal": "2026-03-01T08:00:00"
+                            },
+                        }
+                    ],
+                    "profiles": [
+                        {
+                            "id": 10,
+                            "name": "Morning",
+                            "charging": True,
+                            "climatisation": False,
+                            "targetSOC_pct": 80,
+                            "maxChargeCurrentAC": "reduced",
+                        }
+                    ],
                 }
             }
         }
@@ -2293,14 +2345,18 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "charging": True,
-                        "climatisation": True,
-                        "singleTimer": {"startDateTimeLocal": "2026-03-01T08:00:00"}
-                    }]
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "profileIDs": [0],
+                            "charging": True,
+                            "climatisation": True,
+                            "singleTimer": {
+                                "startDateTimeLocal": "2026-03-01T08:00:00"
+                            },
+                        }
+                    ]
                 }
             }
         }
@@ -2313,17 +2369,23 @@ class TestTimerAttributes:
         v._states["departureTimers"] = {
             "departureTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "profileIDs": [0],
-                        "singleTimer": {"startDateTimeLocal": "2026-03-01T08:00:00"},
-                        "preferredChargingTimes": [{
+                    "timers": [
+                        {
+                            "id": 1,
                             "enabled": True,
-                            "startTimeLocal": "22:00",
-                            "endTimeLocal": "06:00"
-                        }]
-                    }]
+                            "profileIDs": [0],
+                            "singleTimer": {
+                                "startDateTimeLocal": "2026-03-01T08:00:00"
+                            },
+                            "preferredChargingTimes": [
+                                {
+                                    "enabled": True,
+                                    "startTimeLocal": "22:00",
+                                    "endTimeLocal": "06:00",
+                                }
+                            ],
+                        }
+                    ]
                 }
             }
         }
@@ -2348,13 +2410,15 @@ class TestAcTimerAttributes:
         v._states["climatisationTimers"] = {
             "climatisationTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "singleTimer": {
-                            "startDateTimeLocal": "2026-03-01T07:00:00"
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "singleTimer": {
+                                "startDateTimeLocal": "2026-03-01T07:00:00"
+                            },
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2367,13 +2431,13 @@ class TestAcTimerAttributes:
         v._states["climatisationTimers"] = {
             "climatisationTimersStatus": {
                 "value": {
-                    "timers": [{
-                        "id": 1,
-                        "enabled": True,
-                        "recurringTimer": {
-                            "startTimeLocal": "08:00"
+                    "timers": [
+                        {
+                            "id": 1,
+                            "enabled": True,
+                            "recurringTimer": {"startTimeLocal": "08:00"},
                         }
-                    }]
+                    ]
                 }
             }
         }
@@ -2508,7 +2572,9 @@ class TestOilInspection:
             "fuelLevelStatus": {"value": {"primaryEngineType": "diesel"}},
         }
         v._states["vehicleHealthInspection"] = {
-            "maintenanceStatus": {"value": {"oilServiceDue_days": 30, "oilServiceDue_km": 5000}}
+            "maintenanceStatus": {
+                "value": {"oilServiceDue_days": 30, "oilServiceDue_km": 5000}
+            }
         }
         assert v.is_oil_inspection_supported is True
         assert v.oil_inspection == 30
@@ -2549,11 +2615,7 @@ class TestEnergyFlow:
     def test_energy_flow_off(self):
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["charger"] = {
-            "status": {
-                "chargingStatusData": {
-                    "energyFlow": {"content": "off"}
-                }
-            }
+            "status": {"chargingStatusData": {"energyFlow": {"content": "off"}}}
         }
         assert v.energy_flow is False
 
@@ -2580,7 +2642,7 @@ class TestLastConnected:
             "odometerStatus": {
                 "value": {
                     "odometer": 12345,
-                    "carCapturedTimestamp": "2026-03-01T10:00:00.000Z"
+                    "carCapturedTimestamp": "2026-03-01T10:00:00.000Z",
                 }
             }
         }
@@ -2593,12 +2655,7 @@ class TestLastConnected:
         v = Vehicle(conn=None, url="TESTVIN")
         dt = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
         v._states["measurements"] = {
-            "odometerStatus": {
-                "value": {
-                    "odometer": 12345,
-                    "carCapturedTimestamp": dt
-                }
-            }
+            "odometerStatus": {"value": {"odometer": 12345, "carCapturedTimestamp": dt}}
         }
         result = v.last_connected
         assert result == dt
@@ -2606,9 +2663,7 @@ class TestLastConnected:
     def test_is_last_connected_supported(self):
         v = Vehicle(conn=None, url="TESTVIN")
         assert v.is_last_connected_supported is False
-        v._states["measurements"] = {
-            "odometerStatus": {"value": {"odometer": 100}}
-        }
+        v._states["measurements"] = {"odometerStatus": {"value": {"odometer": 100}}}
         assert v.is_last_connected_supported is True
 
 
@@ -2717,6 +2772,7 @@ class TestWindowAndDoorHelpers:
 
     def test_window_invalid_status(self):
         from volkswagencarnet.vw_const import VehicleStatusParameter as P
+
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["access"] = {
             "accessStatus": {
@@ -2922,9 +2978,7 @@ class TestDepartureTimerLookup:
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["climatisationTimers"] = {
             "auxiliaryHeatingTimersStatus": {
-                "value": {
-                    "timers": [{"id": 1, "enabled": True}]
-                }
+                "value": {"timers": [{"id": 1, "enabled": True}]}
             }
         }
         assert v.departure_timer(1) is not None
@@ -2936,7 +2990,7 @@ class TestDepartureTimerLookup:
             "departureProfilesStatus": {
                 "value": {
                     "timers": [{"id": 1, "enabled": False}],
-                    "profiles": [{"id": 10, "name": "Test"}]
+                    "profiles": [{"id": 10, "name": "Test"}],
                 }
             }
         }
@@ -2965,7 +3019,9 @@ class TestMiscProperties:
 
     def test_request_results_last_updated_no_latest(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        assert v.request_results_last_updated is not None  # Falls back to section timestamps
+        assert (
+            v.request_results_last_updated is not None
+        )  # Falls back to section timestamps
 
     def test_request_in_progress_true(self):
         v = Vehicle(conn=None, url="TESTVIN")
@@ -3077,24 +3133,18 @@ class TestCarTypeDetection:
 
     def test_is_car_type_diesel(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["fuelStatus"] = {
-            "rangeStatus": {"value": {"carType": "diesel"}}
-        }
+        v._states["fuelStatus"] = {"rangeStatus": {"value": {"carType": "diesel"}}}
         assert v.is_car_type_diesel is True
         assert v.is_car_type_electric is False
 
     def test_is_car_type_gasoline(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["fuelStatus"] = {
-            "rangeStatus": {"value": {"carType": "gasoline"}}
-        }
+        v._states["fuelStatus"] = {"rangeStatus": {"value": {"carType": "gasoline"}}}
         assert v.is_car_type_gasoline is True
 
     def test_is_car_type_hybrid(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["fuelStatus"] = {
-            "rangeStatus": {"value": {"carType": "hybrid"}}
-        }
+        v._states["fuelStatus"] = {"rangeStatus": {"value": {"carType": "hybrid"}}}
         assert v.is_car_type_hybrid is True
 
     def test_is_car_type_diesel_via_measurements(self):
@@ -3126,6 +3176,7 @@ class TestCarTypeDetection:
 
     def test_is_primary_drive_gas(self):
         from volkswagencarnet.vw_vehicle import ENGINE_TYPE_GAS
+
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["fuelStatus"] = {
             "rangeStatus": {"value": {"carType": ENGINE_TYPE_GAS}}
@@ -3134,6 +3185,7 @@ class TestCarTypeDetection:
 
     def test_is_primary_drive_gas_via_measurements(self):
         from volkswagencarnet.vw_vehicle import ENGINE_TYPE_GAS
+
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["measurements"] = {
             "fuelLevelStatus": {"value": {"carType": ENGINE_TYPE_GAS}}
@@ -3156,30 +3208,22 @@ class TestChargerProperties:
 
     def test_charger_type_ac(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["charging"] = {
-            "chargingStatus": {"value": {"chargeType": "ac"}}
-        }
+        v._states["charging"] = {"chargingStatus": {"value": {"chargeType": "ac"}}}
         assert v.charger_type == "AC"
 
     def test_charger_type_dc(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["charging"] = {
-            "chargingStatus": {"value": {"chargeType": "dc"}}
-        }
+        v._states["charging"] = {"chargingStatus": {"value": {"chargeType": "dc"}}}
         assert v.charger_type == "DC"
 
     def test_charger_type_unknown(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["charging"] = {
-            "chargingStatus": {"value": {"chargeType": "other"}}
-        }
+        v._states["charging"] = {"chargingStatus": {"value": {"chargeType": "other"}}}
         assert v.charger_type == "Unknown"
 
     def test_charging_cable_locked(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["charging"] = {
-            "plugStatus": {"value": {"plugLockState": "locked"}}
-        }
+        v._states["charging"] = {"plugStatus": {"value": {"plugLockState": "locked"}}}
         assert v.charging_cable_locked is True
 
     def test_charging_cable_connected(self):
@@ -3324,9 +3368,7 @@ class TestClimatisationStateProperties:
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["climatisation"] = {
             "climatisationSettings": {
-                "value": {
-                    "auxiliaryHeatingSettings": {"duration_min": 30}
-                }
+                "value": {"auxiliaryHeatingSettings": {"duration_min": 30}}
             }
         }
         assert v.auxiliary_duration == 30
@@ -3407,7 +3449,7 @@ class TestReadinessProperties:
                     "connectionWarning": {
                         "insufficientBatteryLevelWarning": False,
                         "dailyPowerBudgetWarning": False,
-                    }
+                    },
                 }
             }
         }
@@ -3458,6 +3500,7 @@ class TestFuelGasProperties:
 
     def test_gas_level(self):
         from volkswagencarnet.vw_vehicle import ENGINE_TYPE_GAS
+
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["fuelStatus"] = {
             "rangeStatus": {
@@ -3467,7 +3510,7 @@ class TestFuelGasProperties:
                         "type": "cng",
                         "currentFuelLevel_pct": 75,
                         "remainingRange_km": 200,
-                    }
+                    },
                 }
             }
         }
@@ -3643,7 +3686,9 @@ class TestGetVehicleAndServiceStatus:
         conn = MagicMock()
         conn.is_na = False
         conn._session_region_config = {}
-        conn.getTripRefuel = AsyncMock(return_value={Services.TRIP_REFUEL: {"mileage_km": 100}})
+        conn.getTripRefuel = AsyncMock(
+            return_value={Services.TRIP_REFUEL: {"mileage_km": 100}}
+        )
         v = Vehicle(conn=conn, url="TESTVIN")
         v._services[Services.TRIP_STATISTICS] = {"active": True}
         await v.get_trip_refuel()
@@ -3654,7 +3699,9 @@ class TestGetVehicleAndServiceStatus:
         conn = MagicMock()
         conn.is_na = False
         conn._session_region_config = {}
-        conn.getTripLongterm = AsyncMock(return_value={Services.TRIP_LONGTERM: {"mileage_km": 5000}})
+        conn.getTripLongterm = AsyncMock(
+            return_value={Services.TRIP_LONGTERM: {"mileage_km": 5000}}
+        )
         v = Vehicle(conn=conn, url="TESTVIN")
         v._services[Services.TRIP_STATISTICS] = {"active": True}
         await v.get_trip_longterm()
@@ -3716,9 +3763,7 @@ class TestDoorLockedSensor:
 
     def test_door_locked_sensor_returns_same_as_door_locked(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["access"] = {
-            "accessStatus": {"value": {"doorLockStatus": "locked"}}
-        }
+        v._states["access"] = {"accessStatus": {"value": {"doorLockStatus": "locked"}}}
         assert v.door_locked_sensor is True
         # door_locked_sensor_supported is False when access service is active
         v._services[Services.ACCESS] = {"active": True}
@@ -3726,18 +3771,14 @@ class TestDoorLockedSensor:
 
     def test_door_locked_sensor_supported_when_access_inactive(self):
         v = Vehicle(conn=None, url="TESTVIN")
-        v._states["access"] = {
-            "accessStatus": {"value": {"doorLockStatus": "locked"}}
-        }
+        v._states["access"] = {"accessStatus": {"value": {"doorLockStatus": "locked"}}}
         assert v.is_door_locked_sensor_supported is True
 
     def test_trunk_locked_sensor(self):
         v = Vehicle(conn=None, url="TESTVIN")
         v._states["access"] = {
             "accessStatus": {
-                "value": {
-                    "doors": [{"name": "trunk", "status": ["closed", "locked"]}]
-                }
+                "value": {"doors": [{"name": "trunk", "status": ["closed", "locked"]}]}
             }
         }
         assert v.trunk_locked_sensor is True
@@ -3860,6 +3901,8 @@ class TestHealthReport:
     def test_na_oil_inspection_supported(self, na_health_vehicle):
         """is_oil_inspection_supported returns True with VHS data."""
         assert na_health_vehicle.is_oil_inspection_supported is True
+
+
 class TestNaDoorAccessParity:
     """Test per-door open/closed and per-door lock properties for NA vehicles."""
 
@@ -4084,7 +4127,10 @@ class TestNAEVProperties:
         conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
         vehicle = Vehicle(conn=conn, url="TESTVIN")
         vehicle._discovered = True
-        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_AC", "batteryPercentageAvailable": 50}
+        vehicle._states["na_ev"] = {
+            "chargingStatus": "CHARGING_AC",
+            "batteryPercentageAvailable": 50,
+        }
         assert vehicle.charging is True
 
     def test_na_charging_active_dc(self):
@@ -4094,7 +4140,10 @@ class TestNAEVProperties:
         conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
         vehicle = Vehicle(conn=conn, url="TESTVIN")
         vehicle._discovered = True
-        vehicle._states["na_ev"] = {"chargingStatus": "CHARGING_DC", "batteryPercentageAvailable": 30}
+        vehicle._states["na_ev"] = {
+            "chargingStatus": "CHARGING_DC",
+            "batteryPercentageAvailable": 30,
+        }
         assert vehicle.charging is True
 
     def test_na_battery_level_not_supported_when_field_absent(self):
@@ -4104,7 +4153,9 @@ class TestNAEVProperties:
         conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
         vehicle = Vehicle(conn=conn, url="TESTVIN")
         vehicle._discovered = True
-        vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}  # no batteryPercentageAvailable
+        vehicle._states["na_ev"] = {
+            "chargingStatus": "NOT_CHARGING"
+        }  # no batteryPercentageAvailable
         assert vehicle.is_battery_level_supported is False
 
     def test_na_charging_not_supported_when_field_absent(self):
@@ -4114,7 +4165,9 @@ class TestNAEVProperties:
         conn._session_region_config = {"homeregion": "https://msg.volkswagen.de"}
         vehicle = Vehicle(conn=conn, url="TESTVIN")
         vehicle._discovered = True
-        vehicle._states["na_ev"] = {"batteryPercentageAvailable": 80}  # no chargingStatus
+        vehicle._states["na_ev"] = {
+            "batteryPercentageAvailable": 80
+        }  # no chargingStatus
         assert vehicle.is_charging_supported is False
 
     # ---------------------------------------------------------------------------
@@ -4300,7 +4353,7 @@ class TestNAWriteCommands:
     async def test_set_charger_invalid_action_raises(self):
         """set_charger raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(UnsupportedOperationError, match='not supported'):
+        with pytest.raises(UnsupportedOperationError, match="not supported"):
             await vehicle.set_charger("invalid")
 
     @pytest.mark.asyncio
@@ -4327,13 +4380,16 @@ class TestNAWriteCommands:
     async def test_set_climatisation_invalid_action_raises(self):
         """set_climatisation raises for invalid action regardless of region."""
         vehicle = self._make_na_vehicle()
-        with pytest.raises(UnsupportedOperationError, match="Invalid climatisation action"):
+        with pytest.raises(
+            UnsupportedOperationError, match="Invalid climatisation action"
+        ):
             await vehicle.set_climatisation("boost")
 
     @pytest.mark.asyncio
     async def test_set_lock_na_logs_warning_on_failure(self, caplog):
         """set_lock logs WARNING when lock_na returns False."""
         import logging
+
         vehicle = self._make_na_vehicle()
         vehicle._connection.lock_na = AsyncMock(return_value=False)
         with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
@@ -4345,6 +4401,7 @@ class TestNAWriteCommands:
     async def test_set_charger_na_logs_warning_on_failure(self, caplog):
         """set_charger logs WARNING when start_charging_na returns False."""
         import logging
+
         vehicle = self._make_na_vehicle()
         vehicle._states["na_ev"] = {"chargingStatus": "NOT_CHARGING"}
         vehicle._connection.start_charging_na = AsyncMock(return_value=False)
@@ -4357,6 +4414,7 @@ class TestNAWriteCommands:
     async def test_set_honk_and_flash_na_logs_warning_on_failure(self, caplog):
         """set_honk_and_flash logs WARNING when honk_and_flash_na returns False."""
         import logging
+
         vehicle = self._make_na_vehicle()
         vehicle._connection.honk_and_flash_na = AsyncMock(return_value=False)
         with caplog.at_level(logging.WARNING, logger="volkswagencarnet.vw_vehicle"):
@@ -4422,7 +4480,6 @@ class TestNAWriteCommands:
         result = await vehicle.set_climatisation("start")
         assert result is False
         vehicle._connection.start_climatisation_na.assert_not_called()
-
 
 
 class TestCFIX01ActionMethods(IsolatedAsyncioTestCase):

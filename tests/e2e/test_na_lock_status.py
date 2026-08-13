@@ -12,6 +12,7 @@ Run with:
   export VW_TEST_EXPECTED_LOCK=unlocked # if vehicle is unlocked
   pytest tests/e2e/test_na_lock_status.py -v
 """
+
 import logging
 import os
 from datetime import datetime
@@ -66,12 +67,16 @@ class TestNALockStatus:
     async def test_door_locked_is_bool(self, first_vehicle):
         """Assert vehicle.door_locked returns a bool from a live NA vehicle."""
         if _EXPECTED_LOCK_RAW is None:
-            pytest.skip("VW_TEST_EXPECTED_LOCK not set — see test_expected_lock_env_var_set")
+            pytest.skip(
+                "VW_TEST_EXPECTED_LOCK not set — see test_expected_lock_env_var_set"
+            )
         locked = first_vehicle.door_locked
         assert isinstance(locked, bool), (
             f"vehicle.door_locked returned {type(locked).__name__!r}, expected bool"
         )
-        print(f"\n--- NA Lock Status ---\nvehicle.door_locked: {locked}\nExpected: {_EXPECTED_LOCK_RAW.lower()}\n---")
+        print(
+            f"\n--- NA Lock Status ---\nvehicle.door_locked: {locked}\nExpected: {_EXPECTED_LOCK_RAW.lower()}\n---"
+        )
 
     async def test_door_locked_matches_expected(self, first_vehicle):
         """Assert vehicle.door_locked matches VW_TEST_EXPECTED_LOCK."""
@@ -88,7 +93,9 @@ class TestNALockStatus:
         """Assert na_status raw RVS state has lockStatus field and freshness (double coverage)."""
         na_status = first_vehicle._states.get("na_status")
         if na_status is None:
-            pytest.skip("na_status not in vehicle._states — VW_TEST_SPIN may not be set")
+            pytest.skip(
+                "na_status not in vehicle._states — VW_TEST_SPIN may not be set"
+            )
         raw_lock = na_status.get("lockStatus")
         assert raw_lock is not None, "na_status['lockStatus'] is None or missing"
         print(
@@ -97,7 +104,9 @@ class TestNALockStatus:
             f"vehicle.door_locked: {first_vehicle.door_locked}\n"
             f"---"
         )
-        _log.info("Raw lockStatus=%r -> door_locked=%s", raw_lock, first_vehicle.door_locked)
+        _log.info(
+            "Raw lockStatus=%r -> door_locked=%s", raw_lock, first_vehicle.door_locked
+        )
         # Check freshness: try top-level "timestamp" first, then nested doorStatusTimestamp
         ts_str = na_status.get("timestamp")
         if ts_str is None:
@@ -116,6 +125,8 @@ class TestNALockStatus:
             except (ValueError, OSError) as exc:
                 pytest.fail(f"Could not parse RVS status timestamp {ts_str!r}: {exc}")
             age_days = (datetime.now(timezone.utc) - ts).days
-            assert age_days <= 7, f"RVS status timestamp {ts_str!r} is older than 7 days"
+            assert age_days <= 7, (
+                f"RVS status timestamp {ts_str!r} is older than 7 days"
+            )
         else:
             _log.warning("na_status has no timestamp field — skipping freshness check")
